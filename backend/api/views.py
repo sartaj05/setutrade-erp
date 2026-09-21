@@ -3,6 +3,7 @@ from decimal import Decimal
 from django.contrib.auth import authenticate
 from django.db.models import Sum
 from django.http import JsonResponse
+from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from .auth import api_auth_required, create_token, roles_allowed
@@ -60,7 +61,8 @@ def me(request):
 @require_GET
 @api_auth_required
 def dashboard(request):
-    sales_today = Order.objects.filter(order_date='2026-09-21').aggregate(total=Sum('total'))['total'] or Decimal('0')
+    today = timezone.localdate()
+    sales_today = Order.objects.filter(order_date=today).aggregate(total=Sum('total'))['total'] or Decimal('0')
     receivable = Customer.objects.aggregate(total=Sum('outstanding'))['total'] or Decimal('0')
     low_stock = sum(1 for p in Product.objects.all() if p.stock <= p.reorder_level)
     stock_value = sum((p.stock * p.purchase_price for p in Product.objects.all()), Decimal('0'))
@@ -104,7 +106,7 @@ def customers(request):
         'id': c.code, 'name': c.name, 'city': c.city, 'phone': c.phone,
         'outstanding': float(c.outstanding), 'limit': float(c.credit_limit),
         'due': c.due_date.strftime('%d %b') if c.due_date else '—',
-        'status': 'Overdue' if c.outstanding and c.due_date and c.due_date.isoformat() < '2026-09-21' else ('Current' if c.outstanding else 'Clear')
+        'status': 'Overdue' if c.outstanding and c.due_date and c.due_date < timezone.localdate() else ('Current' if c.outstanding else 'Clear')
     } for c in rows]})
 
 @require_GET
