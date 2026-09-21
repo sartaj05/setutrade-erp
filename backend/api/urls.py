@@ -54,4 +54,5 @@ urlpatterns = [
     path('invoice-ocr/', views.invoice_ocr),
     path('accounting/', views.accounting),
     path('sync/offline/', views.offline_sync),
+    path('subscription/', views.subscription_billing),
 ]

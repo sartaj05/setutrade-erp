@@ -27,7 +27,7 @@ from .auth import (
     revoke_request_session, roles_allowed,
 )
 from .models import (
-    AccountingConnection, AccountingExportJob, ApprovalPolicy, OfflineSyncReceipt, ApprovalRequest, Attachment, AuditLog, PurchaseInvoiceCapture, BarcodeScanLog, Branch, Company, Customer, CustomerPortalAccess, CustomerPortalOrder, DeliveryProof, DeliveryRun, DeliveryStop, GoodsReceipt,
+    AccountingConnection, AccountingExportJob, ApprovalPolicy, CompanySubscription, OfflineSyncReceipt, SubscriptionInvoice, SubscriptionPlan, ApprovalRequest, Attachment, AuditLog, PurchaseInvoiceCapture, BarcodeScanLog, Branch, Company, Customer, CustomerPortalAccess, CustomerPortalOrder, DeliveryProof, DeliveryRun, DeliveryStop, GoodsReceipt,
     GoodsReceiptItem, InventoryMovement, Invoice, LedgerEntry, Notification, Order,
     OrderItem, Payment, PriceList, PriceRule, Product, PurchaseItem, PurchaseOrder,
     Quotation, QuotationItem, ReorderSuggestion, ReturnItem, ReturnOrder, SalesTarget,
@@ -41,7 +41,7 @@ from .services import (
 )
 
 PERMISSIONS = {
-    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','team','settings','audit','delivery','approvals','invoice-ocr', 'accounting', 'offline'],
+    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','team','settings','audit','delivery','approvals','invoice-ocr', 'accounting', 'offline', 'subscription'],
     'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','audit','delivery','approvals','invoice-ocr', 'accounting', 'offline'],
     'SALES': ['dashboard','customers','orders','invoices','ledger','whatsapp','tax','pricing','field-sales','quotations','payments','approvals','invoice-ocr', 'offline'],
     'WAREHOUSE': ['dashboard','products','inventory','orders','purchases','warehouses','barcode','returns','insights','delivery','approvals','invoice-ocr', 'offline'],
@@ -1183,3 +1183,25 @@ def offline_sync(request):
             if customer: SalesVisit.objects.create(company=request.company,salesperson=request.api_user,customer=customer,visit_date=_date(payload.get('date')),status=payload.get('status','Visited'),territory=str(payload.get('territory',''))[:100],order_value=decimal(payload.get('orderValue')),collection_amount=decimal(payload.get('collection')),notes=str(payload.get('notes',''))[:240])
         results.append({'id':event_id,'status':'synced' if created else 'duplicate'})
     return JsonResponse({'ok':True,'results':results,'synced':len(results)})
+
+@csrf_exempt
+@require_http_methods(['GET','POST'])
+@roles_allowed('OWNER')
+def subscription_billing(request):
+    # Ensure a useful baseline exists even on a fresh tenant database.
+    starter,_=SubscriptionPlan.objects.get_or_create(code='STARTER',defaults={'name':'Starter','monthly_price':999,'annual_price':9990,'user_limit':3,'branch_limit':1,'warehouse_limit':1,'features':['Core ERP','GST invoices','Customer portal']})
+    growth,_=SubscriptionPlan.objects.get_or_create(code='GROWTH',defaults={'name':'Growth','monthly_price':2499,'annual_price':24990,'user_limit':10,'branch_limit':3,'warehouse_limit':5,'features':['Everything in Starter','WhatsApp','Field sales','Approvals','Delivery']})
+    business,_=SubscriptionPlan.objects.get_or_create(code='BUSINESS',defaults={'name':'Business','monthly_price':4999,'annual_price':49990,'user_limit':50,'branch_limit':20,'warehouse_limit':50,'features':['Everything in Growth','Accounting','AI assistant','Advanced forecasting']})
+    sub=CompanySubscription.objects.filter(company=request.company).select_related('plan').first()
+    if not sub: sub=CompanySubscription.objects.create(company=request.company,plan=growth,status=CompanySubscription.Status.TRIAL,started_at=timezone.localdate(),current_period_end=timezone.localdate()+timedelta(days=14),trial_end=timezone.localdate()+timedelta(days=14))
+    if request.method=='POST':
+        body=_json_body(request) or {}; action=body.get('action','change-plan')
+        if action=='change-plan':
+            plan=SubscriptionPlan.objects.filter(code=body.get('planCode'),is_active=True).first()
+            if not plan:return JsonResponse({'detail':'Plan not found.'},status=404)
+            sub.plan=plan;sub.status=CompanySubscription.Status.ACTIVE;sub.current_period_end=timezone.localdate()+timedelta(days=30);sub.save(update_fields=['plan','status','current_period_end','updated_at'])
+            inv=SubscriptionInvoice.objects.create(company=request.company,subscription=sub,invoice_no=_next_no('SUB'),amount=plan.monthly_price,tax=plan.monthly_price*Decimal('0.18'),due_date=timezone.localdate()+timedelta(days=7))
+            return JsonResponse({'ok':True,'invoiceNo':inv.invoice_no,'status':sub.status})
+        if action=='cancel': sub.cancel_at_period_end=True;sub.save(update_fields=['cancel_at_period_end','updated_at']);return JsonResponse({'ok':True})
+    plans=SubscriptionPlan.objects.filter(is_active=True).order_by('monthly_price'); invoices=SubscriptionInvoice.objects.filter(company=request.company).order_by('-created_at')[:20]
+    return JsonResponse({'subscription':{'status':sub.status,'plan':sub.plan.code,'planName':sub.plan.name,'periodEnd':sub.current_period_end.isoformat(),'cancelAtPeriodEnd':sub.cancel_at_period_end},'usage':{'users':request.company.profiles.count(),'branches':request.company.branches.count(),'warehouses':request.company.warehouses.count()},'plans':[{'code':p.code,'name':p.name,'monthly':float(p.monthly_price),'annual':float(p.annual_price),'userLimit':p.user_limit,'branchLimit':p.branch_limit,'warehouseLimit':p.warehouse_limit,'features':p.features} for p in plans],'invoices':[{'invoiceNo':x.invoice_no,'amount':float(x.amount+x.tax),'status':x.status,'dueDate':x.due_date.isoformat()} for x in invoices]})

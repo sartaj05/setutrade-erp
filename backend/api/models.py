@@ -837,3 +837,37 @@ class OfflineSyncReceipt(models.Model):
     user=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
     synced_at=models.DateTimeField(auto_now_add=True)
     class Meta: constraints=[models.UniqueConstraint(fields=['company','event_id'],name='unique_company_offline_event')]
+
+
+class SubscriptionPlan(models.Model):
+    code=models.CharField(max_length=30,unique=True)
+    name=models.CharField(max_length=80)
+    monthly_price=models.DecimalField(max_digits=10,decimal_places=2)
+    annual_price=models.DecimalField(max_digits=10,decimal_places=2,default=0)
+    user_limit=models.PositiveIntegerField(default=3)
+    branch_limit=models.PositiveIntegerField(default=1)
+    warehouse_limit=models.PositiveIntegerField(default=1)
+    features=models.JSONField(default=list,blank=True)
+    is_active=models.BooleanField(default=True)
+
+class CompanySubscription(models.Model):
+    class Status(models.TextChoices): TRIAL='Trial','Trial'; ACTIVE='Active','Active'; PAST_DUE='Past Due','Past Due'; CANCELLED='Cancelled','Cancelled'
+    company=models.OneToOneField(Company,on_delete=models.CASCADE,related_name='subscription')
+    plan=models.ForeignKey(SubscriptionPlan,on_delete=models.PROTECT,related_name='subscriptions')
+    status=models.CharField(max_length=20,choices=Status.choices,default=Status.TRIAL)
+    started_at=models.DateField(); current_period_end=models.DateField()
+    trial_end=models.DateField(null=True,blank=True)
+    external_customer_id=models.CharField(max_length=120,blank=True)
+    cancel_at_period_end=models.BooleanField(default=False)
+    updated_at=models.DateTimeField(auto_now=True)
+
+class SubscriptionInvoice(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='subscription_invoices')
+    subscription=models.ForeignKey(CompanySubscription,on_delete=models.CASCADE,related_name='invoices')
+    invoice_no=models.CharField(max_length=40,unique=True)
+    amount=models.DecimalField(max_digits=10,decimal_places=2)
+    tax=models.DecimalField(max_digits=10,decimal_places=2,default=0)
+    status=models.CharField(max_length=20,default='Open')
+    due_date=models.DateField(); paid_at=models.DateTimeField(null=True,blank=True)
+    payment_reference=models.CharField(max_length=120,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
