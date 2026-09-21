@@ -1,0 +1,9 @@
+from django.conf import settings
+from django.db import migrations, models
+import django.db.models.deletion
+class Migration(migrations.Migration):
+ dependencies=[('api','0027_supplier_portal'),migrations.swappable_dependency(settings.AUTH_USER_MODEL)]
+ operations=[
+  migrations.CreateModel(name='AutomationRule',fields=[('id',models.BigAutoField(auto_created=True,primary_key=True,serialize=False,verbose_name='ID')),('name',models.CharField(max_length=140)),('event',models.CharField(max_length=60)),('conditions',models.JSONField(blank=True,default=dict)),('actions',models.JSONField(blank=True,default=list)),('is_active',models.BooleanField(default=True)),('last_run_at',models.DateTimeField(blank=True,null=True)),('created_at',models.DateTimeField(auto_now_add=True)),('company',models.ForeignKey(on_delete=django.db.models.deletion.CASCADE,related_name='automation_rules',to='api.company')),('created_by',models.ForeignKey(blank=True,null=True,on_delete=django.db.models.deletion.SET_NULL,to=settings.AUTH_USER_MODEL))]),
+  migrations.CreateModel(name='AutomationRun',fields=[('id',models.BigAutoField(auto_created=True,primary_key=True,serialize=False,verbose_name='ID')),('event',models.CharField(max_length=60)),('entity_type',models.CharField(blank=True,max_length=60)),('entity_id',models.CharField(blank=True,max_length=80)),('status',models.CharField(default='Completed',max_length=30)),('actions_executed',models.JSONField(blank=True,default=list)),('error',models.TextField(blank=True)),('created_at',models.DateTimeField(auto_now_add=True)),('company',models.ForeignKey(on_delete=django.db.models.deletion.CASCADE,related_name='automation_runs',to='api.company')),('rule',models.ForeignKey(on_delete=django.db.models.deletion.CASCADE,related_name='runs',to='api.automationrule'))]),
+ ]

@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 from .auth import api_auth_required
-from .models import Customer, Invoice, PaymentTransaction, PaymentAllocation, PaymentPromise, CollectionTask, Warehouse, WarehouseBin, BinStock, PickList, PickListItem, CycleCount, Order, OrderItem, Product, Supplier, SupplierPortalAccess, SupplierPortalSubmission, PurchaseOrder
+from .models import Customer, Invoice, PaymentTransaction, PaymentAllocation, PaymentPromise, CollectionTask, Warehouse, WarehouseBin, BinStock, PickList, PickListItem, CycleCount, Order, OrderItem, Product, Supplier, SupplierPortalAccess, SupplierPortalSubmission, PurchaseOrder, AutomationRule, AutomationRun, Notification
 
 
 def _body(request):
@@ -118,9 +118,9 @@ def supplier_portal(request):
     if not access: return JsonResponse({'detail':'Supplier portal authentication required.'},status=401)
     supplier=access.supplier
     if request.method=='GET':
-        pos=PurchaseOrder.objects.filter(company=access.company,supplier=supplier).order_by('-order_date','-id')[:30]
+        pos=PurchaseOrder, AutomationRule, AutomationRun, Notification.objects.filter(company=access.company,supplier=supplier).order_by('-order_date','-id')[:30]
         return JsonResponse({'supplier':supplier.name,'purchaseOrders':[{'id':p.id,'poNo':p.po_no,'date':p.order_date.isoformat(),'status':p.status,'total':_money(p.total),'expected':p.expected_date.isoformat() if p.expected_date else None} for p in pos],'submissions':[{'id':x.id,'type':x.submission_type,'status':x.status,'payload':x.payload,'createdAt':x.created_at.isoformat()} for x in supplier.portal_submissions.order_by('-id')[:20]]})
-    data=_body(request) or {}; po=PurchaseOrder.objects.filter(company=access.company,supplier=supplier,pk=data.get('purchaseOrderId')).first() if data.get('purchaseOrderId') else None
+    data=_body(request) or {}; po=PurchaseOrder, AutomationRule, AutomationRun, Notification.objects.filter(company=access.company,supplier=supplier,pk=data.get('purchaseOrderId')).first() if data.get('purchaseOrderId') else None
     sub=SupplierPortalSubmission.objects.create(company=access.company,supplier=supplier,purchase_order=po,submission_type=data.get('type','NOTE'),payload=data.get('payload') or {})
     return JsonResponse({'id':sub.id,'status':sub.status},status=201)
 
@@ -128,3 +128,42 @@ def supplier_portal(request):
 def supplier_portal_admin(request):
     rows=SupplierPortalSubmission.objects.filter(company=request.company).select_related('supplier','purchase_order').order_by('-id')[:50]
     return JsonResponse({'submissions':[{'id':x.id,'supplier':x.supplier.name,'po':x.purchase_order.po_no if x.purchase_order else '', 'type':x.submission_type,'status':x.status,'payload':x.payload} for x in rows]})
+
+
+def _condition_matches(conditions, payload):
+    for key, expected in (conditions or {}).items():
+        actual=payload.get(key)
+        if isinstance(expected,dict):
+            if 'gte' in expected and Decimal(str(actual or 0)) < Decimal(str(expected['gte'])): return False
+            if 'gt' in expected and Decimal(str(actual or 0)) <= Decimal(str(expected['gt'])): return False
+            if 'eq' in expected and actual != expected['eq']: return False
+        elif actual != expected: return False
+    return True
+
+@csrf_exempt
+@require_http_methods(['GET','POST'])
+@api_auth_required
+def automations(request):
+    if request.method=='GET':
+        rules=AutomationRule.objects.filter(company=request.company).order_by('-id')
+        runs=AutomationRun.objects.filter(company=request.company).select_related('rule').order_by('-id')[:30]
+        return JsonResponse({'rules':[{'id':r.id,'name':r.name,'event':r.event,'conditions':r.conditions,'actions':r.actions,'active':r.is_active,'lastRun':r.last_run_at.isoformat() if r.last_run_at else None} for r in rules],'runs':[{'id':x.id,'rule':x.rule.name,'event':x.event,'status':x.status,'actions':x.actions_executed,'createdAt':x.created_at.isoformat()} for x in runs]})
+    data=_body(request) or {}; action=data.get('action','create')
+    if action=='create':
+        r=AutomationRule.objects.create(company=request.company,name=data.get('name','New automation'),event=data.get('event','invoice.overdue'),conditions=data.get('conditions') or {},actions=data.get('actions') or [],created_by=request.api_user)
+        return JsonResponse({'id':r.id,'name':r.name},status=201)
+    if action=='test':
+        payload=data.get('payload') or {}; event=data.get('event','invoice.overdue'); executed=[]
+        for r in AutomationRule.objects.filter(company=request.company,event=event,is_active=True):
+            if not _condition_matches(r.conditions,payload): continue
+            action_names=[]
+            for item in r.actions:
+                kind=item.get('type') if isinstance(item,dict) else str(item); action_names.append(kind)
+                if kind=='notify': Notification.objects.create(company=request.company,user=request.api_user,title=item.get('title','Automation alert'),message=item.get('message',r.name),level='info',module=item.get('module','dashboard'))
+                elif kind=='create_collection_task' and payload.get('customerId'):
+                    c=Customer.objects.filter(company=request.company,pk=payload['customerId']).first()
+                    if c: CollectionTask.objects.create(company=request.company,customer=c,assigned_to=request.api_user,due_date=timezone.localdate(),amount_due=c.outstanding,priority='High',notes=f'Automation: {r.name}')
+            AutomationRun.objects.create(company=request.company,rule=r,event=event,entity_type=data.get('entityType',''),entity_id=str(data.get('entityId','')),actions_executed=action_names)
+            r.last_run_at=timezone.now(); r.save(update_fields=['last_run_at']); executed.append({'rule':r.name,'actions':action_names})
+        return JsonResponse({'matched':len(executed),'executed':executed})
+    return JsonResponse({'detail':'Unsupported action.'},status=400)

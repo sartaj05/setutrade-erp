@@ -62,4 +62,5 @@ urlpatterns = [
     path('supplier-portal/login/', expansion_views.supplier_portal_login),
     path('supplier-portal/', expansion_views.supplier_portal),
     path('supplier-portal-admin/', expansion_views.supplier_portal_admin),
+    path('automations/', expansion_views.automations),
 ]

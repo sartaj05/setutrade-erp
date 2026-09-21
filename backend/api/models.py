@@ -1019,3 +1019,26 @@ class SupplierPortalSubmission(models.Model):
     payload=models.JSONField(default=dict,blank=True)
     status=models.CharField(max_length=30,default='Submitted')
     created_at=models.DateTimeField(auto_now_add=True)
+
+# --- Growth v3 / Phase 14: workflow automation engine ---
+class AutomationRule(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='automation_rules')
+    name=models.CharField(max_length=140)
+    event=models.CharField(max_length=60)
+    conditions=models.JSONField(default=dict,blank=True)
+    actions=models.JSONField(default=list,blank=True)
+    is_active=models.BooleanField(default=True)
+    last_run_at=models.DateTimeField(null=True,blank=True)
+    created_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+
+class AutomationRun(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='automation_runs')
+    rule=models.ForeignKey(AutomationRule,on_delete=models.CASCADE,related_name='runs')
+    event=models.CharField(max_length=60)
+    entity_type=models.CharField(max_length=60,blank=True)
+    entity_id=models.CharField(max_length=80,blank=True)
+    status=models.CharField(max_length=30,default='Completed')
+    actions_executed=models.JSONField(default=list,blank=True)
+    error=models.TextField(blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
