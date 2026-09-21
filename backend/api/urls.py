@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views
+from . import views, expansion_views
 
 urlpatterns = [
     path('health/', views.health),
@@ -57,4 +57,5 @@ urlpatterns = [
     path('subscription/', views.subscription_billing),
     path('forecasting/', views.forecasting),
     path('assistant/', views.ai_assistant),
+    path('collections/', expansion_views.collections),
 ]

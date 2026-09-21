@@ -901,3 +901,56 @@ class AssistantMessage(models.Model):
     intent=models.CharField(max_length=60,blank=True)
     data=models.JSONField(default=dict,blank=True)
     created_at=models.DateTimeField(auto_now_add=True)
+
+# --- Growth v3 / Phase 11: automated collections and reconciliation ---
+class PaymentTransaction(models.Model):
+    class Status(models.TextChoices):
+        UNMATCHED = 'Unmatched', 'Unmatched'
+        PARTIAL = 'Partial', 'Partial'
+        MATCHED = 'Matched', 'Matched'
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='payment_transactions')
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='payment_transactions')
+    reference = models.CharField(max_length=80)
+    method = models.CharField(max_length=30, default='UPI')
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    transaction_date = models.DateField()
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.UNMATCHED)
+    raw_payload = models.JSONField(default=dict, blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['company', 'reference'], name='unique_company_payment_reference')]
+
+
+class PaymentAllocation(models.Model):
+    transaction = models.ForeignKey(PaymentTransaction, on_delete=models.CASCADE, related_name='allocations')
+    invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, related_name='payment_allocations')
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class PaymentPromise(models.Model):
+    class Status(models.TextChoices):
+        OPEN='Open','Open'; KEPT='Kept','Kept'; BROKEN='Broken','Broken'; CANCELLED='Cancelled','Cancelled'
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='payment_promises')
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='payment_promises')
+    promised_amount = models.DecimalField(max_digits=14, decimal_places=2)
+    promised_date = models.DateField()
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.OPEN)
+    notes = models.CharField(max_length=240, blank=True)
+    created_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class CollectionTask(models.Model):
+    class Status(models.TextChoices):
+        OPEN='Open','Open'; CONTACTED='Contacted','Contacted'; COLLECTED='Collected','Collected'; RESCHEDULED='Rescheduled','Rescheduled'
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='collection_tasks')
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='collection_tasks')
+    assigned_to = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='collection_tasks')
+    due_date = models.DateField()
+    amount_due = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    priority = models.CharField(max_length=20, default='Normal')
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.OPEN)
+    notes = models.CharField(max_length=240, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
