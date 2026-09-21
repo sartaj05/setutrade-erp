@@ -7,11 +7,11 @@ export const demoAccounts = [
 ];
 
 export const permissions = {
-  OWNER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'quotations', 'payments', 'reports', 'team', 'settings'],
-  MANAGER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'quotations', 'payments', 'reports'],
-  SALES: ['dashboard', 'customers', 'orders', 'quotations', 'payments'],
+  OWNER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'quotations', 'payments', 'reports', 'team', 'settings'],
+  MANAGER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'quotations', 'payments', 'reports'],
+  SALES: ['dashboard', 'customers', 'orders', 'invoices', 'quotations', 'payments'],
   WAREHOUSE: ['dashboard', 'products', 'inventory', 'orders'],
-  ACCOUNTANT: ['dashboard', 'customers', 'orders', 'payments', 'reports'],
+  ACCOUNTANT: ['dashboard', 'customers', 'orders', 'invoices', 'payments', 'reports'],
 };
 
 export const roleHomeCopy = {
@@ -59,4 +59,10 @@ export const demoCustomers = [
   { id: 'C-103', name: 'Ahuja Enterprises', city: 'Delhi', phone: '9899011122', outstanding: 0, limit: 200000, due: '—', status: 'Clear' },
   { id: 'C-104', name: 'NCR Buildmart', city: 'Gurugram', phone: '9958012211', outstanding: 76750, limit: 250000, due: '25 Sep', status: 'Current' },
   { id: 'C-105', name: 'Sethi Hardware House', city: 'Faridabad', phone: '9818817717', outstanding: 124600, limit: 180000, due: '18 Sep', status: 'Overdue' },
+];
+
+export const demoInvoices = [
+  { id: 'INV-2026-1184', order: 'SO-1097', customer: 'R.K. Trading Co.', gstin: '09AABCR1234A1Z5', taxable: 49356, tax: 8884, total: 58240, status: 'Unpaid', date: '21 Sep' },
+  { id: 'INV-2026-1183', order: 'SO-1095', customer: 'Ahuja Enterprises', gstin: '07AAECA3344M1Z2', taxable: 64508, tax: 11612, total: 76120, status: 'Paid', date: '20 Sep' },
+  { id: 'INV-2026-1182', order: 'SO-1094', customer: 'NCR Buildmart', gstin: '06AAGFN7788B1Z9', taxable: 24983, tax: 4497, total: 29480, status: 'Credit', date: '20 Sep' },
 ];

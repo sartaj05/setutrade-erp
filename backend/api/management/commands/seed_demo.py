@@ -1,7 +1,7 @@
 from datetime import date
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand
-from api.models import Customer, Order, Product, Profile
+from api.models import Customer, Invoice, Order, Product, Profile
 
 ACCOUNTS = [
     ('owner', 'Arjun', 'Khanna', 'owner@setustock.demo', 'OWNER'),
@@ -53,6 +53,16 @@ class Command(BaseCommand):
             ('SO-1095','C-103',76120,'Packed','Paid',date(2026,9,20)),
             ('SO-1094','C-104',29480,'Dispatched','Credit',date(2026,9,20)),
         ]
+        order_map = {}
         for no, code, total, status, payment, order_date in order_rows:
-            Order.objects.update_or_create(order_no=no, defaults={'customer':customer_map[code],'total':total,'status':status,'payment_status':payment,'order_date':order_date})
+            order, _ = Order.objects.update_or_create(order_no=no, defaults={'customer':customer_map[code],'total':total,'status':status,'payment_status':payment,'order_date':order_date})
+            order_map[no] = order
+
+        invoice_rows = [
+            ('INV-2026-1184','SO-1097','09AABCR1234A1Z5',49356,4442,4442,0,58240,'Unpaid',date(2026,9,21)),
+            ('INV-2026-1183','SO-1095','07AAECA3344M1Z2',64508,5806,5806,0,76120,'Paid',date(2026,9,20)),
+            ('INV-2026-1182','SO-1094','06AAGFN7788B1Z9',24983,2248.5,2248.5,0,29480,'Credit',date(2026,9,20)),
+        ]
+        for invoice_no, order_no, gstin, taxable, cgst, sgst, igst, total, status, invoice_date in invoice_rows:
+            Invoice.objects.update_or_create(invoice_no=invoice_no, defaults={'order':order_map[order_no],'gstin':gstin,'taxable_amount':taxable,'cgst':cgst,'sgst':sgst,'igst':igst,'total':total,'status':status,'invoice_date':invoice_date})
         self.stdout.write(self.style.SUCCESS('SetuStock demo data created.'))

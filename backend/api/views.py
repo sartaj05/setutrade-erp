@@ -6,14 +6,14 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from .auth import api_auth_required, create_token, roles_allowed
-from .models import Customer, Order, Product
+from .models import Customer, Invoice, Order, Product
 
 PERMISSIONS = {
-    'OWNER': ['dashboard','products','inventory','customers','orders','quotations','payments','reports','team','settings'],
-    'MANAGER': ['dashboard','products','inventory','customers','orders','quotations','payments','reports'],
-    'SALES': ['dashboard','customers','orders','quotations','payments'],
+    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','quotations','payments','reports','team','settings'],
+    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','quotations','payments','reports'],
+    'SALES': ['dashboard','customers','orders','invoices','quotations','payments'],
     'WAREHOUSE': ['dashboard','products','inventory','orders'],
-    'ACCOUNTANT': ['dashboard','customers','orders','payments','reports'],
+    'ACCOUNTANT': ['dashboard','customers','orders','invoices','payments','reports'],
 }
 
 def user_payload(user):
@@ -115,3 +115,14 @@ def orders(request):
         'id': o.order_no, 'customer': o.customer.name, 'total': float(o.total), 'status': o.status,
         'payment': o.payment_status, 'date': o.order_date.strftime('%d %b')
     } for o in rows]})
+
+
+@require_GET
+@roles_allowed('OWNER', 'MANAGER', 'SALES', 'ACCOUNTANT')
+def invoices(request):
+    rows = Invoice.objects.select_related('order__customer').order_by('-invoice_date', '-id')
+    return JsonResponse({'invoices': [{
+        'id': i.invoice_no, 'order': i.order.order_no, 'customer': i.order.customer.name, 'gstin': i.gstin,
+        'taxable': float(i.taxable_amount), 'tax': float(i.cgst + i.sgst + i.igst), 'total': float(i.total),
+        'status': i.status, 'date': i.invoice_date.strftime('%d %b')
+    } for i in rows]})

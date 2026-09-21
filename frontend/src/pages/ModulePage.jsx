@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { demoCustomers, demoDashboard, demoProducts } from '../data/demoData';
+import { demoCustomers, demoDashboard, demoInvoices, demoProducts } from '../data/demoData';
 import { useApiData } from '../services/useApiData';
 
 const money = (value) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
@@ -64,6 +64,22 @@ function Orders() {
   );
 }
 
+
+function Invoices() {
+  const [search, setSearch] = useState('');
+  const { data: invoices } = useApiData('invoices', demoInvoices, 'invoices');
+  const rows = useMemo(() => invoices.filter((i) => `${i.id} ${i.customer} ${i.order} ${i.gstin}`.toLowerCase().includes(search.toLowerCase())), [search, invoices]);
+  return (
+    <div>
+      <Toolbar title="GST invoices" subtitle="GST-ready invoice records linked to customer orders and payment status." action="Create invoice" search={search} setSearch={setSearch} />
+      <div className="module-summary"><div><span>September invoices</span><strong>42</strong><small>₹18.7L billed</small></div><div><span>GST collected</span><strong>₹2.41L</strong><small>demo tax total</small></div><div><span>Unpaid invoices</span><strong>11</strong><small>₹3.18L due</small></div></div>
+      <article className="panel module-panel"><div className="table-wrap"><table className="data-table module-table"><thead><tr><th>Invoice</th><th>Customer / GSTIN</th><th>Order</th><th>Taxable</th><th>GST</th><th>Total</th><th>Status</th></tr></thead><tbody>
+        {rows.map((i) => <tr key={i.id}><td><strong>{i.id}</strong><small>{i.date}</small></td><td><strong>{i.customer}</strong><small>{i.gstin}</small></td><td>{i.order}</td><td>{money(i.taxable)}</td><td>{money(i.tax)}</td><td><strong>{money(i.total)}</strong></td><td><span className={`text-status ${i.status.toLowerCase()}`}>{i.status}</span></td></tr>)}
+      </tbody></table></div></article>
+    </div>
+  );
+}
+
 function SimpleModule({ module }) {
   const [search, setSearch] = useState('');
   const content = {
@@ -90,5 +106,6 @@ export default function ModulePage({ module }) {
   if (module === 'inventory') return <Products inventoryOnly />;
   if (module === 'customers') return <Customers />;
   if (module === 'orders') return <Orders />;
+  if (module === 'invoices') return <Invoices />;
   return <SimpleModule module={module} />;
 }

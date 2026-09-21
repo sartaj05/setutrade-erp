@@ -69,3 +69,25 @@ class Order(models.Model):
 
     def __str__(self):
         return self.order_no
+
+
+class Invoice(models.Model):
+    class Status(models.TextChoices):
+        PAID = 'Paid', 'Paid'
+        UNPAID = 'Unpaid', 'Unpaid'
+        CREDIT = 'Credit', 'Credit'
+
+    invoice_no = models.CharField(max_length=40, unique=True)
+    order = models.OneToOneField(Order, on_delete=models.PROTECT, related_name='invoice')
+    gstin = models.CharField(max_length=20, blank=True)
+    taxable_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    cgst = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    sgst = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    igst = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.UNPAID)
+    invoice_date = models.DateField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.invoice_no
