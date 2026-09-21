@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 from .auth import api_auth_required
-from .models import Customer, Invoice, PaymentTransaction, PaymentAllocation, PaymentPromise, CollectionTask, Warehouse, WarehouseBin, BinStock, PickList, PickListItem, CycleCount, Order, OrderItem, Product, Supplier, SupplierPortalAccess, SupplierPortalSubmission, PurchaseOrder, AutomationRule, AutomationRun, Notification
+from .models import Customer, Invoice, PaymentTransaction, PaymentAllocation, PaymentPromise, CollectionTask, Warehouse, WarehouseBin, BinStock, PickList, PickListItem, CycleCount, Order, OrderItem, Product, Supplier, SupplierPortalAccess, SupplierPortalSubmission, PurchaseOrder, AutomationRule, AutomationRun, Notification, ExternalChannel, ExternalOrder, ExternalOrderItem
 
 
 def _body(request):
@@ -118,9 +118,9 @@ def supplier_portal(request):
     if not access: return JsonResponse({'detail':'Supplier portal authentication required.'},status=401)
     supplier=access.supplier
     if request.method=='GET':
-        pos=PurchaseOrder, AutomationRule, AutomationRun, Notification.objects.filter(company=access.company,supplier=supplier).order_by('-order_date','-id')[:30]
+        pos=PurchaseOrder, AutomationRule, AutomationRun, Notification, ExternalChannel, ExternalOrder, ExternalOrderItem.objects.filter(company=access.company,supplier=supplier).order_by('-order_date','-id')[:30]
         return JsonResponse({'supplier':supplier.name,'purchaseOrders':[{'id':p.id,'poNo':p.po_no,'date':p.order_date.isoformat(),'status':p.status,'total':_money(p.total),'expected':p.expected_date.isoformat() if p.expected_date else None} for p in pos],'submissions':[{'id':x.id,'type':x.submission_type,'status':x.status,'payload':x.payload,'createdAt':x.created_at.isoformat()} for x in supplier.portal_submissions.order_by('-id')[:20]]})
-    data=_body(request) or {}; po=PurchaseOrder, AutomationRule, AutomationRun, Notification.objects.filter(company=access.company,supplier=supplier,pk=data.get('purchaseOrderId')).first() if data.get('purchaseOrderId') else None
+    data=_body(request) or {}; po=PurchaseOrder, AutomationRule, AutomationRun, Notification, ExternalChannel, ExternalOrder, ExternalOrderItem.objects.filter(company=access.company,supplier=supplier,pk=data.get('purchaseOrderId')).first() if data.get('purchaseOrderId') else None
     sub=SupplierPortalSubmission.objects.create(company=access.company,supplier=supplier,purchase_order=po,submission_type=data.get('type','NOTE'),payload=data.get('payload') or {})
     return JsonResponse({'id':sub.id,'status':sub.status},status=201)
 
@@ -159,11 +159,53 @@ def automations(request):
             action_names=[]
             for item in r.actions:
                 kind=item.get('type') if isinstance(item,dict) else str(item); action_names.append(kind)
-                if kind=='notify': Notification.objects.create(company=request.company,user=request.api_user,title=item.get('title','Automation alert'),message=item.get('message',r.name),level='info',module=item.get('module','dashboard'))
+                if kind=='notify': Notification, ExternalChannel, ExternalOrder, ExternalOrderItem.objects.create(company=request.company,user=request.api_user,title=item.get('title','Automation alert'),message=item.get('message',r.name),level='info',module=item.get('module','dashboard'))
                 elif kind=='create_collection_task' and payload.get('customerId'):
                     c=Customer.objects.filter(company=request.company,pk=payload['customerId']).first()
                     if c: CollectionTask.objects.create(company=request.company,customer=c,assigned_to=request.api_user,due_date=timezone.localdate(),amount_due=c.outstanding,priority='High',notes=f'Automation: {r.name}')
             AutomationRun.objects.create(company=request.company,rule=r,event=event,entity_type=data.get('entityType',''),entity_id=str(data.get('entityId','')),actions_executed=action_names)
             r.last_run_at=timezone.now(); r.save(update_fields=['last_run_at']); executed.append({'rule':r.name,'actions':action_names})
         return JsonResponse({'matched':len(executed),'executed':executed})
+    return JsonResponse({'detail':'Unsupported action.'},status=400)
+
+
+@csrf_exempt
+@require_http_methods(['GET','POST'])
+@api_auth_required
+def channels(request):
+    company=request.company
+    if request.method=='GET':
+        cs=ExternalChannel.objects.filter(company=company).order_by('name')
+        orders=ExternalOrder.objects.filter(company=company).select_related('channel').prefetch_related('items').order_by('-id')[:50]
+        return JsonResponse({'channels':[{'id':c.id,'name':c.name,'provider':c.provider,'active':c.is_active,'storeId':c.external_store_id,'lastSync':c.last_sync_at.isoformat() if c.last_sync_at else None} for c in cs],'orders':[{'id':o.id,'externalId':o.external_id,'channel':o.channel.name,'provider':o.channel.provider,'customer':o.customer_name,'phone':o.customer_phone,'total':_money(o.total),'status':o.status,'receivedAt':o.received_at.isoformat(),'items':[{'sku':i.external_sku,'name':i.name,'qty':_money(i.quantity),'price':_money(i.unit_price),'matched':bool(i.product_id)} for i in o.items.all()]} for o in orders]})
+    data=_body(request) or {}; action=data.get('action','create-channel')
+    if action=='create-channel':
+        c=ExternalChannel.objects.create(company=company,name=data.get('name','Web Store'),provider=data.get('provider','WEBSITE'),external_store_id=data.get('storeId',''),settings=data.get('settings') or {})
+        return JsonResponse({'id':c.id,'name':c.name,'provider':c.provider},status=201)
+    if action=='ingest-order':
+        c=ExternalChannel.objects.filter(company=company,pk=data.get('channelId'),is_active=True).first()
+        if not c: return JsonResponse({'detail':'Channel not found.'},status=404)
+        ext=str(data.get('externalId') or f'EXT-{timezone.now().strftime("%y%m%d%H%M%S")}')
+        o,created=ExternalOrder.objects.get_or_create(channel=c,external_id=ext,defaults={'company':company,'customer_name':data.get('customerName','External buyer'),'customer_phone':data.get('phone',''),'ship_to':data.get('shipTo') or {},'total':data.get('total',0),'raw_payload':data})
+        if created:
+            for row in data.get('items',[]):
+                sku=str(row.get('sku','')); product=Product.objects.filter(company=company,sku=sku).first()
+                ExternalOrderItem.objects.create(external_order=o,external_sku=sku,product=product,name=row.get('name') or (product.name if product else sku),quantity=row.get('quantity',1),unit_price=row.get('unitPrice',0))
+        c.last_sync_at=timezone.now(); c.save(update_fields=['last_sync_at'])
+        return JsonResponse({'id':o.id,'created':created,'status':o.status},status=201 if created else 200)
+    if action=='convert':
+        ext=ExternalOrder.objects.filter(company=company,pk=data.get('id')).select_related('channel').prefetch_related('items').first()
+        customer=Customer.objects.filter(company=company,pk=data.get('customerId')).first()
+        warehouse=Warehouse.objects.filter(company=company,pk=data.get('warehouseId')).first()
+        if not ext or not customer or not warehouse: return JsonResponse({'detail':'Order, customer or warehouse missing.'},status=400)
+        if ext.converted_order_id: return JsonResponse({'detail':'Already converted.','orderId':ext.converted_order_id})
+        o=Order.objects.create(company=company,warehouse=warehouse,order_no=f'CH-{timezone.now().strftime("%y%m%d%H%M%S")}',customer=customer,order_date=timezone.localdate(),status='Draft',created_by=request.api_user,notes=f'{ext.channel.provider} {ext.external_id}')
+        subtotal=Decimal('0')
+        for row in ext.items.all():
+            if not row.product_id: continue
+            line=Decimal(str(row.quantity))*Decimal(str(row.unit_price)); subtotal+=line
+            OrderItem.objects.create(order=o,product=row.product,quantity=row.quantity,unit_price=row.unit_price,gst_rate=row.product.gst_rate,taxable_amount=line,tax_amount=line*row.product.gst_rate/100,line_total=line+(line*row.product.gst_rate/100))
+        o.subtotal=subtotal; o.tax=sum((x.tax_amount for x in o.items.all()),Decimal('0')); o.total=o.subtotal+o.tax; o.save(update_fields=['subtotal','tax','total'])
+        ext.converted_order=o; ext.status='Converted'; ext.save(update_fields=['converted_order','status'])
+        return JsonResponse({'orderId':o.id,'orderNo':o.order_no,'total':_money(o.total)})
     return JsonResponse({'detail':'Unsupported action.'},status=400)

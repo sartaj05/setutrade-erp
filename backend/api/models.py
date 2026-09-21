@@ -1042,3 +1042,38 @@ class AutomationRun(models.Model):
     actions_executed=models.JSONField(default=list,blank=True)
     error=models.TextField(blank=True)
     created_at=models.DateTimeField(auto_now_add=True)
+
+# --- Growth v3 / Phase 15: external commerce channel integration ---
+class ExternalChannel(models.Model):
+    class Provider(models.TextChoices): WEBSITE='WEBSITE','Website'; ONDC='ONDC','ONDC'; MARKETPLACE='MARKETPLACE','Marketplace'; CUSTOM='CUSTOM','Custom API'
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='external_channels')
+    name=models.CharField(max_length=120)
+    provider=models.CharField(max_length=30,choices=Provider.choices,default=Provider.WEBSITE)
+    external_store_id=models.CharField(max_length=120,blank=True)
+    is_active=models.BooleanField(default=True)
+    settings=models.JSONField(default=dict,blank=True)
+    last_sync_at=models.DateTimeField(null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+
+class ExternalOrder(models.Model):
+    class Status(models.TextChoices): NEW='New','New'; REVIEW='Review','Review'; CONVERTED='Converted','Converted'; REJECTED='Rejected','Rejected'
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='external_orders')
+    channel=models.ForeignKey(ExternalChannel,on_delete=models.PROTECT,related_name='orders')
+    external_id=models.CharField(max_length=120)
+    customer_name=models.CharField(max_length=160)
+    customer_phone=models.CharField(max_length=20,blank=True)
+    ship_to=models.JSONField(default=dict,blank=True)
+    total=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    status=models.CharField(max_length=20,choices=Status.choices,default=Status.NEW)
+    raw_payload=models.JSONField(default=dict,blank=True)
+    converted_order=models.ForeignKey(Order,on_delete=models.SET_NULL,null=True,blank=True,related_name='external_sources')
+    received_at=models.DateTimeField(auto_now_add=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['channel','external_id'],name='unique_channel_external_order')]
+
+class ExternalOrderItem(models.Model):
+    external_order=models.ForeignKey(ExternalOrder,on_delete=models.CASCADE,related_name='items')
+    external_sku=models.CharField(max_length=80)
+    product=models.ForeignKey(Product,on_delete=models.SET_NULL,null=True,blank=True,related_name='external_order_items')
+    name=models.CharField(max_length=180)
+    quantity=models.DecimalField(max_digits=12,decimal_places=2)
+    unit_price=models.DecimalField(max_digits=12,decimal_places=2)
