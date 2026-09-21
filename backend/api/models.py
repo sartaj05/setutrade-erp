@@ -1445,3 +1445,19 @@ class ProfitabilitySnapshot(models.Model):
     margin_percent=models.DecimalField(max_digits=8,decimal_places=2,default=0)
     generated_at=models.DateTimeField(auto_now=True)
     class Meta: constraints=[models.UniqueConstraint(fields=['company','dimension','entity_key','period_from','period_to'],name='unique_profitability_snapshot')]
+
+# --- Growth v4 / Phase 26: approval-gated AI action copilot ---
+class CopilotActionProposal(models.Model):
+    class Status(models.TextChoices): PROPOSED='Proposed','Proposed'; APPROVED='Approved','Approved'; EXECUTED='Executed','Executed'; REJECTED='Rejected','Rejected'; FAILED='Failed','Failed'
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='copilot_proposals')
+    requested_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True,related_name='copilot_requests')
+    approved_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True,related_name='copilot_approvals')
+    action_type=models.CharField(max_length=80)
+    title=models.CharField(max_length=180)
+    rationale=models.TextField(blank=True)
+    payload=models.JSONField(default=dict,blank=True)
+    risk_level=models.CharField(max_length=20,default='Medium')
+    requires_approval=models.BooleanField(default=True)
+    status=models.CharField(max_length=20,choices=Status.choices,default=Status.PROPOSED)
+    result=models.JSONField(default=dict,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True); approved_at=models.DateTimeField(null=True,blank=True); executed_at=models.DateTimeField(null=True,blank=True)

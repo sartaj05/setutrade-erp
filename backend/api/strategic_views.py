@@ -216,3 +216,46 @@ def executive_bi(request):
     if not rows.exists(): _rebuild_profitability(company,start,end);rows=m.ProfitabilitySnapshot.objects.filter(company=company,period_from=start,period_to=end).order_by('-contribution_profit')
     revenue=rows.aggregate(v=Sum('revenue'))['v'] or 0; contribution=rows.aggregate(v=Sum('contribution_profit'))['v'] or 0
     return JsonResponse({'summary':{'revenue':_money(revenue),'contribution':_money(contribution),'margin':round(float(contribution/revenue*100),2) if revenue else 0,'entities':rows.count()},'rows':[{'id':x.id,'dimension':x.dimension,'entity':x.entity_name,'revenue':_money(x.revenue),'cogs':_money(x.cogs),'grossProfit':_money(x.gross_profit),'discounts':_money(x.discounts),'returns':_money(x.returns),'deliveryCost':_money(x.delivery_cost),'financeCost':_money(x.finance_cost),'contribution':_money(x.contribution_profit),'margin':_money(x.margin_percent)} for x in rows[:100]]})
+
+
+def _copilot_proposal(company,user,prompt):
+    q=(prompt or '').lower()
+    if any(x in q for x in ['collect','overdue','payment reminder']):
+        customers=list(m.Customer.objects.filter(company=company,outstanding__gt=0).order_by('-outstanding')[:20]);return m.CopilotActionProposal.objects.create(company=company,requested_by=user,action_type='CREATE_COLLECTION_TASKS',title='Create collection tasks for outstanding customers',rationale=f'{len(customers)} customers have an outstanding balance. Human approval is required before tasks are created.',payload={'customerIds':[x.id for x in customers]},risk_level='Medium')
+    if any(x in q for x in ['purchase','reorder','stock out','stockout']):
+        recs=list(m.ProcurementRecommendation.objects.filter(company=company,status='Open').values_list('id',flat=True)[:30]);return m.CopilotActionProposal.objects.create(company=company,requested_by=user,action_type='APPROVE_PROCUREMENT_RECOMMENDATIONS',title='Approve reviewed procurement recommendations',rationale=f'{len(recs)} open recommendations are available. Approval changes recommendation state but does not send a supplier PO.',payload={'recommendationIds':recs},risk_level='High')
+    return m.CopilotActionProposal.objects.create(company=company,requested_by=user,action_type='REVIEW_ONLY',title='Review business question',rationale='No safe transactional action was inferred. The proposal remains review-only.',payload={'prompt':prompt},risk_level='Low')
+
+def _execute_copilot(request, proposal):
+    if proposal.action_type=='CREATE_COLLECTION_TASKS':
+        created=0
+        for c in m.Customer.objects.filter(company=request.company,id__in=proposal.payload.get('customerIds',[]),outstanding__gt=0):
+            _,was=m.CollectionTask.objects.get_or_create(company=request.company,customer=c,due_date=timezone.localdate(),status='Open',defaults={'assigned_to':request.api_user,'amount_due':c.outstanding,'priority':'High' if c.outstanding>=50000 else 'Normal','notes':'Created by approved AI copilot proposal'});created+=int(was)
+        return {'createdCollectionTasks':created}
+    if proposal.action_type=='APPROVE_PROCUREMENT_RECOMMENDATIONS':
+        count=m.ProcurementRecommendation.objects.filter(company=request.company,id__in=proposal.payload.get('recommendationIds',[]),status='Open').update(status='Approved');return {'approvedRecommendations':count,'purchaseOrdersSent':0}
+    return {'executed':False,'note':'Review-only proposal; no transaction performed.'}
+
+@csrf_exempt
+@require_http_methods(['GET','POST'])
+@api_auth_required
+def copilot_actions(request):
+    company=request.company
+    if request.method=='GET':
+        rows=m.CopilotActionProposal.objects.filter(company=company).select_related('requested_by','approved_by').order_by('-id')[:50]
+        return JsonResponse({'summary':{'proposed':rows.filter(status='Proposed').count(),'executed':rows.filter(status='Executed').count(),'highRisk':rows.filter(risk_level='High',status='Proposed').count()},'proposals':[{'id':x.id,'title':x.title,'actionType':x.action_type,'rationale':x.rationale,'risk':x.risk_level,'status':x.status,'requestedBy':x.requested_by.get_full_name() if x.requested_by else 'System','approvedBy':x.approved_by.get_full_name() if x.approved_by else '', 'result':x.result,'createdAt':_dt(x.created_at)} for x in rows]})
+    data=_body(request);action=data.get('action','propose')
+    if action=='propose':
+        row=_copilot_proposal(company,request.api_user,data.get('prompt','Prepare collection tasks for overdue customers'));audit(request,'PROPOSE','CopilotActionProposal',row.id,row.title);return JsonResponse({'id':row.id,'title':row.title,'actionType':row.action_type,'risk':row.risk_level,'status':row.status,'rationale':row.rationale},status=201)
+    row=m.CopilotActionProposal.objects.filter(company=company,pk=data.get('id')).first()
+    if not row:return JsonResponse({'detail':'Proposal not found.'},status=404)
+    if request.api_user.profile.role not in ['OWNER','MANAGER']:return JsonResponse({'detail':'Owner or manager approval is required.'},status=403)
+    if action=='reject': row.status='Rejected';row.approved_by=request.api_user;row.approved_at=timezone.now();row.save(update_fields=['status','approved_by','approved_at']);audit(request,'REJECT','CopilotActionProposal',row.id,row.title);return JsonResponse({'id':row.id,'status':row.status})
+    if action=='approve':
+        if row.status!='Proposed':return JsonResponse({'detail':'Only proposed actions can be approved.'},status=400)
+        with transaction.atomic():
+            row.status='Approved';row.approved_by=request.api_user;row.approved_at=timezone.now();row.save(update_fields=['status','approved_by','approved_at']);
+            try: result=_execute_copilot(request,row);row.status='Executed';row.result=result;row.executed_at=timezone.now();row.save(update_fields=['status','result','executed_at'])
+            except Exception as exc: row.status='Failed';row.result={'error':str(exc)};row.save(update_fields=['status','result']);raise
+        audit(request,'EXECUTE','CopilotActionProposal',row.id,row.title,changes=row.result);return JsonResponse({'id':row.id,'status':row.status,'result':row.result})
+    return JsonResponse({'detail':'Unsupported action.'},status=400)
