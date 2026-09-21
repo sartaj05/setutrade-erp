@@ -18,6 +18,7 @@ const moduleLabels = {
   tax: ['GST & Tax', 'receipt'],
   pricing: ['Price Rules', 'receipt'],
   returns: ['Returns & Damage', 'box'],
+  'field-sales': ['Field Sales', 'users'],
   quotations: ['Quotations', 'receipt'],
   payments: ['Payments', 'receipt'],
   reports: ['Reports', 'chart'],

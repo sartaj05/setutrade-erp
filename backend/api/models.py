@@ -332,3 +332,28 @@ class ReturnItem(models.Model):
     quantity = models.DecimalField(max_digits=12, decimal_places=2)
     unit_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     condition = models.CharField(max_length=30, default='Resellable')
+
+class SalesVisit(models.Model):
+    class Status(models.TextChoices):
+        PLANNED = 'Planned', 'Planned'
+        VISITED = 'Visited', 'Visited'
+        MISSED = 'Missed', 'Missed'
+
+    salesperson = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sales_visits')
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='sales_visits')
+    visit_date = models.DateField()
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PLANNED)
+    territory = models.CharField(max_length=100, blank=True)
+    order_value = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    collection_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    notes = models.CharField(max_length=240, blank=True)
+
+
+class SalesTarget(models.Model):
+    salesperson = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sales_targets')
+    month = models.DateField()
+    target_sales = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    target_collection = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['salesperson', 'month'], name='unique_sales_target_month')]

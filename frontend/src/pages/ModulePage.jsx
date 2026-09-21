@@ -103,7 +103,7 @@ function SimpleModule({ module }) {
 }
 
 export default function ModulePage({ module }) {
-  if (['purchases', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'tax', 'pricing', 'returns'].includes(module)) return <EnhancedModulePage module={module} />;
+  if (['purchases', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'tax', 'pricing', 'returns', 'field-sales'].includes(module)) return <EnhancedModulePage module={module} />;
   if (module === 'products') return <Products />;
   if (module === 'inventory') return <Products inventoryOnly />;
   if (module === 'customers') return <Customers />;

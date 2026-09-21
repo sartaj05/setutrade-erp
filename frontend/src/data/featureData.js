@@ -79,3 +79,13 @@ export const demoReturns = {
     { id: 'ADJ-2026-070', type: 'Count correction', product: 'GM 8 Module Plate', sku: 'GM-PLT-8', warehouse: 'Delhi Central', quantity: 2, date: '20 Sep', reason: 'Cycle count correction' },
   ],
 };
+
+export const demoFieldSales = {
+  target: { sales: 1200000, collection: 600000 },
+  visits: [
+    { id: 1, salesperson: 'Rohit Bansal', customer: 'R.K. Trading Co.', city: 'Ghaziabad', date: '21 Sep', status: 'Visited', territory: 'Ghaziabad East', orderValue: 58240, collection: 18000, notes: 'Order confirmed; next visit Friday.' },
+    { id: 2, salesperson: 'Rohit Bansal', customer: 'Metro Electricals', city: 'Noida', date: '21 Sep', status: 'Visited', territory: 'Noida Central', orderValue: 38400, collection: 12000, notes: 'Collection partial; customer asked for MCB quote.' },
+    { id: 3, salesperson: 'Rohit Bansal', customer: 'NCR Buildmart', city: 'Gurugram', date: '21 Sep', status: 'Planned', territory: 'Gurugram North', orderValue: 0, collection: 0, notes: 'Discuss project cable requirement.' },
+    { id: 4, salesperson: 'Rohit Bansal', customer: 'Sethi Hardware House', city: 'Faridabad', date: '22 Sep', status: 'Planned', territory: 'Faridabad', orderValue: 0, collection: 0, notes: 'Priority collection follow-up.' },
+  ],
+};
