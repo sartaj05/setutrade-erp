@@ -27,7 +27,7 @@ from .auth import (
     revoke_request_session, roles_allowed,
 )
 from .models import (
-    AccountingConnection, AccountingExportJob, ApprovalPolicy, ApprovalRequest, Attachment, AuditLog, PurchaseInvoiceCapture, BarcodeScanLog, Branch, Company, Customer, CustomerPortalAccess, CustomerPortalOrder, DeliveryProof, DeliveryRun, DeliveryStop, GoodsReceipt,
+    AccountingConnection, AccountingExportJob, ApprovalPolicy, OfflineSyncReceipt, ApprovalRequest, Attachment, AuditLog, PurchaseInvoiceCapture, BarcodeScanLog, Branch, Company, Customer, CustomerPortalAccess, CustomerPortalOrder, DeliveryProof, DeliveryRun, DeliveryStop, GoodsReceipt,
     GoodsReceiptItem, InventoryMovement, Invoice, LedgerEntry, Notification, Order,
     OrderItem, Payment, PriceList, PriceRule, Product, PurchaseItem, PurchaseOrder,
     Quotation, QuotationItem, ReorderSuggestion, ReturnItem, ReturnOrder, SalesTarget,
@@ -41,10 +41,10 @@ from .services import (
 )
 
 PERMISSIONS = {
-    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','team','settings','audit','delivery','approvals','invoice-ocr', 'accounting'],
-    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','audit','delivery','approvals','invoice-ocr', 'accounting'],
-    'SALES': ['dashboard','customers','orders','invoices','ledger','whatsapp','tax','pricing','field-sales','quotations','payments','approvals','invoice-ocr'],
-    'WAREHOUSE': ['dashboard','products','inventory','orders','purchases','warehouses','barcode','returns','insights','delivery','approvals','invoice-ocr'],
+    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','team','settings','audit','delivery','approvals','invoice-ocr', 'accounting', 'offline'],
+    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','audit','delivery','approvals','invoice-ocr', 'accounting', 'offline'],
+    'SALES': ['dashboard','customers','orders','invoices','ledger','whatsapp','tax','pricing','field-sales','quotations','payments','approvals','invoice-ocr', 'offline'],
+    'WAREHOUSE': ['dashboard','products','inventory','orders','purchases','warehouses','barcode','returns','insights','delivery','approvals','invoice-ocr', 'offline'],
     'ACCOUNTANT': ['dashboard','customers','orders','invoices','purchases','ledger','tax','returns','insights','payments','reports','audit','delivery','approvals','invoice-ocr', 'accounting'],
 }
 
@@ -1163,3 +1163,23 @@ def accounting(request):
         return JsonResponse({'job':{'id':job.id,'exportNo':job.export_no,'voucherCount':job.voucher_count,'status':job.status,'payload':payload}},status=201)
     jobs=AccountingExportJob.objects.filter(company=request.company).order_by('-created_at')[:20]
     return JsonResponse({'connection':{'provider':conn.provider,'active':conn.is_active,'lastSyncAt':conn.last_sync_at.isoformat() if conn.last_sync_at else None},'jobs':[{'id':j.id,'exportNo':j.export_no,'provider':j.provider,'from':j.period_from.isoformat(),'to':j.period_to.isoformat(),'voucherCount':j.voucher_count,'status':j.status,'createdAt':j.created_at.isoformat()} for j in jobs]})
+
+@csrf_exempt
+@require_http_methods(['GET','POST'])
+@api_auth_required
+def offline_sync(request):
+    if request.method=='GET':
+        recent=OfflineSyncReceipt.objects.filter(company=request.company,user=request.api_user).order_by('-synced_at')[:20]
+        return JsonResponse({'online':True,'recent':[{'eventId':x.event_id,'type':x.event_type,'syncedAt':x.synced_at.isoformat()} for x in recent]})
+    body=_json_body(request) or {}; events=body.get('events') or []; device=str(body.get('deviceId',''))[:100]; results=[]
+    if not isinstance(events,list):return JsonResponse({'detail':'events must be a list.'},status=400)
+    for event in events[:100]:
+        if not isinstance(event,dict):continue
+        event_id=str(event.get('id',''))[:80]; kind=str(event.get('type',''))[:50]; payload=event.get('payload') if isinstance(event.get('payload'),dict) else {}
+        if not event_id or not kind:continue
+        receipt,created=OfflineSyncReceipt.objects.get_or_create(company=request.company,event_id=event_id,defaults={'event_type':kind,'payload':payload,'device_id':device,'user':request.api_user})
+        if created and kind=='sales-visit':
+            customer=Customer.objects.filter(pk=payload.get('customerId'),company=request.company).first()
+            if customer: SalesVisit.objects.create(company=request.company,salesperson=request.api_user,customer=customer,visit_date=_date(payload.get('date')),status=payload.get('status','Visited'),territory=str(payload.get('territory',''))[:100],order_value=decimal(payload.get('orderValue')),collection_amount=decimal(payload.get('collection')),notes=str(payload.get('notes',''))[:240])
+        results.append({'id':event_id,'status':'synced' if created else 'duplicate'})
+    return JsonResponse({'ok':True,'results':results,'synced':len(results)})

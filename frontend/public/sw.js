@@ -1,5 +1,5 @@
-const CACHE = 'setustock-shell-v1';
-const SHELL = ['/', '/login', '/app', '/manifest.webmanifest', '/icon.svg'];
+const CACHE = 'setustock-shell-v2';
+const SHELL = ['/', '/login', '/app', '/portal', '/manifest.webmanifest', '/icon.svg'];
 self.addEventListener('install', (event) => event.waitUntil(caches.open(CACHE).then((cache) => cache.addAll(SHELL)).catch(() => null)));
 self.addEventListener('activate', (event) => event.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))));
 self.addEventListener('fetch', (event) => {

@@ -826,3 +826,14 @@ class AccountingExportJob(models.Model):
     status=models.CharField(max_length=20,choices=Status.choices,default=Status.QUEUED)
     created_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
     created_at=models.DateTimeField(auto_now_add=True)
+
+
+class OfflineSyncReceipt(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='offline_sync_receipts')
+    event_id=models.CharField(max_length=80)
+    event_type=models.CharField(max_length=50)
+    payload=models.JSONField(default=dict,blank=True)
+    device_id=models.CharField(max_length=100,blank=True)
+    user=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
+    synced_at=models.DateTimeField(auto_now_add=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['company','event_id'],name='unique_company_offline_event')]
