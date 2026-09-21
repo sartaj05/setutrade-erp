@@ -1077,3 +1077,34 @@ class ExternalOrderItem(models.Model):
     name=models.CharField(max_length=180)
     quantity=models.DecimalField(max_digits=12,decimal_places=2)
     unit_price=models.DecimalField(max_digits=12,decimal_places=2)
+
+# --- Growth v3 / Phase 16: manufacturer-distributor network visibility ---
+class DistributionNetwork(models.Model):
+    owner_company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='owned_distribution_networks')
+    name=models.CharField(max_length=160)
+    code=models.CharField(max_length=40,unique=True)
+    is_active=models.BooleanField(default=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+
+class NetworkMember(models.Model):
+    network=models.ForeignKey(DistributionNetwork,on_delete=models.CASCADE,related_name='members')
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='network_memberships')
+    region=models.CharField(max_length=100,blank=True)
+    territory=models.CharField(max_length=100,blank=True)
+    share_inventory=models.BooleanField(default=True)
+    share_secondary_sales=models.BooleanField(default=True)
+    is_active=models.BooleanField(default=True)
+    joined_at=models.DateTimeField(auto_now_add=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['network','company'],name='unique_network_company_member')]
+
+class NetworkSnapshot(models.Model):
+    network=models.ForeignKey(DistributionNetwork,on_delete=models.CASCADE,related_name='snapshots')
+    member=models.ForeignKey(NetworkMember,on_delete=models.CASCADE,related_name='snapshots')
+    snapshot_date=models.DateField()
+    inventory_value=models.DecimalField(max_digits=16,decimal_places=2,default=0)
+    stock_units=models.DecimalField(max_digits=16,decimal_places=2,default=0)
+    secondary_sales=models.DecimalField(max_digits=16,decimal_places=2,default=0)
+    open_orders=models.PositiveIntegerField(default=0)
+    product_summary=models.JSONField(default=list,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['network','member','snapshot_date'],name='unique_network_member_snapshot')]

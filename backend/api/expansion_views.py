@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 from .auth import api_auth_required
-from .models import Customer, Invoice, PaymentTransaction, PaymentAllocation, PaymentPromise, CollectionTask, Warehouse, WarehouseBin, BinStock, PickList, PickListItem, CycleCount, Order, OrderItem, Product, Supplier, SupplierPortalAccess, SupplierPortalSubmission, PurchaseOrder, AutomationRule, AutomationRun, Notification, ExternalChannel, ExternalOrder, ExternalOrderItem
+from .models import Customer, Invoice, PaymentTransaction, PaymentAllocation, PaymentPromise, CollectionTask, Warehouse, WarehouseBin, BinStock, PickList, PickListItem, CycleCount, Order, OrderItem, Product, Supplier, SupplierPortalAccess, SupplierPortalSubmission, PurchaseOrder, AutomationRule, AutomationRun, Notification, ExternalChannel, ExternalOrder, ExternalOrderItem, DistributionNetwork, NetworkMember, NetworkSnapshot
 
 
 def _body(request):
@@ -118,9 +118,9 @@ def supplier_portal(request):
     if not access: return JsonResponse({'detail':'Supplier portal authentication required.'},status=401)
     supplier=access.supplier
     if request.method=='GET':
-        pos=PurchaseOrder, AutomationRule, AutomationRun, Notification, ExternalChannel, ExternalOrder, ExternalOrderItem.objects.filter(company=access.company,supplier=supplier).order_by('-order_date','-id')[:30]
+        pos=PurchaseOrder, AutomationRule, AutomationRun, Notification, ExternalChannel, ExternalOrder, ExternalOrderItem, DistributionNetwork, NetworkMember, NetworkSnapshot.objects.filter(company=access.company,supplier=supplier).order_by('-order_date','-id')[:30]
         return JsonResponse({'supplier':supplier.name,'purchaseOrders':[{'id':p.id,'poNo':p.po_no,'date':p.order_date.isoformat(),'status':p.status,'total':_money(p.total),'expected':p.expected_date.isoformat() if p.expected_date else None} for p in pos],'submissions':[{'id':x.id,'type':x.submission_type,'status':x.status,'payload':x.payload,'createdAt':x.created_at.isoformat()} for x in supplier.portal_submissions.order_by('-id')[:20]]})
-    data=_body(request) or {}; po=PurchaseOrder, AutomationRule, AutomationRun, Notification, ExternalChannel, ExternalOrder, ExternalOrderItem.objects.filter(company=access.company,supplier=supplier,pk=data.get('purchaseOrderId')).first() if data.get('purchaseOrderId') else None
+    data=_body(request) or {}; po=PurchaseOrder, AutomationRule, AutomationRun, Notification, ExternalChannel, ExternalOrder, ExternalOrderItem, DistributionNetwork, NetworkMember, NetworkSnapshot.objects.filter(company=access.company,supplier=supplier,pk=data.get('purchaseOrderId')).first() if data.get('purchaseOrderId') else None
     sub=SupplierPortalSubmission.objects.create(company=access.company,supplier=supplier,purchase_order=po,submission_type=data.get('type','NOTE'),payload=data.get('payload') or {})
     return JsonResponse({'id':sub.id,'status':sub.status},status=201)
 
@@ -159,7 +159,7 @@ def automations(request):
             action_names=[]
             for item in r.actions:
                 kind=item.get('type') if isinstance(item,dict) else str(item); action_names.append(kind)
-                if kind=='notify': Notification, ExternalChannel, ExternalOrder, ExternalOrderItem.objects.create(company=request.company,user=request.api_user,title=item.get('title','Automation alert'),message=item.get('message',r.name),level='info',module=item.get('module','dashboard'))
+                if kind=='notify': Notification, ExternalChannel, ExternalOrder, ExternalOrderItem, DistributionNetwork, NetworkMember, NetworkSnapshot.objects.create(company=request.company,user=request.api_user,title=item.get('title','Automation alert'),message=item.get('message',r.name),level='info',module=item.get('module','dashboard'))
                 elif kind=='create_collection_task' and payload.get('customerId'):
                     c=Customer.objects.filter(company=request.company,pk=payload['customerId']).first()
                     if c: CollectionTask.objects.create(company=request.company,customer=c,assigned_to=request.api_user,due_date=timezone.localdate(),amount_due=c.outstanding,priority='High',notes=f'Automation: {r.name}')
@@ -190,7 +190,7 @@ def channels(request):
         if created:
             for row in data.get('items',[]):
                 sku=str(row.get('sku','')); product=Product.objects.filter(company=company,sku=sku).first()
-                ExternalOrderItem.objects.create(external_order=o,external_sku=sku,product=product,name=row.get('name') or (product.name if product else sku),quantity=row.get('quantity',1),unit_price=row.get('unitPrice',0))
+                ExternalOrderItem, DistributionNetwork, NetworkMember, NetworkSnapshot.objects.create(external_order=o,external_sku=sku,product=product,name=row.get('name') or (product.name if product else sku),quantity=row.get('quantity',1),unit_price=row.get('unitPrice',0))
         c.last_sync_at=timezone.now(); c.save(update_fields=['last_sync_at'])
         return JsonResponse({'id':o.id,'created':created,'status':o.status},status=201 if created else 200)
     if action=='convert':
@@ -208,4 +208,49 @@ def channels(request):
         o.subtotal=subtotal; o.tax=sum((x.tax_amount for x in o.items.all()),Decimal('0')); o.total=o.subtotal+o.tax; o.save(update_fields=['subtotal','tax','total'])
         ext.converted_order=o; ext.status='Converted'; ext.save(update_fields=['converted_order','status'])
         return JsonResponse({'orderId':o.id,'orderNo':o.order_no,'total':_money(o.total)})
+    return JsonResponse({'detail':'Unsupported action.'},status=400)
+
+
+@csrf_exempt
+@require_http_methods(['GET','POST'])
+@api_auth_required
+def distribution_networks(request):
+    company=request.company
+    if request.method=='GET':
+        owned=DistributionNetwork.objects.filter(owner_company=company,is_active=True).prefetch_related('members__company')
+        payload=[]
+        for n in owned:
+            members=[]
+            for m in n.members.filter(is_active=True).select_related('company'):
+                snap=m.snapshots.order_by('-snapshot_date','-id').first()
+                members.append({'id':m.id,'company':m.company.name,'region':m.region,'territory':m.territory,'shareInventory':m.share_inventory,'shareSales':m.share_secondary_sales,'snapshot':({'date':snap.snapshot_date.isoformat(),'inventoryValue':_money(snap.inventory_value),'stockUnits':_money(snap.stock_units),'secondarySales':_money(snap.secondary_sales),'openOrders':snap.open_orders,'products':snap.product_summary} if snap else None)})
+            payload.append({'id':n.id,'name':n.name,'code':n.code,'members':members})
+        memberships=NetworkMember.objects.filter(company=company,is_active=True).select_related('network','network__owner_company')
+        return JsonResponse({'ownedNetworks':payload,'memberships':[{'id':m.id,'network':m.network.name,'owner':m.network.owner_company.name,'region':m.region,'territory':m.territory} for m in memberships]})
+    data=_body(request) or {}; action=data.get('action','create-network')
+    if action=='create-network':
+        code=data.get('code') or f'NET-{timezone.now().strftime("%y%m%d%H%M%S")}'
+        n=DistributionNetwork.objects.create(owner_company=company,name=data.get('name','Distribution Network'),code=code)
+        NetworkMember.objects.get_or_create(network=n,company=company,defaults={'region':company.state,'territory':'Head Office'})
+        return JsonResponse({'id':n.id,'name':n.name,'code':n.code},status=201)
+    n=DistributionNetwork.objects.filter(owner_company=company,pk=data.get('networkId')).first()
+    if not n: return JsonResponse({'detail':'Network not found.'},status=404)
+    if action=='add-member':
+        member_company=Company.objects.filter(pk=data.get('companyId'),is_active=True).first()
+        if not member_company: return JsonResponse({'detail':'Member company not found.'},status=404)
+        m,_=NetworkMember.objects.get_or_create(network=n,company=member_company,defaults={'region':data.get('region',''),'territory':data.get('territory','')})
+        return JsonResponse({'id':m.id,'company':m.company.name},status=201)
+    if action=='snapshot':
+        m=NetworkMember.objects.filter(network=n,pk=data.get('memberId')).select_related('company').first()
+        if not m: return JsonResponse({'detail':'Member not found.'},status=404)
+        member_company=m.company
+        stock_units=Product.objects.filter(company=member_company,is_active=True).aggregate(v=Sum('stock'))['v'] or Decimal('0')
+        inventory_value=sum((p.stock*p.purchase_price for p in Product.objects.filter(company=member_company,is_active=True)),Decimal('0'))
+        sales=Order.objects.filter(company=member_company,order_date__gte=timezone.localdate().replace(day=1)).aggregate(v=Sum('total'))['v'] or Decimal('0')
+        open_orders=Order.objects.filter(company=member_company).exclude(status__in=['Dispatched','Cancelled']).count()
+        products=[]
+        if m.share_inventory:
+            products=[{'sku':p.sku,'name':p.name,'stock':_money(p.stock)} for p in Product.objects.filter(company=member_company,is_active=True).order_by('stock')[:20]]
+        snap,_=NetworkSnapshot.objects.update_or_create(network=n,member=m,snapshot_date=timezone.localdate(),defaults={'inventory_value':inventory_value if m.share_inventory else 0,'stock_units':stock_units if m.share_inventory else 0,'secondary_sales':sales if m.share_secondary_sales else 0,'open_orders':open_orders,'product_summary':products})
+        return JsonResponse({'id':snap.id,'date':snap.snapshot_date.isoformat(),'inventoryValue':_money(snap.inventory_value),'secondarySales':_money(snap.secondary_sales)})
     return JsonResponse({'detail':'Unsupported action.'},status=400)
