@@ -14,3 +14,7 @@ backend/.env
 # misc
 .DS_Store
 *.pyc
+backend/media/
+backups/
+.env
+*.sqlite3-journal
