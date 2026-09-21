@@ -1222,3 +1222,22 @@ class SchemeClaim(models.Model):
     status=models.CharField(max_length=20,choices=Status.choices,default=Status.ACCRUED)
     evidence=models.JSONField(default=list,blank=True)
     submitted_at=models.DateTimeField(null=True,blank=True); settled_at=models.DateTimeField(null=True,blank=True)
+
+# --- Growth v4 / Phase 19: GST compliance cockpit ---
+class GSTReconciliationItem(models.Model):
+    class Status(models.TextChoices): MATCHED='Matched','Matched'; MISMATCH='Mismatch','Mismatch'; MISSING='Missing','Missing'; PENDING='Pending','Pending'; RESOLVED='Resolved','Resolved'
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='gst_reconciliation_items')
+    supplier=models.ForeignKey(Supplier,on_delete=models.SET_NULL,null=True,blank=True,related_name='gst_reconciliation_items')
+    invoice_no=models.CharField(max_length=60)
+    invoice_date=models.DateField(null=True,blank=True)
+    gstin=models.CharField(max_length=20,blank=True)
+    books_taxable=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    books_tax=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    portal_taxable=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    portal_tax=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    difference=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    status=models.CharField(max_length=20,choices=Status.choices,default=Status.PENDING)
+    source=models.CharField(max_length=30,default='IMS')
+    resolution_note=models.CharField(max_length=300,blank=True)
+    updated_at=models.DateTimeField(auto_now=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['company','invoice_no','source'],name='unique_company_gst_recon_invoice')]

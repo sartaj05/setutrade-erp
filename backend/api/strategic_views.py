@@ -60,3 +60,20 @@ def schemes(request):
     if not scheme:return JsonResponse({'detail':'Scheme not found.'},status=404)
     eligible=Decimal(str(data.get('eligibleValue',0))); amount=(eligible*scheme.rebate_percent/Decimal('100')).quantize(Decimal('0.01'))
     claim=m.SchemeClaim.objects.create(company=company,scheme=scheme,claim_no=f"CLM-{timezone.now().strftime('%y%m%d%H%M%S%f')}",period_from=data.get('from') or scheme.start_date,period_to=data.get('to') or scheme.end_date,eligible_value=eligible,claim_amount=amount,status='Submitted' if action=='submit-claim' else 'Accrued',submitted_at=timezone.now() if action=='submit-claim' else None,evidence=data.get('evidence',[])); audit(request,'CREATE','SchemeClaim',claim.id,claim.claim_no); return JsonResponse({'id':claim.id,'claimNo':claim.claim_no,'amount':_money(claim.claim_amount),'status':claim.status},status=201)
+
+@csrf_exempt
+@require_http_methods(['GET','POST'])
+@api_auth_required
+def gst_cockpit(request):
+    company=request.company
+    if request.method=='GET':
+        rows=m.GSTReconciliationItem.objects.filter(company=company).select_related('supplier').order_by('-invoice_date','-id')[:100]
+        return JsonResponse({'summary':{'matched':rows.filter(status='Matched').count(),'mismatch':rows.filter(status='Mismatch').count(),'missing':rows.filter(status='Missing').count(),'taxDifference':_money(rows.exclude(status='Matched').aggregate(v=Sum('difference'))['v'] or 0)},'items':[{'id':x.id,'invoiceNo':x.invoice_no,'supplier':x.supplier.name if x.supplier else 'Unknown','gstin':x.gstin,'booksTax':_money(x.books_tax),'portalTax':_money(x.portal_tax),'difference':_money(x.difference),'status':x.status,'source':x.source} for x in rows]})
+    data=_body(request); action=data.get('action','import')
+    if action=='resolve':
+        row=m.GSTReconciliationItem.objects.filter(company=company,pk=data.get('id')).first()
+        if not row:return JsonResponse({'detail':'Reconciliation item not found.'},status=404)
+        row.status='Resolved';row.resolution_note=data.get('note','Reviewed and resolved');row.save(update_fields=['status','resolution_note','updated_at']);audit(request,'UPDATE','GSTReconciliationItem',row.id,row.resolution_note);return JsonResponse({'id':row.id,'status':row.status})
+    supplier=m.Supplier.objects.filter(company=company,pk=data.get('supplierId')).first() or m.Supplier.objects.filter(company=company).first()
+    books=Decimal(str(data.get('booksTax',18440)));portal=Decimal(str(data.get('portalTax',18440)));diff=books-portal;status='Matched' if abs(diff)<Decimal('0.01') else 'Mismatch'
+    row,_=m.GSTReconciliationItem.objects.update_or_create(company=company,invoice_no=data.get('invoiceNo') or f"IMS-{timezone.now().strftime('%y%m%d%H%M%S%f')}",source=data.get('source','IMS'),defaults={'supplier':supplier,'invoice_date':data.get('date') or timezone.localdate(),'gstin':data.get('gstin',''),'books_taxable':data.get('booksTaxable',0),'books_tax':books,'portal_taxable':data.get('portalTaxable',0),'portal_tax':portal,'difference':diff,'status':status});return JsonResponse({'id':row.id,'status':row.status,'difference':_money(row.difference)},status=201)
