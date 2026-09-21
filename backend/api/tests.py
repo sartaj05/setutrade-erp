@@ -1,11 +1,12 @@
 import json
 from decimal import Decimal
 from django.contrib.auth.models import User
+from django.contrib.auth.hashers import make_password
 from django.test import Client, TestCase
 from django.utils import timezone
 from .models import (
     Branch, Company, Customer, InventoryMovement, Order, Product, Profile,
-    PurchaseOrder, StockBalance, Supplier, Warehouse,
+    PurchaseOrder, StockBalance, Supplier, Warehouse, SupplierPortalAccess, AutomationRule, ExternalChannel, DistributionNetwork, WarehouseBin,
 )
 
 
@@ -174,3 +175,39 @@ class ProductionApiTests(TestCase):
         assistant = self.post('/api/assistant/', {'question':'What are month-to-date sales?'})
         self.assertEqual(assistant.status_code, 200, assistant.content)
         self.assertEqual(assistant.json()['intent'], 'sales')
+
+
+    def test_growth_v3_collections_wms_and_automation(self):
+        collection = self.post('/api/collections/', {'action':'task','customerId':self.customer.id,'amount':25000,'date':timezone.localdate().isoformat(),'priority':'High'})
+        self.assertEqual(collection.status_code, 201, collection.content)
+        rows = self.client.get('/api/collections/', HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        self.assertEqual(rows.status_code, 200, rows.content)
+        self.assertEqual(rows.json()['summary']['openTasks'], 1)
+
+        bin_response = self.post('/api/wms/', {'action':'create-bin','warehouseId':self.warehouse.id,'code':'A-01-01','zone':'Fast'})
+        self.assertEqual(bin_response.status_code, 201, bin_response.content)
+        self.assertTrue(WarehouseBin.objects.filter(warehouse=self.warehouse, code='A-01-01').exists())
+
+        AutomationRule.objects.create(company=self.company,name='Test overdue rule',event='invoice.overdue',conditions={'outstanding':{'gte':1000}},actions=[{'type':'create_collection_task'}],created_by=self.owner)
+        run = self.post('/api/automations/', {'action':'test','event':'invoice.overdue','payload':{'outstanding':2000,'customerId':self.customer.id},'entityType':'Customer','entityId':str(self.customer.id)})
+        self.assertEqual(run.status_code, 200, run.content)
+        self.assertEqual(run.json()['matched'], 1)
+
+    def test_supplier_portal_channel_and_distribution_network(self):
+        SupplierPortalAccess.objects.create(company=self.company,supplier=self.supplier,email='supplier-test@example.com',pin_hash=make_password('1234'))
+        login = self.client.post('/api/supplier-portal/login/', data=json.dumps({'email':'supplier-test@example.com','pin':'1234'}), content_type='application/json')
+        self.assertEqual(login.status_code, 200, login.content)
+        supplier_token = login.json()['token']
+        portal = self.client.get('/api/supplier-portal/', HTTP_AUTHORIZATION=f'Supplier {supplier_token}')
+        self.assertEqual(portal.status_code, 200, portal.content)
+
+        channel = self.post('/api/channels/', {'action':'create-channel','name':'Test Web','provider':'WEBSITE'})
+        self.assertEqual(channel.status_code, 201, channel.content)
+        ingest = self.post('/api/channels/', {'action':'ingest-order','channelId':channel.json()['id'],'externalId':'WEB-1','customerName':'Buyer','total':100,'items':[{'sku':self.product.sku,'quantity':1,'unitPrice':100}]})
+        self.assertEqual(ingest.status_code, 201, ingest.content)
+        duplicate = self.post('/api/channels/', {'action':'ingest-order','channelId':channel.json()['id'],'externalId':'WEB-1','customerName':'Buyer','total':100,'items':[]})
+        self.assertEqual(duplicate.status_code, 200, duplicate.content)
+
+        network = self.post('/api/distribution-networks/', {'action':'create-network','name':'Test Network','code':'TEST-NET'})
+        self.assertEqual(network.status_code, 201, network.content)
+        self.assertTrue(DistributionNetwork.objects.filter(owner_company=self.company, code='TEST-NET').exists())
