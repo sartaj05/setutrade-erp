@@ -804,3 +804,25 @@ class PurchaseInvoiceCapture(models.Model):
     status=models.CharField(max_length=20,choices=Status.choices,default=Status.UPLOADED)
     created_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
     created_at=models.DateTimeField(auto_now_add=True); updated_at=models.DateTimeField(auto_now=True)
+
+
+class AccountingConnection(models.Model):
+    class Provider(models.TextChoices): TALLY='TALLY','Tally'; ZOHO='ZOHO','Zoho Books'; CSV='CSV','CSV / Excel'
+    company=models.OneToOneField(Company,on_delete=models.CASCADE,related_name='accounting_connection')
+    provider=models.CharField(max_length=20,choices=Provider.choices,default=Provider.CSV)
+    is_active=models.BooleanField(default=False)
+    settings=models.JSONField(default=dict,blank=True)
+    last_sync_at=models.DateTimeField(null=True,blank=True)
+    updated_at=models.DateTimeField(auto_now=True)
+
+class AccountingExportJob(models.Model):
+    class Status(models.TextChoices): QUEUED='Queued','Queued'; READY='Ready','Ready'; FAILED='Failed','Failed'; SYNCED='Synced','Synced'
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='accounting_exports')
+    provider=models.CharField(max_length=20,default='CSV')
+    export_no=models.CharField(max_length=40,unique=True)
+    period_from=models.DateField(); period_to=models.DateField()
+    voucher_count=models.PositiveIntegerField(default=0)
+    payload=models.JSONField(default=list,blank=True)
+    status=models.CharField(max_length=20,choices=Status.choices,default=Status.QUEUED)
+    created_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)

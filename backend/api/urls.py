@@ -52,4 +52,5 @@ urlpatterns = [
     path('delivery/', views.delivery),
     path('approvals/', views.approvals),
     path('invoice-ocr/', views.invoice_ocr),
+    path('accounting/', views.accounting),
 ]

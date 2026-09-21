@@ -27,7 +27,7 @@ from .auth import (
     revoke_request_session, roles_allowed,
 )
 from .models import (
-    ApprovalPolicy, ApprovalRequest, Attachment, AuditLog, PurchaseInvoiceCapture, BarcodeScanLog, Branch, Company, Customer, CustomerPortalAccess, CustomerPortalOrder, DeliveryProof, DeliveryRun, DeliveryStop, GoodsReceipt,
+    AccountingConnection, AccountingExportJob, ApprovalPolicy, ApprovalRequest, Attachment, AuditLog, PurchaseInvoiceCapture, BarcodeScanLog, Branch, Company, Customer, CustomerPortalAccess, CustomerPortalOrder, DeliveryProof, DeliveryRun, DeliveryStop, GoodsReceipt,
     GoodsReceiptItem, InventoryMovement, Invoice, LedgerEntry, Notification, Order,
     OrderItem, Payment, PriceList, PriceRule, Product, PurchaseItem, PurchaseOrder,
     Quotation, QuotationItem, ReorderSuggestion, ReturnItem, ReturnOrder, SalesTarget,
@@ -41,11 +41,11 @@ from .services import (
 )
 
 PERMISSIONS = {
-    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','team','settings','audit','delivery','approvals','invoice-ocr'],
-    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','audit','delivery','approvals','invoice-ocr'],
+    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','team','settings','audit','delivery','approvals','invoice-ocr', 'accounting'],
+    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','audit','delivery','approvals','invoice-ocr', 'accounting'],
     'SALES': ['dashboard','customers','orders','invoices','ledger','whatsapp','tax','pricing','field-sales','quotations','payments','approvals','invoice-ocr'],
     'WAREHOUSE': ['dashboard','products','inventory','orders','purchases','warehouses','barcode','returns','insights','delivery','approvals','invoice-ocr'],
-    'ACCOUNTANT': ['dashboard','customers','orders','invoices','purchases','ledger','tax','returns','insights','payments','reports','audit','delivery','approvals','invoice-ocr'],
+    'ACCOUNTANT': ['dashboard','customers','orders','invoices','purchases','ledger','tax','returns','insights','payments','reports','audit','delivery','approvals','invoice-ocr', 'accounting'],
 }
 
 
@@ -1136,3 +1136,30 @@ def invoice_ocr(request):
         return JsonResponse({'ok':True,'status':cap.status})
     rows=PurchaseInvoiceCapture.objects.filter(company=request.company).select_related('supplier').order_by('-created_at')[:50]
     return JsonResponse({'captures':[{'id':x.id,'fileName':x.file_name,'supplier':x.supplier.name if x.supplier else 'Unmatched supplier','status':x.status,'confidence':float(x.confidence),'data':x.extracted_data,'createdAt':x.created_at.isoformat()} for x in rows]})
+
+def _accounting_vouchers(company, start, end):
+    rows=[]
+    for inv in Invoice.objects.filter(company=company, invoice_date__range=(start,end)).select_related('order__customer'):
+        rows.append({'type':'Sales','date':inv.invoice_date.isoformat(),'reference':inv.invoice_no,'party':inv.order.customer.name,'amount':float(inv.total),'gst':float(inv.cgst+inv.sgst+inv.igst)})
+    for pay in Payment.objects.filter(company=company,payment_date__range=(start,end)).select_related('customer'):
+        rows.append({'type':'Receipt','date':pay.payment_date.isoformat(),'reference':pay.receipt_no,'party':pay.customer.name,'amount':float(pay.amount),'method':pay.method})
+    for po in PurchaseOrder.objects.filter(company=company,order_date__range=(start,end)).select_related('supplier'):
+        rows.append({'type':'Purchase','date':po.order_date.isoformat(),'reference':po.po_no,'party':po.supplier.name,'amount':float(po.total)})
+    for pay in SupplierPayment.objects.filter(company=company,payment_date__range=(start,end)).select_related('supplier'):
+        rows.append({'type':'Payment','date':pay.payment_date.isoformat(),'reference':pay.payment_no,'party':pay.supplier.name,'amount':float(pay.amount),'method':pay.method})
+    return rows
+
+@csrf_exempt
+@require_http_methods(['GET','POST'])
+@roles_allowed('OWNER','MANAGER','ACCOUNTANT')
+def accounting(request):
+    conn,_=AccountingConnection.objects.get_or_create(company=request.company,defaults={'provider':'CSV'})
+    if request.method=='POST':
+        body=_json_body(request) or {}; action=body.get('action','export')
+        if action=='configure':
+            conn.provider=body.get('provider','CSV') if body.get('provider') in dict(AccountingConnection.Provider.choices) else 'CSV'; conn.is_active=bool(body.get('active')); conn.settings=body.get('settings') if isinstance(body.get('settings'),dict) else {}; conn.save(); return JsonResponse({'ok':True})
+        start=_date(body.get('from'),timezone.localdate().replace(day=1));end=_date(body.get('to'),timezone.localdate());payload=_accounting_vouchers(request.company,start,end)
+        job=AccountingExportJob.objects.create(company=request.company,provider=conn.provider,export_no=_next_no('ACC'),period_from=start,period_to=end,voucher_count=len(payload),payload=payload,status=AccountingExportJob.Status.READY,created_by=request.api_user)
+        return JsonResponse({'job':{'id':job.id,'exportNo':job.export_no,'voucherCount':job.voucher_count,'status':job.status,'payload':payload}},status=201)
+    jobs=AccountingExportJob.objects.filter(company=request.company).order_by('-created_at')[:20]
+    return JsonResponse({'connection':{'provider':conn.provider,'active':conn.is_active,'lastSyncAt':conn.last_sync_at.isoformat() if conn.last_sync_at else None},'jobs':[{'id':j.id,'exportNo':j.export_no,'provider':j.provider,'from':j.period_from.isoformat(),'to':j.period_to.isoformat(),'voucherCount':j.voucher_count,'status':j.status,'createdAt':j.created_at.isoformat()} for j in jobs]})
