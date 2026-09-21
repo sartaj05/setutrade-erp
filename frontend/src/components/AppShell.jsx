@@ -11,6 +11,7 @@ const moduleLabels = {
   orders: ['Orders', 'receipt'],
   invoices: ['GST Invoices', 'receipt'],
   purchases: ['Purchases', 'box'],
+  ledger: ['Credit Ledger', 'receipt'],
   quotations: ['Quotations', 'receipt'],
   payments: ['Payments', 'receipt'],
   reports: ['Reports', 'chart'],

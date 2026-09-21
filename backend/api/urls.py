@@ -12,4 +12,5 @@ urlpatterns = [
     path('invoices/', views.invoices),
     path('purchases/', views.purchases),
     path('suppliers/', views.suppliers),
+    path('ledger/', views.ledger),
 ]

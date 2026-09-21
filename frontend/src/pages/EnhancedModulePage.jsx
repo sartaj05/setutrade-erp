@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useApiData } from '../services/useApiData';
-import { demoPurchases } from '../data/featureData';
+import { demoPurchases, demoLedger } from '../data/featureData';
 
 const money = (value) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
 
@@ -28,7 +28,19 @@ function PurchasesPage() {
   </div>;
 }
 
+function LedgerPage() {
+  const [search, setSearch] = useState('');
+  const { data: ledger } = useApiData('ledger', demoLedger, 'ledger');
+  const rows = useMemo(() => ledger.filter((x) => `${x.customer} ${x.reference} ${x.bucket}`.toLowerCase().includes(search.toLowerCase())), [ledger, search]);
+  return <div><FeatureHeader eyebrow="Collections" title="Customer credit ledger" subtitle="See every invoice, payment and overdue balance with ageing buckets built for collection follow-ups." action="Record payment" search={search} setSearch={setSearch} />
+    <Kpis items={[{ label: 'Receivable', value: '₹4.72L', note: '18 credit customers' }, { label: 'Overdue', value: '₹1.63L', note: '5 accounts need action' }, { label: 'Due next 7 days', value: '₹1.38L', note: '11 invoice references' }]} />
+    <div className="ageing-strip"><div><span>Current</span><strong>₹3.09L</strong></div><div><span>1-30 days</span><strong>₹1.63L</strong></div><div><span>31-60</span><strong>₹0</strong></div><div><span>60+</span><strong>₹0</strong></div></div>
+    <article className="panel module-panel"><div className="table-wrap"><table className="data-table module-table"><thead><tr><th>Customer</th><th>Reference</th><th>Type</th><th>Amount</th><th>Due</th><th>Ageing</th></tr></thead><tbody>{rows.map((row) => <tr key={`${row.customerId}-${row.reference}`}><td><strong>{row.customer}</strong><small>{row.customerId}</small></td><td>{row.reference}</td><td>{row.type}</td><td><strong>{money(row.amount)}</strong></td><td>{row.due}</td><td><Badge>{row.bucket}</Badge></td></tr>)}</tbody></table></div></article>
+  </div>;
+}
+
 export default function EnhancedModulePage({ module }) {
   if (module === 'purchases') return <PurchasesPage />;
+  if (module === 'ledger') return <LedgerPage />;
   return null;
 }

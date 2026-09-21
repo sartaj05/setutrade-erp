@@ -7,14 +7,14 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from .auth import api_auth_required, create_token, roles_allowed
-from .models import Customer, Invoice, Order, Product, Supplier, PurchaseOrder, PurchaseItem, GoodsReceipt
+from .models import Customer, Invoice, Order, Product, Supplier, PurchaseOrder, PurchaseItem, GoodsReceipt, LedgerEntry
 
 PERMISSIONS = {
-    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','quotations','payments','reports','team','settings'],
-    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','quotations','payments','reports'],
-    'SALES': ['dashboard','customers','orders','invoices','quotations','payments'],
-    'WAREHOUSE': ['dashboard','products','inventory','orders'],
-    'ACCOUNTANT': ['dashboard','customers','orders','invoices','payments','reports'],
+    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','quotations','payments','reports','team','settings'],
+    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','quotations','payments','reports'],
+    'SALES': ['dashboard','customers','orders','invoices','ledger','quotations','payments'],
+    'WAREHOUSE': ['dashboard','products','inventory','orders','purchases'],
+    'ACCOUNTANT': ['dashboard','customers','orders','invoices','purchases','ledger','payments','reports'],
 }
 
 def user_payload(user):
@@ -149,3 +149,16 @@ def suppliers(request):
         'id': s.code, 'name': s.name, 'city': s.city, 'phone': s.phone, 'gstin': s.gstin,
         'outstanding': float(s.outstanding),
     } for s in rows]})
+
+
+@require_GET
+@roles_allowed('OWNER', 'MANAGER', 'SALES', 'ACCOUNTANT')
+def ledger(request):
+    today = timezone.localdate()
+    rows = LedgerEntry.objects.select_related('customer').order_by('-entry_date', '-id')
+    payload = []
+    for row in rows:
+        age = (today - row.due_date).days if row.due_date and today > row.due_date else 0
+        bucket = 'Current' if age <= 0 else ('1-30 days' if age <= 30 else ('31-60 days' if age <= 60 else ('61-90 days' if age <= 90 else '90+ days')))
+        payload.append({'customer': row.customer.name, 'customerId': row.customer.code, 'type': row.entry_type, 'reference': row.reference, 'amount': float(row.amount), 'date': row.entry_date.strftime('%d %b'), 'due': row.due_date.strftime('%d %b') if row.due_date else '—', 'bucket': bucket})
+    return JsonResponse({'ledger': payload})

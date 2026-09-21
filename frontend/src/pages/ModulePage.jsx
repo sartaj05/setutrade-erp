@@ -103,7 +103,7 @@ function SimpleModule({ module }) {
 }
 
 export default function ModulePage({ module }) {
-  if (['purchases'].includes(module)) return <EnhancedModulePage module={module} />;
+  if (['purchases', 'ledger'].includes(module)) return <EnhancedModulePage module={module} />;
   if (module === 'products') return <Products />;
   if (module === 'inventory') return <Products inventoryOnly />;
   if (module === 'customers') return <Customers />;

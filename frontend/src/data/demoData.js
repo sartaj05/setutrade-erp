@@ -7,11 +7,11 @@ export const demoAccounts = [
 ];
 
 export const permissions = {
-  OWNER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'quotations', 'payments', 'reports', 'team', 'settings'],
-  MANAGER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'quotations', 'payments', 'reports'],
-  SALES: ['dashboard', 'customers', 'orders', 'invoices', 'quotations', 'payments'],
+  OWNER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'quotations', 'payments', 'reports', 'team', 'settings'],
+  MANAGER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'quotations', 'payments', 'reports'],
+  SALES: ['dashboard', 'customers', 'orders', 'invoices', 'ledger', 'quotations', 'payments'],
   WAREHOUSE: ['dashboard', 'products', 'inventory', 'orders', 'purchases'],
-  ACCOUNTANT: ['dashboard', 'customers', 'orders', 'invoices', 'purchases', 'payments', 'reports'],
+  ACCOUNTANT: ['dashboard', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'payments', 'reports'],
 };
 
 export const roleHomeCopy = {
