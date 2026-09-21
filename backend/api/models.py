@@ -1330,3 +1330,57 @@ class FinanceApplication(models.Model):
     payload=models.JSONField(default=dict,blank=True)
     created_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
     created_at=models.DateTimeField(auto_now_add=True); updated_at=models.DateTimeField(auto_now=True)
+
+# --- Growth v4 / Phase 23: enterprise security & privacy administration ---
+class UserMFASetting(models.Model):
+    user=models.OneToOneField(User,on_delete=models.CASCADE,related_name='mfa_setting')
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='mfa_settings')
+    method=models.CharField(max_length=20,default='TOTP')
+    secret_hash=models.CharField(max_length=128,blank=True)
+    is_enabled=models.BooleanField(default=False)
+    recovery_codes_hash=models.JSONField(default=list,blank=True)
+    enabled_at=models.DateTimeField(null=True,blank=True)
+
+class TrustedDevice(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='trusted_devices')
+    user=models.ForeignKey(User,on_delete=models.CASCADE,related_name='trusted_devices')
+    device_id=models.CharField(max_length=100)
+    device_name=models.CharField(max_length=160,blank=True)
+    fingerprint_hash=models.CharField(max_length=128,blank=True)
+    last_ip=models.GenericIPAddressField(null=True,blank=True)
+    trusted=models.BooleanField(default=False)
+    last_seen_at=models.DateTimeField(auto_now=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['company','user','device_id'],name='unique_company_user_device')]
+
+class SecurityEvent(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='security_events')
+    user=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True,related_name='security_events')
+    event_type=models.CharField(max_length=80)
+    severity=models.CharField(max_length=20,default='Info')
+    ip_address=models.GenericIPAddressField(null=True,blank=True)
+    device_id=models.CharField(max_length=100,blank=True)
+    detail=models.JSONField(default=dict,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+
+class PrivacyRequest(models.Model):
+    class RequestType(models.TextChoices): ACCESS='Access','Access'; EXPORT='Export','Export'; CORRECT='Correct','Correct'; DELETE='Delete','Delete'; WITHDRAW='Withdraw Consent','Withdraw Consent'
+    class Status(models.TextChoices): OPEN='Open','Open'; VERIFYING='Verifying','Verifying'; PROCESSING='Processing','Processing'; COMPLETE='Complete','Complete'; REJECTED='Rejected','Rejected'
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='privacy_requests')
+    request_no=models.CharField(max_length=40,unique=True)
+    subject_name=models.CharField(max_length=160)
+    subject_email=models.EmailField(blank=True)
+    request_type=models.CharField(max_length=30,choices=RequestType.choices)
+    status=models.CharField(max_length=20,choices=Status.choices,default=Status.OPEN)
+    due_date=models.DateField(null=True,blank=True)
+    note=models.CharField(max_length=300,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True); completed_at=models.DateTimeField(null=True,blank=True)
+
+class ConsentRecord(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='consent_records')
+    subject_key=models.CharField(max_length=160)
+    purpose=models.CharField(max_length=180)
+    granted=models.BooleanField(default=True)
+    source=models.CharField(max_length=80,default='Portal')
+    captured_at=models.DateTimeField(auto_now_add=True)
+    withdrawn_at=models.DateTimeField(null=True,blank=True)

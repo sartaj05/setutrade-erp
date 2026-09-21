@@ -141,3 +141,23 @@ def credit_risk(request):
     for c in customers:
         score,risk,util,overdue,suggested=_credit_score(c);m.CustomerCreditScore.objects.update_or_create(company=company,customer=c,defaults={'score':score,'risk_band':risk,'utilisation_percent':util,'overdue_90':overdue,'suggested_limit':suggested,'factors':{'paymentHistory':'derived from ledger','creditUtilisation':float(util),'overdueAmount':float(overdue)}});count+=1
     return JsonResponse({'scored':count})
+
+@csrf_exempt
+@require_http_methods(['GET','POST'])
+@api_auth_required
+def security_center(request):
+    company=request.company
+    if request.method=='GET':
+        events=m.SecurityEvent.objects.filter(company=company).select_related('user').order_by('-created_at')[:50]; devices=m.TrustedDevice.objects.filter(company=company).select_related('user').order_by('-last_seen_at')[:50]; privacy=m.PrivacyRequest.objects.filter(company=company).order_by('-created_at')[:50]
+        enabled=m.UserMFASetting.objects.filter(company=company,is_enabled=True).count(); users=m.Profile.objects.filter(company=company).count()
+        return JsonResponse({'summary':{'mfaEnabled':enabled,'users':users,'trustedDevices':devices.filter(trusted=True).count(),'openPrivacyRequests':privacy.exclude(status__in=['Complete','Rejected']).count(),'criticalEvents':events.filter(severity='Critical').count()},'devices':[{'id':d.id,'user':d.user.get_full_name() or d.user.username,'name':d.device_name or d.device_id,'trusted':d.trusted,'ip':d.last_ip,'lastSeen':_dt(d.last_seen_at)} for d in devices],'events':[{'id':e.id,'type':e.event_type,'severity':e.severity,'user':e.user.get_full_name() if e.user else 'System','ip':e.ip_address,'createdAt':_dt(e.created_at)} for e in events],'privacy':[{'id':p.id,'requestNo':p.request_no,'subject':p.subject_name,'type':p.request_type,'status':p.status,'due':_dt(p.due_date)} for p in privacy]})
+    data=_body(request);action=data.get('action')
+    if action=='enable-mfa':
+        raw=secrets.token_urlsafe(20); row,_=m.UserMFASetting.objects.update_or_create(user=request.api_user,defaults={'company':company,'method':'TOTP','secret_hash':hashlib.sha256(raw.encode()).hexdigest(),'is_enabled':True,'enabled_at':timezone.now()});m.SecurityEvent.objects.create(company=company,user=request.api_user,event_type='MFA_ENABLED',severity='Info');audit(request,'UPDATE','Security',request.api_user.id,'Enabled MFA');return JsonResponse({'enabled':True,'setupCode':raw,'note':'Show this once, then store it in an authenticator. Production should use a standards-compliant TOTP library.'})
+    if action=='trust-device':
+        did=data.get('deviceId') or secrets.token_hex(8); row,_=m.TrustedDevice.objects.update_or_create(company=company,user=request.api_user,device_id=did,defaults={'device_name':data.get('deviceName','Current browser'),'fingerprint_hash':hashlib.sha256(str(data.get('fingerprint',did)).encode()).hexdigest(),'last_ip':request.META.get('REMOTE_ADDR') or None,'trusted':True});m.SecurityEvent.objects.create(company=company,user=request.api_user,event_type='DEVICE_TRUSTED',severity='Info',device_id=did);return JsonResponse({'id':row.id,'trusted':True})
+    if action=='privacy-request':
+        row=m.PrivacyRequest.objects.create(company=company,request_no=f"PRIV-{timezone.now().strftime('%y%m%d%H%M%S%f')}",subject_name=data.get('name','Data subject'),subject_email=data.get('email',''),request_type=data.get('type','Access'),due_date=data.get('dueDate') or (timezone.localdate()+timezone.timedelta(days=30)),note=data.get('note',''));audit(request,'CREATE','PrivacyRequest',row.id,row.request_no);return JsonResponse({'id':row.id,'requestNo':row.request_no},status=201)
+    if action=='consent':
+        row=m.ConsentRecord.objects.create(company=company,subject_key=data.get('subjectKey','anonymous'),purpose=data.get('purpose','Customer communications'),granted=bool(data.get('granted',True)),source=data.get('source','Portal'));return JsonResponse({'id':row.id},status=201)
+    return JsonResponse({'detail':'Unsupported action.'},status=400)
