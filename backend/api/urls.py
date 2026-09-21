@@ -4,6 +4,8 @@ from . import views
 urlpatterns = [
     path('health/', views.health),
     path('auth/login/', views.login_view),
+    path('auth/password-reset/request/', views.password_reset_request),
+    path('auth/password-reset/confirm/', views.password_reset_confirm),
     path('auth/refresh/', views.refresh_token),
     path('auth/logout/', views.logout_view),
     path('auth/change-password/', views.change_password),

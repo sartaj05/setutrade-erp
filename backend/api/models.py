@@ -81,7 +81,7 @@ class AuthSession(models.Model):
 
 class Product(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='products', null=True, blank=True)
-    sku = models.CharField(max_length=40, unique=True)
+    sku = models.CharField(max_length=40)
     name = models.CharField(max_length=160)
     category = models.CharField(max_length=100, blank=True)
     stock = models.DecimalField(max_digits=12, decimal_places=2, default=0)
@@ -91,12 +91,18 @@ class Product(models.Model):
     reorder_level = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     location = models.CharField(max_length=40, blank=True)
     is_active = models.BooleanField(default=True)
-    barcode = models.CharField(max_length=80, unique=True, null=True, blank=True)
+    barcode = models.CharField(max_length=80, null=True, blank=True)
     qr_code = models.CharField(max_length=160, blank=True)
     hsn_code = models.CharField(max_length=20, blank=True)
     gst_rate = models.DecimalField(max_digits=5, decimal_places=2, default=18)
     image_url = models.URLField(blank=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=['company', 'sku'], name='unique_company_product_sku'),
+            models.UniqueConstraint(fields=['company', 'barcode'], name='unique_company_product_barcode'),
+        ]
 
     def __str__(self):
         return f'{self.sku} - {self.name}'
@@ -104,7 +110,7 @@ class Product(models.Model):
 
 class Customer(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='customers', null=True, blank=True)
-    code = models.CharField(max_length=30, unique=True)
+    code = models.CharField(max_length=30)
     name = models.CharField(max_length=160)
     city = models.CharField(max_length=100, blank=True)
     state = models.CharField(max_length=100, default='Delhi')
@@ -118,6 +124,9 @@ class Customer(models.Model):
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['company', 'code'], name='unique_company_customer_code')]
+
     def __str__(self):
         return self.name
 
@@ -125,11 +134,14 @@ class Customer(models.Model):
 class Warehouse(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='warehouses', null=True, blank=True)
     branch = models.ForeignKey(Branch, on_delete=models.SET_NULL, related_name='warehouses', null=True, blank=True)
-    code = models.CharField(max_length=30, unique=True)
+    code = models.CharField(max_length=30)
     name = models.CharField(max_length=120)
     city = models.CharField(max_length=100, blank=True)
     address = models.CharField(max_length=240, blank=True)
     is_active = models.BooleanField(default=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['company', 'code'], name='unique_company_warehouse_code')]
 
     def __str__(self):
         return self.name
@@ -254,7 +266,7 @@ class QuotationItem(models.Model):
 
 class Supplier(models.Model):
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='suppliers', null=True, blank=True)
-    code = models.CharField(max_length=30, unique=True)
+    code = models.CharField(max_length=30)
     name = models.CharField(max_length=160)
     city = models.CharField(max_length=100, blank=True)
     state = models.CharField(max_length=100, default='Delhi')
@@ -264,6 +276,9 @@ class Supplier(models.Model):
     gstin = models.CharField(max_length=20, blank=True)
     outstanding = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['company', 'code'], name='unique_company_supplier_code')]
 
     def __str__(self):
         return self.name

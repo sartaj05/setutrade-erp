@@ -8,11 +8,16 @@ import urllib.request
 from datetime import timedelta
 from decimal import Decimal
 from django.contrib.auth import authenticate
+from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.models import User
 from django.db import connection, transaction
+from django.core.cache import cache
+from django.core.mail import send_mail
 from django.db.models import F, Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.utils.html import escape
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
@@ -119,16 +124,76 @@ def login_view(request):
     password = str(body.get('password', ''))
     if not email or not password:
         return JsonResponse({'detail': 'Email and password are required.'}, status=400)
+    guard_key = f"login-guard:{email}:{request.META.get('REMOTE_ADDR', 'unknown')}"
+    attempts = cache.get(guard_key, 0)
+    max_attempts = int(os.getenv('LOGIN_MAX_ATTEMPTS', '5'))
+    if attempts >= max_attempts:
+        return JsonResponse({'detail': 'Too many failed login attempts. Try again later.'}, status=429)
     account = User.objects.filter(email__iexact=email, is_active=True).select_related('profile__company', 'profile__branch').first()
     if not account:
+        cache.set(guard_key, attempts + 1, int(os.getenv('LOGIN_LOCK_SECONDS', '900')))
         return JsonResponse({'detail': 'Invalid email or password.'}, status=401)
     user = authenticate(request, username=account.username, password=password)
     if not user:
+        cache.set(guard_key, attempts + 1, int(os.getenv('LOGIN_LOCK_SECONDS', '900')))
         return JsonResponse({'detail': 'Invalid email or password.'}, status=401)
+    cache.delete(guard_key)
     if not hasattr(user, 'profile') or not user.profile.company:
         return JsonResponse({'detail': 'Account setup is incomplete. Contact your administrator.'}, status=403)
     access, refresh = create_session_tokens(user, request)
     return JsonResponse({'token': access, 'refreshToken': refresh, 'user': user_payload(user)})
+
+
+@csrf_exempt
+@require_POST
+def password_reset_request(request):
+    body = _json_body(request) or {}
+    email = str(body.get('email', '')).strip().lower()
+    user = User.objects.filter(email__iexact=email, is_active=True).first() if email else None
+    # Always return the same response so account existence is not disclosed.
+    response = {'ok': True, 'detail': 'If that account exists, password reset instructions have been sent.'}
+    if not user:
+        return JsonResponse(response)
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    token = default_token_generator.make_token(user)
+    frontend = os.getenv('FRONTEND_URL', 'http://localhost:5173').rstrip('/')
+    reset_url = f'{frontend}/login?reset_uid={uid}&reset_token={token}'
+    try:
+        send_mail(
+            'SetuStock password reset',
+            f'Use this link to reset your SetuStock password: {reset_url}',
+            os.getenv('DEFAULT_FROM_EMAIL', 'noreply@setustock.local'),
+            [user.email],
+            fail_silently=True,
+        )
+    except Exception:
+        pass
+    if settings.DEBUG or os.getenv('SETUSTOCK_DEMO_MODE', 'false').lower() == 'true':
+        response['demoReset'] = {'uid': uid, 'token': token, 'url': reset_url}
+    return JsonResponse(response)
+
+
+@csrf_exempt
+@require_POST
+def password_reset_confirm(request):
+    body = _json_body(request) or {}
+    uid = str(body.get('uid', ''))
+    token = str(body.get('token', ''))
+    new_password = str(body.get('newPassword', ''))
+    if len(new_password) < 8:
+        return JsonResponse({'detail': 'New password must be at least 8 characters.'}, status=400)
+    try:
+        user_id = force_str(urlsafe_base64_decode(uid))
+        user = User.objects.get(pk=user_id, is_active=True)
+    except (ValueError, TypeError, User.DoesNotExist):
+        return JsonResponse({'detail': 'Reset link is invalid or expired.'}, status=400)
+    if not default_token_generator.check_token(user, token):
+        return JsonResponse({'detail': 'Reset link is invalid or expired.'}, status=400)
+    user.set_password(new_password)
+    user.save(update_fields=['password'])
+    from .models import AuthSession
+    AuthSession.objects.filter(user=user, revoked_at__isnull=True).update(revoked_at=timezone.now())
+    return JsonResponse({'ok': True})
 
 
 @csrf_exempt
@@ -198,9 +263,11 @@ def _serialize_product(p):
 
 @csrf_exempt
 @require_http_methods(['GET', 'POST'])
-@roles_allowed('OWNER', 'MANAGER', 'WAREHOUSE')
+@roles_allowed('OWNER', 'MANAGER', 'WAREHOUSE', 'SALES', 'ACCOUNTANT')
 def products(request):
     if request.method == 'POST':
+        if request.api_user.profile.role not in ['OWNER', 'MANAGER', 'WAREHOUSE']:
+            return JsonResponse({'detail': 'You have read-only access to the product catalogue.'}, status=403)
         body = _json_body(request)
         if body is None or not body.get('sku') or not body.get('name'):
             return JsonResponse({'detail': 'sku and name are required.'}, status=400)
@@ -465,6 +532,8 @@ def purchase_action(request, pk):
     if action=='approve':
         po.status=PurchaseOrder.Status.APPROVED; po.approved_by=request.api_user; po.approved_at=timezone.now(); po.save(update_fields=['status','approved_by','approved_at']); audit(request,'approve','PurchaseOrder',po.id,f'Approved {po.po_no}'); return JsonResponse({'purchase':_serialize_purchase(po)})
     if action!='receive': return JsonResponse({'detail':'Unknown purchase action.'},status=400)
+    if po.status not in [PurchaseOrder.Status.APPROVED, PurchaseOrder.Status.PARTIAL]:
+        return JsonResponse({'detail':'Purchase order must be approved before receiving goods.'},status=400)
     if not po.warehouse: return JsonResponse({'detail':'Purchase order has no receiving warehouse.'},status=400)
     quantities=body.get('items') or []
     receipt_map={int(x.get('purchaseItemId')):decimal(x.get('quantity')) for x in quantities if x.get('purchaseItemId')}
@@ -538,9 +607,11 @@ def payments(request):
 
 @csrf_exempt
 @require_http_methods(['GET','POST'])
-@roles_allowed('OWNER','MANAGER','WAREHOUSE','ACCOUNTANT')
+@roles_allowed('OWNER','MANAGER','WAREHOUSE','ACCOUNTANT','SALES')
 def warehouses(request):
     if request.method=='POST':
+        if request.api_user.profile.role not in ['OWNER','MANAGER','WAREHOUSE']:
+            return JsonResponse({'detail':'You have read-only access to warehouses.'},status=403)
         body=_json_body(request) or {}
         if body.get('kind')=='transfer':
             source=_company_qs(Warehouse,request).filter(pk=body.get('fromWarehouseId')).first(); target=_company_qs(Warehouse,request).filter(pk=body.get('toWarehouseId')).first(); items=body.get('items') or []
@@ -579,6 +650,8 @@ def transfer_action(request, pk):
         with transaction.atomic():
             if action=='approve': t.status=StockTransfer.Status.APPROVED; t.approved_by=request.api_user; t.save(update_fields=['status','approved_by'])
             elif action=='dispatch':
+                if t.status not in [StockTransfer.Status.APPROVED, StockTransfer.Status.IN_TRANSIT]:
+                    return JsonResponse({'detail':'Transfer must be approved before dispatch.'},status=400)
                 if t.status==StockTransfer.Status.IN_TRANSIT: return JsonResponse({'transfer':_serialize_transfer(t)})
                 for item in t.items.all(): apply_stock(request.company,t.from_warehouse,item.product,-item.quantity,InventoryMovement.MovementType.TRANSFER_OUT,t.transfer_no,request.api_user,'Transfer dispatched')
                 t.status=StockTransfer.Status.IN_TRANSIT; t.save(update_fields=['status'])
@@ -828,12 +901,12 @@ def import_csv(request, resource):
         for row in rows:
             sku=(row.get('SKU') or row.get('sku') or '').strip(); name=(row.get('Name') or row.get('name') or '').strip()
             if not sku or not name: continue
-            _,made=Product.objects.update_or_create(sku=sku,defaults={'company':request.company,'name':name,'category':row.get('Category',''),'unit':row.get('Unit','pcs'),'purchase_price':decimal(row.get('Purchase Price',0)),'sell_price':decimal(row.get('Sell Price',0)),'reorder_level':decimal(row.get('Reorder',0)),'hsn_code':row.get('HSN',''),'gst_rate':decimal(row.get('GST Rate',18))}); created+=int(made); updated+=int(not made)
+            _,made=Product.objects.update_or_create(company=request.company,sku=sku,defaults={'name':name,'category':row.get('Category',''),'unit':row.get('Unit','pcs'),'purchase_price':decimal(row.get('Purchase Price',0)),'sell_price':decimal(row.get('Sell Price',0)),'reorder_level':decimal(row.get('Reorder',0)),'hsn_code':row.get('HSN',''),'gst_rate':decimal(row.get('GST Rate',18))}); created+=int(made); updated+=int(not made)
     elif resource=='customers':
         for row in rows:
             code=(row.get('Code') or row.get('code') or '').strip(); name=(row.get('Name') or row.get('name') or '').strip()
             if not code or not name: continue
-            _,made=Customer.objects.update_or_create(code=code,defaults={'company':request.company,'name':name,'city':row.get('City',''),'state':row.get('State',request.company.state),'phone':row.get('Phone',''),'email':row.get('Email',''),'gstin':row.get('GSTIN',''),'credit_limit':decimal(row.get('Credit Limit',0))}); created+=int(made); updated+=int(not made)
+            _,made=Customer.objects.update_or_create(company=request.company,code=code,defaults={'name':name,'city':row.get('City',''),'state':row.get('State',request.company.state),'phone':row.get('Phone',''),'email':row.get('Email',''),'gstin':row.get('GSTIN',''),'credit_limit':decimal(row.get('Credit Limit',0))}); created+=int(made); updated+=int(not made)
     else: return JsonResponse({'detail':'Unsupported import resource.'},status=404)
     audit(request,'import',resource,'bulk',f'Imported {resource}',{'created':created,'updated':updated})
     return JsonResponse({'created':created,'updated':updated,'rows':len(rows)})

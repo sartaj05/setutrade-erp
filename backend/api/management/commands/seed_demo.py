@@ -58,12 +58,12 @@ class Command(BaseCommand):
 
         warehouses = {}
         for code, name, city in [('WH-DEL','Delhi Central','Delhi'),('WH-NOI','Noida Hub','Noida'),('WH-GGN','Gurugram Depot','Gurugram')]:
-            w, _ = Warehouse.objects.update_or_create(code=code, defaults={'company':company,'branch':branch,'name':name,'city':city,'address':f'{city} distribution facility'})
+            w, _ = Warehouse.objects.update_or_create(company=company, code=code, defaults={'branch':branch,'name':name,'city':city,'address':f'{city} distribution facility'})
             warehouses[code] = w
 
         products = {}
         for sku, name, category, stock, unit, buy, sell, reorder, location, barcode, hsn, gst in PRODUCTS:
-            p, _ = Product.objects.update_or_create(sku=sku, defaults={'company':company,'name':name,'category':category,'unit':unit,'purchase_price':buy,'sell_price':sell,'reorder_level':reorder,'location':location,'barcode':barcode,'hsn_code':hsn,'gst_rate':gst})
+            p, _ = Product.objects.update_or_create(company=company, sku=sku, defaults={'name':name,'category':category,'unit':unit,'purchase_price':buy,'sell_price':sell,'reorder_level':reorder,'location':location,'barcode':barcode,'hsn_code':hsn,'gst_rate':gst})
             products[sku] = p
         allocation = {'WH-DEL': Decimal('0.65'), 'WH-NOI': Decimal('0.22'), 'WH-GGN': Decimal('0.13')}
         for sku, _, _, stock, *_ in PRODUCTS:
@@ -77,12 +77,12 @@ class Command(BaseCommand):
 
         customers = {}
         for code,name,city,state,phone,gstin,outstanding,limit,due in CUSTOMERS:
-            c, _ = Customer.objects.update_or_create(code=code, defaults={'company':company,'name':name,'city':city,'state':state,'phone':phone,'gstin':gstin,'outstanding':outstanding,'credit_limit':limit,'due_date':due,'address':f'{city}, {state}'})
+            c, _ = Customer.objects.update_or_create(company=company, code=code, defaults={'name':name,'city':city,'state':state,'phone':phone,'gstin':gstin,'outstanding':outstanding,'credit_limit':limit,'due_date':due,'address':f'{city}, {state}'})
             customers[code] = c
 
         suppliers = {}
         for code,name,city,outstanding in [('S-001','Polycab India Supply','Delhi',212600),('S-002','Havells Channel Partner','Noida',124850),('S-003','Legrand NCR Distribution','Gurugram',0)]:
-            s,_=Supplier.objects.update_or_create(code=code,defaults={'company':company,'name':name,'city':city,'state':'Delhi NCR','phone':'9810000001','gstin':'07AAACP0001A1Z1','outstanding':outstanding})
+            s,_=Supplier.objects.update_or_create(company=company,code=code,defaults={'name':name,'city':city,'state':'Delhi NCR','phone':'9810000001','gstin':'07AAACP0001A1Z1','outstanding':outstanding})
             suppliers[code]=s
 
         order_specs = [
