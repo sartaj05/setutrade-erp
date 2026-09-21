@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useApiData } from '../services/useApiData';
-import { demoPurchases, demoLedger, demoWarehouses, demoBarcodes, demoWhatsAppDrafts, demoTax } from '../data/featureData';
+import { demoPurchases, demoLedger, demoWarehouses, demoBarcodes, demoWhatsAppDrafts, demoTax, demoPricing } from '../data/featureData';
 
 const money = (value) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
 
@@ -80,7 +80,7 @@ function WhatsAppPage() {
 
 function TaxPage() {
   const [search, setSearch] = useState('');
-  const { data } = useApiData('tax', { tax: demoTax }, 'tax');
+  const { data } = useApiData('tax', { tax: demoTax, demoPricing }, 'tax');
   const tax = data?.invoices ? data : demoTax;
   const rows = tax.invoices.filter((x)=>`${x.id} ${x.customer} ${x.gstin}`.toLowerCase().includes(search.toLowerCase()));
   return <div><FeatureHeader eyebrow="Compliance" title="GST, credit notes & e-invoice readiness" subtitle="Keep tax fields explicit: HSN/GST rates, place of supply, CGST/SGST/IGST, credit notes and provider-ready e-invoice status." action="Create credit note" search={search} setSearch={setSearch} />
@@ -91,6 +91,19 @@ function TaxPage() {
   </div>;
 }
 
+function PricingPage() {
+  const [search, setSearch] = useState('');
+  const { data: lists } = useApiData('pricing', demoPricing, 'pricing');
+  const rules = lists.flatMap((pl)=>pl.rules.map((r)=>({...r,list:pl.name,customer:pl.customer}))).filter((x)=>`${x.product} ${x.sku} ${x.list} ${x.customer}`.toLowerCase().includes(search.toLowerCase()));
+  const [qty,setQty]=useState(12);
+  const sampleRules=demoPricing[0].rules.filter((x)=>x.sku==='AN-MCB-32').sort((a,b)=>a.minQty-b.minQty);
+  const applied=[...sampleRules].reverse().find((x)=>qty>=x.minQty)||sampleRules[0];
+  return <div><FeatureHeader eyebrow="Commercial controls" title="Customer pricing & schemes" subtitle="Define dealer slabs, quantity breaks and customer-specific rates without rewriting prices on every quotation." action="New price list" search={search} setSearch={setSearch} />
+    <div className="pricing-demo"><div><span className="section-kicker">Price simulator</span><h3>Anchor 32A DP MCB</h3><p>Change quantity to see which B2B price rule applies.</p><label>Order quantity <input type="number" min="1" value={qty} onChange={(e)=>setQty(Math.max(1,Number(e.target.value)||1))}/></label></div><div><span>Applied rate</span><strong>{money(applied.price)}</strong><small>{applied.scheme || 'Standard rate'}</small><b>{qty} units = {money(qty*applied.price)}</b></div></div>
+    <article className="panel module-panel"><div className="table-wrap"><table className="data-table module-table"><thead><tr><th>Price list</th><th>Customer</th><th>Product</th><th>Min qty</th><th>Rate</th><th>Discount</th><th>Scheme</th></tr></thead><tbody>{rules.map((r,i)=><tr key={`${r.list}-${r.sku}-${r.minQty}-${i}`}><td><strong>{r.list}</strong></td><td>{r.customer}</td><td><strong>{r.product}</strong><small>{r.sku}</small></td><td>{r.minQty}</td><td><strong>{money(r.price)}</strong></td><td>{r.discount}%</td><td>{r.scheme||'Standard'}</td></tr>)}</tbody></table></div></article>
+  </div>;
+}
+
 export default function EnhancedModulePage({ module }) {
   if (module === 'purchases') return <PurchasesPage />;
   if (module === 'ledger') return <LedgerPage />;
@@ -98,5 +111,6 @@ export default function EnhancedModulePage({ module }) {
   if (module === 'barcode') return <BarcodePage />;
   if (module === 'whatsapp') return <WhatsAppPage />;
   if (module === 'tax') return <TaxPage />;
+  if (module === 'pricing') return <PricingPage />;
   return null;
 }

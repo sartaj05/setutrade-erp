@@ -55,3 +55,15 @@ export const demoTax = {
   ],
   integration: { mode: 'configurable', einvoice: false, ewayBill: false, message: 'Demo mode: connect an authorised provider for production e-invoice/e-way bill generation.' },
 };
+
+export const demoPricing = [
+  { id: 1, name: 'Electrical Dealer Standard', customer: 'All dealer customers', validFrom: '2026-09-01', validTo: '2026-12-31', rules: [
+    { sku: 'AN-MCB-32', product: 'Anchor 32A DP MCB', minQty: 1, price: 495, discount: 0, scheme: '' },
+    { sku: 'AN-MCB-32', product: 'Anchor 32A DP MCB', minQty: 10, price: 465, discount: 6, scheme: '10+ dealer slab' },
+    { sku: 'AN-MCB-32', product: 'Anchor 32A DP MCB', minQty: 50, price: 438, discount: 11.5, scheme: '50+ distributor slab' },
+  ]},
+  { id: 2, name: 'R.K. Trading Special', customer: 'R.K. Trading Co.', validFrom: '2026-09-15', validTo: '2026-10-15', rules: [
+    { sku: 'HA-LED-12', product: 'Havells 12W LED Bulb', minQty: 20, price: 132, discount: 9, scheme: 'Buy 20+ at special rate' },
+    { sku: 'PC-25-RD', product: 'Polycab 2.5mm Wire Red', minQty: 5, price: 1940, discount: 5, scheme: '5 coil project rate' },
+  ]},
+];

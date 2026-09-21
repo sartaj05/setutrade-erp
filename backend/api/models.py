@@ -265,3 +265,25 @@ class TaxNote(models.Model):
     note_date = models.DateField()
     reason = models.CharField(max_length=240, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+class PriceList(models.Model):
+    name = models.CharField(max_length=120)
+    customer = models.ForeignKey(Customer, on_delete=models.CASCADE, related_name='price_lists', null=True, blank=True)
+    is_active = models.BooleanField(default=True)
+    valid_from = models.DateField(null=True, blank=True)
+    valid_to = models.DateField(null=True, blank=True)
+
+    def __str__(self):
+        return self.name
+
+
+class PriceRule(models.Model):
+    price_list = models.ForeignKey(PriceList, on_delete=models.CASCADE, related_name='rules')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='price_rules')
+    min_quantity = models.DecimalField(max_digits=12, decimal_places=2, default=1)
+    price = models.DecimalField(max_digits=12, decimal_places=2)
+    discount_percent = models.DecimalField(max_digits=6, decimal_places=2, default=0)
+    scheme_text = models.CharField(max_length=160, blank=True)
+
+    class Meta:
+        ordering = ['product__name', 'min_quantity']
