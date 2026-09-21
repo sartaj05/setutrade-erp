@@ -1,16 +1,20 @@
-# Validation record
+# Validation record — Growth v4
 
-The packaging environment cannot reach npm/PyPI registries, so a clean dependency install and full Django/Vite/Expo runtime build cannot be executed here.
+The packaging environment cannot reach npm/PyPI registries, so a clean dependency install and full Django/Vite/Expo runtime build cannot be executed locally in this session.
 
-Static validations run before packaging:
+Checks run before packaging:
 
 - Python compilation for the entire `backend/` tree: passed
-- TypeScript parser/transpile syntax check across 29 JavaScript/JSX source files: passed
+- `node --check` for the new non-JSX strategic demo-data module: passed
+- Structural delimiter check for `StrategicModulePage.jsx`: passed
 - `git diff --check`: passed
-- Django migration filenames: continuous from `0001` through `0032`
-- Git working tree checked clean before release tag/package
+- No merge-conflict markers found in tracked source files
+- Migration filenames are continuous from `0001` through `0042`
+- Ten Growth v4 feature commits exist for Phases 17–26
+- Growth v4 seed data and backend smoke tests were added
+- Git working tree is required to be clean before release packaging
 
-GitHub CI is configured to perform the authoritative runtime checks on a connected runner:
+GitHub CI remains the authoritative connected-runner validation and runs:
 
 ```text
 python manage.py check
@@ -22,4 +26,4 @@ npm install && npm run build
 npm install && npx expo config --type public
 ```
 
-A green GitHub Actions run is required before putting real client business or payment data into the deployment.
+A green CI run is required before real client go-live.

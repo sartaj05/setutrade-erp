@@ -164,3 +164,45 @@ The repository deliberately does not contain third-party secrets. Production con
 - Invitation/acceptance state
 - Opt-in aggregate inventory and secondary-sales sharing
 - Privacy-scoped member snapshots without customer-level exposure
+
+## Growth v4 — commercial and enterprise intelligence
+
+### CRM + sales pipeline
+- Lead stages, ownership, follow-ups, expected close and pipeline conversion
+
+### Manufacturer schemes and claims
+- Rebate/target/slab scheme registry
+- Accrual, claim submission and settlement tracking
+
+### GST compliance cockpit
+- Books vs IMS/provider reconciliation records
+- Missing/mismatch queues and resolution notes
+
+### Smart procurement
+- Vendor performance scorecards
+- Explainable purchase recommendations and approval status
+
+### Fleet and route planning
+- Fleet master, driver, capacity and per-km cost
+- Route plans, sequenced stops and estimated route economics
+
+### Credit risk and finance readiness
+- Explainable customer credit scores and suggested limits
+- Finance application workflow without representing lender approval
+
+### Enterprise security and privacy operations
+- MFA enrollment, device trust and security event history
+- Consent and data-request workflows
+
+### Integration hub and developer API
+- Connector health, scoped hashed API keys and webhook subscriptions
+- Public order-intake endpoint
+
+### Executive BI
+- Customer-level contribution profit and margin
+- Period profitability snapshots
+
+### AI action copilot
+- Proposed operational actions with rationale and risk
+- Human approval before execution
+- Permission checks and audit logging

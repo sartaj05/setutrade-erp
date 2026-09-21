@@ -33,3 +33,16 @@ git log --oneline --reverse
 10. `feat(insights): add reorder intelligence and business analytics`
 
 The final repository-quality commit adds CI, tests, updated documentation and validation fixes without squashing the feature history.
+
+## Growth v4 phase commits
+
+1. `feat(crm): add leads opportunities followups and sales pipeline`
+2. `feat(schemes): add manufacturer incentives rebates and claims`
+3. `feat(gst): add compliance cockpit and IMS reconciliation`
+4. `feat(procurement): add vendor scoring and intelligent purchase planning`
+5. `feat(logistics): add route planning fleet tracking and delivery optimisation`
+6. `feat(credit): add trade credit scoring and financing readiness`
+7. `feat(security): add MFA device controls and privacy administration`
+8. `feat(integrations): add connector hub webhooks and public API`
+9. `feat(analytics): add contribution margin and profitability intelligence`
+10. `feat(copilot): add permission-gated AI operational actions`

@@ -59,3 +59,24 @@ Before go-live, replace demo branding and credentials, create a backup owner acc
 7. Show Distributor Network aggregate visibility and explain that customer-level records are not shared.
 
 Before using real money or statutory data, connect and test the client's chosen payment/bank, WhatsApp, GST and any financing/network providers in staging.
+
+## Growth v4 demo modules
+
+After logging in as the demo owner, the sidebar also exposes:
+
+```text
+CRM Pipeline
+Schemes & Claims
+GST Cockpit
+Smart Procurement
+Fleet & Routes
+Credit Risk
+Security Center
+Integration Hub
+Executive BI
+AI Action Copilot
+```
+
+The frontend demo can display all of these without Django. For a live client deployment, connect Django/PostgreSQL and require the GitHub Actions workflow to pass before entering real operational, tax, finance or personal data.
+
+The GST, external finance, live routing and third-party connector surfaces are integration boundaries. They do not claim provider certification or live vendor connectivity without client credentials.

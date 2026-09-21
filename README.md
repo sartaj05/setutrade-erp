@@ -155,3 +155,9 @@ Payment page:    /pay/demo-rk-payment-link
 ```
 
 External commerce, payment confirmation, WhatsApp delivery, statutory GST services and receivable-financing submission are integration boundaries. They require the client's own vendor credentials and compliance setup; no live secrets are embedded in this repository.
+
+## Growth v4: Phases 17–26
+
+The repository now also includes CRM, manufacturer scheme claims, GST reconciliation, vendor-scored procurement, fleet route planning, explainable customer credit risk, enterprise security/privacy workflows, an integration hub with scoped developer API keys, contribution-profit BI and an approval-gated AI action copilot.
+
+See `GROWTH_V4.md` and `GROWTH_V4_COMMITS.md` for the implementation map.

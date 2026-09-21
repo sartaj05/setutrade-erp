@@ -51,3 +51,9 @@ This release adds the B2B customer portal, delivery/e-POD, approval workflows, p
 Growth v3 adds phases 11–16: collections and reconciliation, advanced WMS, supplier collaboration, workflow automation, external sales-channel ingestion, and distributor-network visibility. It also includes public payment-link/UPI intent pages, WMS waves/packing, supplier demo authentication, mobile collection/WMS queues, additional seed data and API tests.
 
 Provider boundaries remain explicit: generic ONDC/marketplace adapters are not a substitute for protocol certification; payment links do not confirm funds without a bank/payment provider callback; WhatsApp reminders require Meta/provider credentials; financing exports do not submit to a TReDS platform by themselves.
+
+## Growth v4 — Phases 17–26
+
+Added CRM pipeline, manufacturer scheme claims, GST reconciliation, smart procurement/vendor scorecards, fleet route planning, explainable customer credit risk, enterprise security/privacy administration, integration hub/public API, contribution-profit BI and approval-gated AI operational actions.
+
+Security-sensitive additions store API keys and MFA setup material as hashes after enrollment; raw API/webhook setup secrets are returned only at creation time. The copilot requires human approval for transactional actions and logs executions.
