@@ -326,3 +326,5 @@ a { color: inherit; text-decoration: none; }
 .payment-page{min-height:calc(100vh - 68px);display:grid;place-items:center;padding:32px}.payment-card{width:min(480px,100%);padding:32px}.payment-card h1{font-size:48px;margin:12px 0}.payment-detail{display:flex;justify-content:space-between;padding:12px 0;border-top:1px solid #e5e9e5}.payment-upi{display:block;text-align:center;margin:24px 0 14px;padding:14px;border-radius:12px;background:#174f49;color:#fff;text-decoration:none;font-weight:900}.payment-card small{display:block;color:#72817d;line-height:1.5}
 
 .wms-split{display:grid;grid-template-columns:1fr 1fr;gap:16px}.wms-split .module-panel{margin-top:0}@media(max-width:900px){.wms-split{grid-template-columns:1fr}}
+
+.portal-demo-link{border:0;background:transparent!important;color:#665b99!important;box-shadow:none!important;padding:6px 4px!important;font-weight:800;text-decoration:underline;text-decoration-color:#c9c3df;text-underline-offset:4px}

@@ -34,6 +34,8 @@ export default function LandingPage({ navigate }) {
             <div className="hero-actions">
               <button className="btn btn-primary" onClick={() => navigate('/login')}>Open demo <Icon name="arrow" size={17} /></button>
               <a className="text-link" href="#features">See what it manages</a>
+              <button className="portal-demo-link" onClick={() => navigate('/portal')}>Dealer portal</button>
+              <button className="portal-demo-link" onClick={() => navigate('/supplier-portal')}>Supplier portal</button>
             </div>
             <div className="trust-row">
               {trustItems.map((item) => <span key={item}><Icon name="check" size={15} /> {item}</span>)}
