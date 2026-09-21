@@ -27,7 +27,7 @@ from .auth import (
     revoke_request_session, roles_allowed,
 )
 from .models import (
-    Attachment, AuditLog, BarcodeScanLog, Branch, Company, Customer, CustomerPortalAccess, CustomerPortalOrder, DeliveryProof, DeliveryRun, DeliveryStop, GoodsReceipt,
+    ApprovalPolicy, ApprovalRequest, Attachment, AuditLog, BarcodeScanLog, Branch, Company, Customer, CustomerPortalAccess, CustomerPortalOrder, DeliveryProof, DeliveryRun, DeliveryStop, GoodsReceipt,
     GoodsReceiptItem, InventoryMovement, Invoice, LedgerEntry, Notification, Order,
     OrderItem, Payment, PriceList, PriceRule, Product, PurchaseItem, PurchaseOrder,
     Quotation, QuotationItem, ReorderSuggestion, ReturnItem, ReturnOrder, SalesTarget,
@@ -41,11 +41,11 @@ from .services import (
 )
 
 PERMISSIONS = {
-    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','team','settings','audit','delivery'],
-    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','audit','delivery'],
-    'SALES': ['dashboard','customers','orders','invoices','ledger','whatsapp','tax','pricing','field-sales','quotations','payments'],
-    'WAREHOUSE': ['dashboard','products','inventory','orders','purchases','warehouses','barcode','returns','insights','delivery'],
-    'ACCOUNTANT': ['dashboard','customers','orders','invoices','purchases','ledger','tax','returns','insights','payments','reports','audit','delivery'],
+    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','team','settings','audit','delivery','approvals'],
+    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','audit','delivery','approvals'],
+    'SALES': ['dashboard','customers','orders','invoices','ledger','whatsapp','tax','pricing','field-sales','quotations','payments','approvals'],
+    'WAREHOUSE': ['dashboard','products','inventory','orders','purchases','warehouses','barcode','returns','insights','delivery','approvals'],
+    'ACCOUNTANT': ['dashboard','customers','orders','invoices','purchases','ledger','tax','returns','insights','payments','reports','audit','delivery','approvals'],
 }
 
 
@@ -1090,3 +1090,23 @@ def delivery(request):
         return JsonResponse({'ok':True,'status':stop.status})
     runs=DeliveryRun.objects.filter(company=request.company).prefetch_related('stops__order__customer').order_by('-delivery_date','-id')[:30]
     return JsonResponse({'runs':[{'id':r.id,'runNo':r.run_no,'route':r.route_name,'driver':r.driver_name,'vehicle':r.vehicle_no,'date':r.delivery_date.isoformat(),'status':r.status,'stops':[{'id':s.id,'order':s.order.order_no,'customer':s.order.customer.name,'status':s.status,'cod':float(s.cod_amount),'sequence':s.sequence} for s in r.stops.all()]} for r in runs]})
+
+@csrf_exempt
+@require_http_methods(['GET','POST'])
+@api_auth_required
+def approvals(request):
+    if request.method=='POST':
+        body=_json_body(request) or {}; action=body.get('action','request')
+        if action=='request':
+            policy=ApprovalPolicy.objects.filter(company=request.company,key=body.get('policyKey'),is_active=True).first()
+            row=ApprovalRequest.objects.create(company=request.company,policy=policy,request_no=_next_no('APR'),entity_type=str(body.get('entityType','Manual'))[:60],entity_id=str(body.get('entityId',''))[:80],title=str(body.get('title','Approval required'))[:180],amount=decimal(body.get('amount')),payload=body.get('payload') if isinstance(body.get('payload'),dict) else {},requested_by=request.api_user)
+            return JsonResponse({'ok':True,'id':row.id,'requestNo':row.request_no},status=201)
+        row=ApprovalRequest.objects.filter(pk=body.get('id'),company=request.company,status=ApprovalRequest.Status.PENDING).first()
+        if not row:return JsonResponse({'detail':'Pending approval not found.'},status=404)
+        role=request.api_user.profile.role; expected=row.policy.approver_role if row.policy else 'MANAGER'
+        if role not in ('OWNER',expected):return JsonResponse({'detail':f'{expected} approval required.'},status=403)
+        row.status=ApprovalRequest.Status.APPROVED if action=='approve' else ApprovalRequest.Status.REJECTED;row.decided_by=request.api_user;row.decision_note=str(body.get('note',''))[:240];row.decided_at=timezone.now();row.save(update_fields=['status','decided_by','decision_note','decided_at'])
+        audit(request,action,row,f'{action.title()}d {row.request_no}',{'entity':row.entity_type})
+        return JsonResponse({'ok':True,'status':row.status})
+    policies=ApprovalPolicy.objects.filter(company=request.company).order_by('label'); rows=ApprovalRequest.objects.filter(company=request.company).select_related('requested_by','decided_by','policy').order_by('-created_at')[:100]
+    return JsonResponse({'policies':[{'key':p.key,'label':p.label,'threshold':float(p.threshold),'approverRole':p.approver_role,'active':p.is_active} for p in policies],'requests':[{'id':r.id,'requestNo':r.request_no,'title':r.title,'entity':r.entity_type,'amount':float(r.amount),'status':r.status,'requestedBy':r.requested_by.get_full_name() or r.requested_by.username if r.requested_by else 'System','approverRole':r.policy.approver_role if r.policy else 'MANAGER','createdAt':r.created_at.isoformat()} for r in rows]})

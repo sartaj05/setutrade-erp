@@ -764,3 +764,29 @@ class DeliveryProof(models.Model):
     photo_url=models.URLField(blank=True)
     note=models.CharField(max_length=240,blank=True)
     captured_at=models.DateTimeField(auto_now_add=True)
+
+
+class ApprovalPolicy(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='approval_policies')
+    key=models.CharField(max_length=60)
+    label=models.CharField(max_length=140)
+    threshold=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    approver_role=models.CharField(max_length=20,default='MANAGER')
+    is_active=models.BooleanField(default=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['company','key'],name='unique_company_approval_policy')]
+
+class ApprovalRequest(models.Model):
+    class Status(models.TextChoices): PENDING='Pending','Pending'; APPROVED='Approved','Approved'; REJECTED='Rejected','Rejected'; CANCELLED='Cancelled','Cancelled'
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='approval_requests')
+    policy=models.ForeignKey(ApprovalPolicy,on_delete=models.PROTECT,related_name='requests',null=True,blank=True)
+    request_no=models.CharField(max_length=40,unique=True)
+    entity_type=models.CharField(max_length=60)
+    entity_id=models.CharField(max_length=80)
+    title=models.CharField(max_length=180)
+    amount=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    payload=models.JSONField(default=dict,blank=True)
+    status=models.CharField(max_length=20,choices=Status.choices,default=Status.PENDING)
+    requested_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,related_name='approval_requests_made')
+    decided_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True,related_name='approval_requests_decided')
+    decision_note=models.CharField(max_length=240,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True); decided_at=models.DateTimeField(null=True,blank=True)

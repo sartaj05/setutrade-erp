@@ -7,11 +7,11 @@ export const demoAccounts = [
 ];
 
 export const permissions = {
-  OWNER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'tax', 'pricing', 'returns', 'field-sales', 'insights', 'quotations', 'payments', 'reports', 'team', 'settings', 'audit', 'delivery'],
-  MANAGER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'tax', 'pricing', 'returns', 'field-sales', 'insights', 'quotations', 'payments', 'reports', 'audit', 'delivery'],
-  SALES: ['dashboard', 'customers', 'orders', 'invoices', 'ledger', 'whatsapp', 'tax', 'pricing', 'field-sales', 'quotations', 'payments'],
-  WAREHOUSE: ['dashboard', 'products', 'inventory', 'orders', 'purchases', 'warehouses', 'barcode', 'returns', 'insights', 'delivery'],
-  ACCOUNTANT: ['dashboard', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'tax', 'returns', 'insights', 'payments', 'reports', 'audit', 'delivery'],
+  OWNER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'tax', 'pricing', 'returns', 'field-sales', 'insights', 'quotations', 'payments', 'reports', 'team', 'settings', 'audit', 'delivery', 'approvals'],
+  MANAGER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'tax', 'pricing', 'returns', 'field-sales', 'insights', 'quotations', 'payments', 'reports', 'audit', 'delivery', 'approvals'],
+  SALES: ['dashboard', 'customers', 'orders', 'invoices', 'ledger', 'whatsapp', 'tax', 'pricing', 'field-sales', 'quotations', 'payments', 'approvals'],
+  WAREHOUSE: ['dashboard', 'products', 'inventory', 'orders', 'purchases', 'warehouses', 'barcode', 'returns', 'insights', 'delivery', 'approvals'],
+  ACCOUNTANT: ['dashboard', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'tax', 'returns', 'insights', 'payments', 'reports', 'audit', 'delivery', 'approvals'],
 };
 
 export const roleHomeCopy = {
