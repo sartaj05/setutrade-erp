@@ -3,6 +3,7 @@ import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
 import DashboardPage from './pages/DashboardPage';
 import AppShell from './components/AppShell';
+import ModulePage from './pages/ModulePage';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
 function useTinyRouter() {
@@ -30,13 +31,13 @@ function Routes() {
   }, [user, module]);
 
   if (path === '/login') {
-    if (user) return <AppShell module="dashboard" onModuleChange={setModule} navigate={navigate}><DashboardPage /></AppShell>;
+    if (user) return <AppShell module={module} onModuleChange={setModule} navigate={navigate}>{module === 'dashboard' ? <DashboardPage /> : <ModulePage module={module} />}</AppShell>;
     return <LoginPage navigate={navigate} />;
   }
 
   if (path.startsWith('/app')) {
     if (!user) return <LoginPage navigate={navigate} />;
-    return <AppShell module={module} onModuleChange={setModule} navigate={navigate}><DashboardPage /></AppShell>;
+    return <AppShell module={module} onModuleChange={setModule} navigate={navigate}>{module === 'dashboard' ? <DashboardPage /> : <ModulePage module={module} />}</AppShell>;
   }
 
   return <LandingPage navigate={navigate} path={path} />;
