@@ -55,4 +55,5 @@ urlpatterns = [
     path('accounting/', views.accounting),
     path('sync/offline/', views.offline_sync),
     path('subscription/', views.subscription_billing),
+    path('forecasting/', views.forecasting),
 ]

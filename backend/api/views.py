@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 from datetime import timedelta
 from decimal import Decimal
+from django.conf import settings
 from django.contrib.auth import authenticate
 from django.contrib.auth.hashers import check_password
 from django.contrib.auth.tokens import default_token_generator
@@ -41,10 +42,10 @@ from .services import (
 )
 
 PERMISSIONS = {
-    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','team','settings','audit','delivery','approvals','invoice-ocr', 'accounting', 'offline', 'subscription'],
-    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','audit','delivery','approvals','invoice-ocr', 'accounting', 'offline'],
+    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','team','settings','audit','delivery','approvals','invoice-ocr', 'accounting', 'offline', 'subscription', 'forecasting'],
+    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','audit','delivery','approvals','invoice-ocr', 'accounting', 'offline', 'forecasting'],
     'SALES': ['dashboard','customers','orders','invoices','ledger','whatsapp','tax','pricing','field-sales','quotations','payments','approvals','invoice-ocr', 'offline'],
-    'WAREHOUSE': ['dashboard','products','inventory','orders','purchases','warehouses','barcode','returns','insights','delivery','approvals','invoice-ocr', 'offline'],
+    'WAREHOUSE': ['dashboard','products','inventory','orders','purchases','warehouses','barcode','returns','insights','delivery','approvals','invoice-ocr', 'offline', 'forecasting'],
     'ACCOUNTANT': ['dashboard','customers','orders','invoices','purchases','ledger','tax','returns','insights','payments','reports','audit','delivery','approvals','invoice-ocr', 'accounting'],
 }
 
@@ -1205,3 +1206,34 @@ def subscription_billing(request):
         if action=='cancel': sub.cancel_at_period_end=True;sub.save(update_fields=['cancel_at_period_end','updated_at']);return JsonResponse({'ok':True})
     plans=SubscriptionPlan.objects.filter(is_active=True).order_by('monthly_price'); invoices=SubscriptionInvoice.objects.filter(company=request.company).order_by('-created_at')[:20]
     return JsonResponse({'subscription':{'status':sub.status,'plan':sub.plan.code,'planName':sub.plan.name,'periodEnd':sub.current_period_end.isoformat(),'cancelAtPeriodEnd':sub.cancel_at_period_end},'usage':{'users':request.company.profiles.count(),'branches':request.company.branches.count(),'warehouses':request.company.warehouses.count()},'plans':[{'code':p.code,'name':p.name,'monthly':float(p.monthly_price),'annual':float(p.annual_price),'userLimit':p.user_limit,'branchLimit':p.branch_limit,'warehouseLimit':p.warehouse_limit,'features':p.features} for p in plans],'invoices':[{'invoiceNo':x.invoice_no,'amount':float(x.amount+x.tax),'status':x.status,'dueDate':x.due_date.isoformat()} for x in invoices]})
+
+def _forecast_row(company, product, warehouse=None, horizon=30):
+    today=timezone.localdate(); recent_start=today-timedelta(days=30); prev_start=today-timedelta(days=60)
+    base=OrderItem.objects.filter(order__company=company,product=product,order__status__in=[Order.Status.CONFIRMED,Order.Status.PROCESSING,Order.Status.PACKED,Order.Status.READY,Order.Status.DISPATCHED])
+    if warehouse: base=base.filter(order__warehouse=warehouse)
+    recent=base.filter(order__order_date__gte=recent_start).aggregate(q=Sum('quantity'))['q'] or Decimal('0'); prev=base.filter(order__order_date__gte=prev_start,order__order_date__lt=recent_start).aggregate(q=Sum('quantity'))['q'] or Decimal('0')
+    avg=recent/Decimal('30'); trend=((recent-prev)/prev*100) if prev>0 else (Decimal('25') if recent>0 else Decimal('0')); multiplier=max(Decimal('0.5'),Decimal('1')+(trend/Decimal('100'))*Decimal('0.35')); forecast=avg*Decimal(str(horizon))*multiplier; safety=max(product.reorder_level,avg*Decimal('7')); current=product.stock
+    if warehouse:
+        bal=StockBalance.objects.filter(company=company,product=product,warehouse=warehouse).first(); current=bal.quantity if bal else Decimal('0')
+    recommend=max(Decimal('0'),forecast+safety-current); confidence=Decimal('82') if recent>0 and prev>0 else Decimal('62')
+    return avg,trend,forecast,safety,recommend,confidence,current
+
+@csrf_exempt
+@require_http_methods(['GET','POST'])
+@roles_allowed('OWNER','MANAGER','WAREHOUSE')
+def forecasting(request):
+    horizon=max(7,min(90,int(request.GET.get('horizon',30) or 30)))
+    if request.method=='POST':
+        body=_json_body(request) or {};horizon=max(7,min(90,int(body.get('horizon',30) or 30)));products_qs=Product.objects.filter(company=request.company,is_active=True)[:250]
+        warehouse=Warehouse.objects.filter(pk=body.get('warehouseId'),company=request.company).first() if body.get('warehouseId') else None
+        for p in products_qs:
+            avg,trend,forecast,safety,recommend,confidence,current=_forecast_row(request.company,p,warehouse,horizon)
+            DemandForecast.objects.update_or_create(company=request.company,product=p,warehouse=warehouse,horizon_days=horizon,defaults={'avg_daily_demand':avg,'trend_percent':trend,'forecast_quantity':forecast,'safety_stock':safety,'recommended_purchase':recommend,'confidence':confidence})
+        return JsonResponse({'ok':True,'generated':products_qs.count(),'horizon':horizon})
+    rows=DemandForecast.objects.filter(company=request.company,horizon_days=horizon).select_related('product','warehouse').order_by('-recommended_purchase')[:100]
+    if not rows.exists():
+        preview=[]
+        for p in Product.objects.filter(company=request.company,is_active=True)[:50]:
+            avg,trend,forecast,safety,recommend,confidence,current=_forecast_row(request.company,p,None,horizon);preview.append({'product':p.name,'sku':p.sku,'warehouse':'All warehouses','currentStock':float(current),'avgDaily':float(avg),'trend':float(trend),'forecast':float(forecast),'safetyStock':float(safety),'recommendedPurchase':float(recommend),'confidence':float(confidence)})
+        return JsonResponse({'horizon':horizon,'forecasts':sorted(preview,key=lambda x:x['recommendedPurchase'],reverse=True)})
+    return JsonResponse({'horizon':horizon,'forecasts':[{'product':x.product.name,'sku':x.product.sku,'warehouse':x.warehouse.name if x.warehouse else 'All warehouses','currentStock':float(x.product.stock),'avgDaily':float(x.avg_daily_demand),'trend':float(x.trend_percent),'forecast':float(x.forecast_quantity),'safetyStock':float(x.safety_stock),'recommendedPurchase':float(x.recommended_purchase),'confidence':float(x.confidence)} for x in rows]})

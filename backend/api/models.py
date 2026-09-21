@@ -871,3 +871,18 @@ class SubscriptionInvoice(models.Model):
     due_date=models.DateField(); paid_at=models.DateTimeField(null=True,blank=True)
     payment_reference=models.CharField(max_length=120,blank=True)
     created_at=models.DateTimeField(auto_now_add=True)
+
+
+class DemandForecast(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='demand_forecasts')
+    product=models.ForeignKey(Product,on_delete=models.CASCADE,related_name='demand_forecasts')
+    warehouse=models.ForeignKey(Warehouse,on_delete=models.SET_NULL,null=True,blank=True,related_name='demand_forecasts')
+    horizon_days=models.PositiveIntegerField(default=30)
+    avg_daily_demand=models.DecimalField(max_digits=12,decimal_places=3,default=0)
+    trend_percent=models.DecimalField(max_digits=8,decimal_places=2,default=0)
+    forecast_quantity=models.DecimalField(max_digits=12,decimal_places=2,default=0)
+    safety_stock=models.DecimalField(max_digits=12,decimal_places=2,default=0)
+    recommended_purchase=models.DecimalField(max_digits=12,decimal_places=2,default=0)
+    confidence=models.DecimalField(max_digits=5,decimal_places=2,default=0)
+    generated_at=models.DateTimeField(auto_now=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['company','product','warehouse','horizon_days'],name='unique_company_product_forecast')]
