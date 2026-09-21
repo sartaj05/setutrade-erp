@@ -1,5 +1,6 @@
 import json
 import secrets
+from urllib.parse import urlencode
 from datetime import timedelta
 from decimal import Decimal
 
@@ -33,6 +34,21 @@ def _body(request):
 
 def _money(value):
     return float(value or 0)
+
+
+
+@require_http_methods(['GET'])
+def public_payment_link(request, token):
+    link = PaymentLink.objects.select_related('company', 'customer', 'invoice').filter(token=token, status='Active').first()
+    if not link:
+        return JsonResponse({'detail': 'Payment link is invalid or expired.'}, status=404)
+    if link.expires_at and link.expires_at < timezone.now():
+        link.status = 'Expired'; link.save(update_fields=['status'])
+        return JsonResponse({'detail': 'Payment link has expired.'}, status=410)
+    note = link.invoice.invoice_no if link.invoice else f'Customer {link.customer.code}'
+    params = {'pa': link.company.upi_id, 'pn': link.company.name, 'am': str(link.amount), 'cu': 'INR', 'tn': note}
+    upi_uri = f"upi://pay?{urlencode(params)}" if link.company.upi_id else ''
+    return JsonResponse({'company': link.company.name, 'customer': link.customer.name, 'invoice': link.invoice.invoice_no if link.invoice else None, 'amount': _money(link.amount), 'expiresAt': link.expires_at.isoformat() if link.expires_at else None, 'upiUri': upi_uri, 'status': link.status})
 
 
 @csrf_exempt

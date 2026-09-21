@@ -1,0 +1,9 @@
+import { useEffect, useState } from 'react';
+import Brand from '../components/Brand';
+import { apiBase } from '../services/api';
+const money=n=>`₹${Number(n||0).toLocaleString('en-IN')}`;
+export default function PaymentLinkPage({token,navigate}){
+  const [data,setData]=useState(null); const [error,setError]=useState('');
+  useEffect(()=>{fetch(`${apiBase}/pay/${encodeURIComponent(token)}/`).then(async r=>{if(!r.ok)throw new Error((await r.json()).detail||'Payment link unavailable');return r.json()}).then(setData).catch(()=>{if(token==='demo-rk-payment-link')setData({company:'Khanna Electrical Distributors',customer:'R.K. Trading Co.',invoice:'INV-2026-1184',amount:58240,status:'Active',upiUri:'upi://pay?pa=khanna%40upi&pn=Khanna%20Electrical%20Distributors&am=58240&cu=INR&tn=INV-2026-1184'});else setError('Payment link is unavailable.');});},[token]);
+  return <div className="portal-shell"><header><Brand/><button onClick={()=>navigate('/')}>SetuStock</button></header><main className="payment-page"><section className="panel payment-card"><span className="eyebrow">Secure payment request</span><h1>{data?money(data.amount):'Payment'}</h1>{error?<div className="form-error">{error}</div>:data?<><p>Pay <strong>{data.company}</strong></p><div className="payment-detail"><span>Customer</span><strong>{data.customer}</strong></div><div className="payment-detail"><span>Invoice</span><strong>{data.invoice||'Account payment'}</strong></div><div className="payment-detail"><span>Status</span><strong>{data.status}</strong></div>{data.upiUri?<a className="payment-upi" href={data.upiUri}>Open UPI app</a>:<p className="muted">UPI is not configured for this company.</p>}<small>Payments are reconciled to open invoices after the provider/bank confirms the transaction.</small></>:<p>Loading payment request…</p>}</section></main></div>;
+}

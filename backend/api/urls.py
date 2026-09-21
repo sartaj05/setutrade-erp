@@ -58,6 +58,7 @@ urlpatterns = [
     path('forecasting/', views.forecasting),
     path('assistant/', views.ai_assistant),
     path('collections/', expansion_views.collections),
+    path('pay/<str:token>/', expansion_views.public_payment_link),
     path('wms/', expansion_views.wms),
     path('supplier-portal/login/', expansion_views.supplier_portal_login),
     path('supplier-portal/', expansion_views.supplier_portal),
