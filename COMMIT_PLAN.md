@@ -1,36 +1,35 @@
-# Feature-wise commit strategy
+# Feature-wise Git history
 
-The repository already contains feature-scoped commits. Inspect them with:
+This repository is intentionally committed feature-by-feature. Inspect the actual history with:
 
 ```bash
 git log --oneline --reverse
 ```
 
-Current milestones:
-1. Project brief and architecture
-2. Landing page + trust-first light visual system
-3. Login + role-based navigation
-4. Role-aware dashboard
-5. Inventory, customers, B2B orders and finance screens
-6. Core Django APIs + signed authentication
-7. Django-first / demo-fallback React integration
-8. GST invoice module
-9. Deployment configuration and verification
+## Original foundation commits
 
-Recommended next commits for real product development:
+1. `chore: bootstrap SetuStock NCR project brief`
+2. `feat(frontend): add trust-first landing page and visual system`
+3. `feat(auth): add demo login and role-based application shell`
+4. `feat(dashboard): add role-aware operational overview`
+5. `feat(operations): add inventory customer order and finance demo modules`
+6. `feat(backend): add core Django auth inventory customer and order APIs`
+7. `feat(integration): prefer Django API with automatic demo-data fallback`
+8. `feat(invoices): add GST invoice demo and Django API support`
+9. `chore(deploy): add demo deployment config environments and hardening notes`
+10. `chore(frontend): align React and Vite toolchain with current releases`
 
-```text
-feat(tenancy): add organisation and branch isolation
-feat(products): add product CRUD and validation
-feat(stock): add stock movement ledger and adjustments
-feat(purchases): add suppliers and purchase orders
-feat(orders): add line items and stock reservation
-feat(invoices): add GST calculation and PDF rendering
-feat(credit): add customer ledger and ageing buckets
-feat(payments): add receipt allocation and reconciliation
-feat(whatsapp): add template messages and webhook delivery status
-feat(audit): add immutable operational audit log
-feat(reports): add sales margin stock and receivable exports
-feat(testing): add API and React integration coverage
-chore(ci): add build test and deployment pipeline
-```
+## Ten enhancement commits
+
+1. `feat(purchases): add suppliers purchase orders and goods receiving`
+2. `feat(ledger): add customer credit ageing and collections`
+3. `feat(warehouse): add multi-location inventory and stock transfers`
+4. `feat(barcode): add product scanning and label workflow`
+5. `feat(whatsapp): add B2B ordering and customer chat drafts`
+6. `feat(gst): add advanced GST notes and e-invoice readiness`
+7. `feat(pricing): add customer price lists and quantity schemes`
+8. `feat(returns): add returns damage and stock adjustments`
+9. `feat(sales): add field-sales visits targets and collections`
+10. `feat(insights): add reorder intelligence and business analytics`
+
+The final repository-quality commit adds CI, tests, updated documentation and validation fixes without squashing the feature history.

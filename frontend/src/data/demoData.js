@@ -9,7 +9,7 @@ export const demoAccounts = [
 export const permissions = {
   OWNER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'tax', 'pricing', 'returns', 'field-sales', 'insights', 'quotations', 'payments', 'reports', 'team', 'settings'],
   MANAGER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'tax', 'pricing', 'returns', 'field-sales', 'insights', 'quotations', 'payments', 'reports'],
-  SALES: ['dashboard', 'customers', 'orders', 'invoices', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'tax', 'pricing', 'returns', 'field-sales', 'insights', 'quotations', 'payments'],
+  SALES: ['dashboard', 'customers', 'orders', 'invoices', 'ledger', 'whatsapp', 'tax', 'pricing', 'field-sales', 'quotations', 'payments'],
   WAREHOUSE: ['dashboard', 'products', 'inventory', 'orders', 'purchases', 'warehouses', 'barcode', 'returns', 'insights'],
   ACCOUNTANT: ['dashboard', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'tax', 'returns', 'insights', 'payments', 'reports'],
 };

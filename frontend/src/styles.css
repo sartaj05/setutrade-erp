@@ -201,10 +201,10 @@ a { color: inherit; text-decoration: none; }
 .feature-flow span { background:#fff; border:1px solid #e1e5df; border-radius:9px; padding:8px 10px; color:var(--teal); }
 .feature-flow i { font-style:normal; color:#a5afac; }
 .feature-badge { display:inline-flex; min-height:22px; align-items:center; padding:0 8px; border-radius:7px; background:#eceff4; color:#64708f; font-size:8px; font-weight:900; }
-.feature-badge.received, .feature-badge.approved, .feature-badge.completed, .feature-badge.healthy, .feature-badge.sent { background:#e8f1ea; color:#507562; }
-.feature-badge.partial, .feature-badge.pending, .feature-badge.medium, .feature-badge.open { background:#f4ecd9; color:#9a743a; }
-.feature-badge.draft, .feature-badge.in-transit, .feature-badge.processing { background:#ebedf7; color:#5c6caa; }
-.feature-badge.overdue, .feature-badge.high, .feature-badge.damaged, .feature-badge.rejected { background:#f5e5e0; color:#a25f51; }
+.feature-badge.status-received, .feature-badge.status-approved, .feature-badge.status-completed, .feature-badge.status-healthy, .feature-badge.status-sent { background:#e8f1ea; color:#507562; }
+.feature-badge.status-partial, .feature-badge.status-pending, .feature-badge.status-medium, .feature-badge.status-open { background:#f4ecd9; color:#9a743a; }
+.feature-badge.status-draft, .feature-badge.status-in-transit, .feature-badge.status-processing { background:#ebedf7; color:#5c6caa; }
+.feature-badge.status-overdue, .feature-badge.status-high, .feature-badge.status-damaged, .feature-badge.status-rejected { background:#f5e5e0; color:#a25f51; }
 .feature-cards { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:14px; }
 .feature-card-compact { background:#fff; border:1px solid #e1e3dc; border-radius:15px; padding:18px; }
 .feature-card-compact span, .feature-card-compact small { color:#84908d; font-size:8px; }
@@ -215,9 +215,9 @@ a { color: inherit; text-decoration: none; }
 .ageing-strip div { background:#fff; border:1px solid #e1e3dc; border-radius:12px; padding:13px 15px; }
 .ageing-strip span { color:#8a9693; font-size:8px; text-transform:uppercase; font-weight:800; }
 .ageing-strip strong { display:block; margin-top:7px; font-size:15px; }
-.feature-badge.current, .feature-badge.payment { background:#e8f1ea; color:#507562; }
-.feature-badge.1-30-days, .feature-badge.31-60-days { background:#f4ecd9; color:#9a743a; }
-.feature-badge.61-90-days, .feature-badge.90\+-days { background:#f5e5e0; color:#a25f51; }
+.feature-badge.status-current, .feature-badge.status-payment { background:#e8f1ea; color:#507562; }
+.feature-badge.status-1-30-days, .feature-badge.status-31-60-days { background:#f4ecd9; color:#9a743a; }
+.feature-badge.status-61-90-days, .feature-badge.status-90\+-days { background:#f5e5e0; color:#a25f51; }
 @media(max-width:650px){.ageing-strip{grid-template-columns:1fr 1fr}}
 
 .warehouse-grid { display:grid; grid-template-columns:repeat(3,1fr); gap:11px; margin-bottom:14px; }

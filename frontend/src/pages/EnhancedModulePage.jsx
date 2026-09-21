@@ -14,7 +14,7 @@ function Kpis({ items }) {
 
 function Badge({ children }) {
   const key = String(children).toLowerCase().replace(/\s+/g, '-');
-  return <span className={`feature-badge ${key}`}>{children}</span>;
+  return <span className={`feature-badge status-${key}`}>{children}</span>;
 }
 
 function PurchasesPage() {
