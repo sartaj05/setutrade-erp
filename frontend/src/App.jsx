@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
+import CustomerPortalPage from './pages/CustomerPortalPage';
 import DashboardPage from './pages/DashboardPage';
 import AppShell from './components/AppShell';
 import ModulePage from './pages/ModulePage';
@@ -29,6 +30,8 @@ function Routes() {
   useEffect(() => {
     if (user && !can(module)) setModule('dashboard');
   }, [user, module]);
+
+  if (path === '/portal') return <CustomerPortalPage navigate={navigate} />;
 
   if (path === '/login') {
     if (user) return <AppShell module={module} onModuleChange={setModule} navigate={navigate}>{module === 'dashboard' ? <DashboardPage /> : <ModulePage module={module} />}</AppShell>;

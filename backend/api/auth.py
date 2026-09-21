@@ -111,3 +111,26 @@ def roles_allowed(*roles):
             return view_func(request, *args, **kwargs)
         return wrapped
     return decorator
+
+PORTAL_SALT = 'setustock.portal.access'
+
+def create_portal_token(access):
+    return signing.dumps({'aid': access.id, 'cid': access.customer_id, 'co': access.company_id}, salt=PORTAL_SALT, compress=True)
+
+def portal_auth_required(view_func):
+    @wraps(view_func)
+    def wrapped(request, *args, **kwargs):
+        from .models import CustomerPortalAccess
+        header = request.headers.get('Authorization', '')
+        if not header.startswith('Portal '):
+            return JsonResponse({'detail': 'Customer portal authentication required.'}, status=401)
+        try:
+            payload = signing.loads(header[7:].strip(), salt=PORTAL_SALT, max_age=60 * 60 * 24 * 30)
+            access = CustomerPortalAccess.objects.select_related('customer', 'company').get(pk=payload['aid'], is_active=True)
+        except (signing.BadSignature, signing.SignatureExpired, CustomerPortalAccess.DoesNotExist, KeyError):
+            return JsonResponse({'detail': 'Portal session is invalid or expired.'}, status=401)
+        request.portal_access = access
+        request.customer = access.customer
+        request.company = access.company
+        return view_func(request, *args, **kwargs)
+    return wrapped

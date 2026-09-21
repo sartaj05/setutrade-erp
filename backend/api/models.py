@@ -698,3 +698,34 @@ class Attachment(models.Model):
     size = models.PositiveIntegerField(default=0)
     uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, related_name='uploaded_attachments', null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class CustomerPortalAccess(models.Model):
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='portal_access')
+    customer = models.OneToOneField(Customer, on_delete=models.CASCADE, related_name='portal_access')
+    email = models.EmailField()
+    pin_hash = models.CharField(max_length=180)
+    is_active = models.BooleanField(default=True)
+    last_login_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['company', 'email'], name='unique_company_portal_email')]
+
+
+class CustomerPortalOrder(models.Model):
+    class Status(models.TextChoices):
+        SUBMITTED = 'Submitted', 'Submitted'
+        ACCEPTED = 'Accepted', 'Accepted'
+        REJECTED = 'Rejected', 'Rejected'
+        CONVERTED = 'Converted', 'Converted'
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='portal_orders')
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='portal_orders')
+    request_no = models.CharField(max_length=40, unique=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.SUBMITTED)
+    items = models.JSONField(default=list)
+    estimated_total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    notes = models.TextField(blank=True)
+    converted_order = models.ForeignKey(Order, on_delete=models.SET_NULL, null=True, blank=True, related_name='portal_requests')
+    created_at = models.DateTimeField(auto_now_add=True)

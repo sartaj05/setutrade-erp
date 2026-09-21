@@ -8,6 +8,7 @@ import urllib.request
 from datetime import timedelta
 from decimal import Decimal
 from django.contrib.auth import authenticate
+from django.contrib.auth.hashers import check_password
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib.auth.models import User
 from django.db import connection, transaction
@@ -22,11 +23,11 @@ from django.utils.html import escape
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from .auth import (
-    api_auth_required, create_session_tokens, refresh_access_token,
+    api_auth_required, create_session_tokens, refresh_access_token, create_portal_token, portal_auth_required,
     revoke_request_session, roles_allowed,
 )
 from .models import (
-    Attachment, AuditLog, BarcodeScanLog, Branch, Company, Customer, GoodsReceipt,
+    Attachment, AuditLog, BarcodeScanLog, Branch, Company, Customer, CustomerPortalAccess, CustomerPortalOrder, GoodsReceipt,
     GoodsReceiptItem, InventoryMovement, Invoice, LedgerEntry, Notification, Order,
     OrderItem, Payment, PriceList, PriceRule, Product, PurchaseItem, PurchaseOrder,
     Quotation, QuotationItem, ReorderSuggestion, ReturnItem, ReturnOrder, SalesTarget,
@@ -1023,3 +1024,46 @@ def attachments(request):
     if module: qs=qs.filter(module=module)
     if entity_id: qs=qs.filter(entity_id=entity_id)
     return JsonResponse({'attachments':[{'id':a.id,'name':a.original_name,'url':a.file.url,'size':a.size,'module':a.module,'entityId':a.entity_id,'time':a.created_at.isoformat()} for a in qs.order_by('-created_at')[:100]]})
+
+@csrf_exempt
+@require_POST
+def portal_login(request):
+    body = _json_body(request) or {}
+    email = str(body.get('email', '')).strip().lower()
+    pin = str(body.get('pin', ''))
+    access = CustomerPortalAccess.objects.select_related('customer', 'company').filter(email__iexact=email, is_active=True).first()
+    if not access or not check_password(pin, access.pin_hash):
+        return JsonResponse({'detail': 'Invalid portal email or PIN.'}, status=401)
+    access.last_login_at = timezone.now(); access.save(update_fields=['last_login_at'])
+    return JsonResponse({'token': create_portal_token(access), 'customer': {'id': access.customer_id, 'name': access.customer.name, 'outstanding': float(access.customer.outstanding), 'creditLimit': float(access.customer.credit_limit)}, 'business': access.company.name})
+
+@require_GET
+@portal_auth_required
+def portal_catalog(request):
+    products_qs = Product.objects.filter(company=request.company, is_active=True).order_by('name')[:200]
+    rows = []
+    for p in products_qs:
+        best = PriceRule.objects.filter(price_list__company=request.company, price_list__is_active=True, product=p).filter(Q(price_list__customer=request.customer) | Q(price_list__customer__isnull=True)).order_by('-min_quantity').first()
+        rows.append({'id': p.id, 'sku': p.sku, 'name': p.name, 'stock': float(p.stock), 'unit': p.unit, 'price': float(best.price if best else p.sell_price), 'gst': float(p.gst_rate), 'image': p.image_url})
+    recent = CustomerPortalOrder.objects.filter(company=request.company, customer=request.customer).order_by('-created_at')[:10]
+    return JsonResponse({'products': rows, 'credit': {'outstanding': float(request.customer.outstanding), 'limit': float(request.customer.credit_limit)}, 'orders': [{'id': x.request_no, 'status': x.status, 'total': float(x.estimated_total), 'createdAt': x.created_at.isoformat()} for x in recent]})
+
+@csrf_exempt
+@require_POST
+@portal_auth_required
+def portal_place_order(request):
+    body = _json_body(request) or {}
+    items = body.get('items') or []
+    if not isinstance(items, list) or not items:
+        return JsonResponse({'detail': 'At least one cart item is required.'}, status=400)
+    clean=[]; total=Decimal('0')
+    for row in items[:100]:
+        try: product=Product.objects.get(pk=int(row.get('productId')), company=request.company, is_active=True); qty=decimal(row.get('quantity'), '0')
+        except (Product.DoesNotExist, TypeError, ValueError): continue
+        if qty <= 0: continue
+        price=product.sell_price; line=qty*price; total += line
+        clean.append({'productId': product.id, 'sku': product.sku, 'name': product.name, 'quantity': float(qty), 'unit': product.unit, 'price': float(price), 'lineTotal': float(line)})
+    if not clean: return JsonResponse({'detail': 'No valid cart items were supplied.'}, status=400)
+    req=CustomerPortalOrder.objects.create(company=request.company, customer=request.customer, request_no=_next_no('WEB'), items=clean, estimated_total=total, notes=str(body.get('notes',''))[:1000])
+    audit(request, 'create', req, f'Customer portal order {req.request_no} submitted', {'total': float(total)})
+    return JsonResponse({'ok': True, 'requestNo': req.request_no, 'status': req.status, 'total': float(total)}, status=201)

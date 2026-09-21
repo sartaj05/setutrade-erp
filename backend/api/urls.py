@@ -3,6 +3,9 @@ from . import views
 
 urlpatterns = [
     path('health/', views.health),
+    path('portal/login/', views.portal_login),
+    path('portal/catalog/', views.portal_catalog),
+    path('portal/orders/', views.portal_place_order),
     path('auth/login/', views.login_view),
     path('auth/password-reset/request/', views.password_reset_request),
     path('auth/password-reset/confirm/', views.password_reset_confirm),
