@@ -28,6 +28,12 @@ export const demoWms = {
   counts: [
     { id: 1, warehouse: 'Delhi Central', bin: 'A-01-01', product: 'Polycab 2.5mm Wire Red', expected: 7, counted: 6, status: 'Counted' },
   ],
+  waves: [
+    { id: 1, waveNo: 'WAVE-260921-03', warehouse: 'Delhi Central', status: 'Released', pickCount: 3 },
+  ],
+  packing: [
+    { id: 1, packageNo: 'PKG-260921-18', order: 'SO-1095', warehouse: 'Delhi Central', cartons: 2, weightKg: 12.5, status: 'Packed' },
+  ],
 };
 
 export const demoSupplierPortalAdmin = {
