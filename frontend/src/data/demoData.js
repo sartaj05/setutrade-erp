@@ -7,11 +7,11 @@ export const demoAccounts = [
 ];
 
 export const permissions = {
-  OWNER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'tax', 'pricing', 'returns', 'field-sales', 'insights', 'quotations', 'payments', 'reports', 'team', 'settings', 'audit', 'delivery', 'approvals', 'invoice-ocr', 'accounting', 'offline', 'subscription', 'forecasting', 'assistant'],
-  MANAGER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'tax', 'pricing', 'returns', 'field-sales', 'insights', 'quotations', 'payments', 'reports', 'audit', 'delivery', 'approvals', 'invoice-ocr', 'accounting', 'offline', 'forecasting', 'assistant'],
-  SALES: ['dashboard', 'customers', 'orders', 'invoices', 'ledger', 'whatsapp', 'tax', 'pricing', 'field-sales', 'quotations', 'payments', 'delivery', 'approvals', 'offline', 'assistant'],
-  WAREHOUSE: ['dashboard', 'products', 'inventory', 'orders', 'purchases', 'warehouses', 'barcode', 'returns', 'insights', 'delivery', 'approvals', 'invoice-ocr', 'offline', 'forecasting'],
-  ACCOUNTANT: ['dashboard', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'tax', 'returns', 'insights', 'payments', 'reports', 'audit', 'approvals', 'invoice-ocr', 'accounting', 'assistant'],
+  OWNER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'tax', 'pricing', 'returns', 'field-sales', 'insights', 'quotations', 'payments', 'reports', 'team', 'settings', 'audit', 'delivery', 'approvals', 'invoice-ocr', 'accounting', 'offline', 'subscription', 'forecasting', 'assistant', 'collections', 'wms', 'supplier-portal-admin', 'automations', 'channels', 'distribution-network'],
+  MANAGER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'tax', 'pricing', 'returns', 'field-sales', 'insights', 'quotations', 'payments', 'reports', 'audit', 'delivery', 'approvals', 'invoice-ocr', 'accounting', 'offline', 'forecasting', 'assistant', 'collections', 'wms', 'supplier-portal-admin', 'automations', 'channels', 'distribution-network'],
+  SALES: ['dashboard', 'customers', 'orders', 'invoices', 'ledger', 'whatsapp', 'tax', 'pricing', 'field-sales', 'quotations', 'payments', 'delivery', 'approvals', 'offline', 'assistant', 'collections', 'channels'],
+  WAREHOUSE: ['dashboard', 'products', 'inventory', 'orders', 'purchases', 'warehouses', 'barcode', 'returns', 'insights', 'delivery', 'approvals', 'invoice-ocr', 'offline', 'forecasting', 'wms'],
+  ACCOUNTANT: ['dashboard', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'tax', 'returns', 'insights', 'payments', 'reports', 'audit', 'approvals', 'invoice-ocr', 'accounting', 'assistant', 'collections'],
 };
 
 export const roleHomeCopy = {
