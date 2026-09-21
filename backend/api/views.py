@@ -27,7 +27,7 @@ from .auth import (
     revoke_request_session, roles_allowed,
 )
 from .models import (
-    ApprovalPolicy, ApprovalRequest, Attachment, AuditLog, BarcodeScanLog, Branch, Company, Customer, CustomerPortalAccess, CustomerPortalOrder, DeliveryProof, DeliveryRun, DeliveryStop, GoodsReceipt,
+    ApprovalPolicy, ApprovalRequest, Attachment, AuditLog, PurchaseInvoiceCapture, BarcodeScanLog, Branch, Company, Customer, CustomerPortalAccess, CustomerPortalOrder, DeliveryProof, DeliveryRun, DeliveryStop, GoodsReceipt,
     GoodsReceiptItem, InventoryMovement, Invoice, LedgerEntry, Notification, Order,
     OrderItem, Payment, PriceList, PriceRule, Product, PurchaseItem, PurchaseOrder,
     Quotation, QuotationItem, ReorderSuggestion, ReturnItem, ReturnOrder, SalesTarget,
@@ -41,11 +41,11 @@ from .services import (
 )
 
 PERMISSIONS = {
-    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','team','settings','audit','delivery','approvals'],
-    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','audit','delivery','approvals'],
-    'SALES': ['dashboard','customers','orders','invoices','ledger','whatsapp','tax','pricing','field-sales','quotations','payments','approvals'],
-    'WAREHOUSE': ['dashboard','products','inventory','orders','purchases','warehouses','barcode','returns','insights','delivery','approvals'],
-    'ACCOUNTANT': ['dashboard','customers','orders','invoices','purchases','ledger','tax','returns','insights','payments','reports','audit','delivery','approvals'],
+    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','team','settings','audit','delivery','approvals','invoice-ocr'],
+    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','audit','delivery','approvals','invoice-ocr'],
+    'SALES': ['dashboard','customers','orders','invoices','ledger','whatsapp','tax','pricing','field-sales','quotations','payments','approvals','invoice-ocr'],
+    'WAREHOUSE': ['dashboard','products','inventory','orders','purchases','warehouses','barcode','returns','insights','delivery','approvals','invoice-ocr'],
+    'ACCOUNTANT': ['dashboard','customers','orders','invoices','purchases','ledger','tax','returns','insights','payments','reports','audit','delivery','approvals','invoice-ocr'],
 }
 
 
@@ -1110,3 +1110,29 @@ def approvals(request):
         return JsonResponse({'ok':True,'status':row.status})
     policies=ApprovalPolicy.objects.filter(company=request.company).order_by('label'); rows=ApprovalRequest.objects.filter(company=request.company).select_related('requested_by','decided_by','policy').order_by('-created_at')[:100]
     return JsonResponse({'policies':[{'key':p.key,'label':p.label,'threshold':float(p.threshold),'approverRole':p.approver_role,'active':p.is_active} for p in policies],'requests':[{'id':r.id,'requestNo':r.request_no,'title':r.title,'entity':r.entity_type,'amount':float(r.amount),'status':r.status,'requestedBy':r.requested_by.get_full_name() or r.requested_by.username if r.requested_by else 'System','approverRole':r.policy.approver_role if r.policy else 'MANAGER','createdAt':r.created_at.isoformat()} for r in rows]})
+
+def _extract_invoice_text(raw):
+    raw=raw or ''
+    gst=re.search(r'\b\d{2}[A-Z]{5}\d{4}[A-Z][A-Z0-9]Z[A-Z0-9]\b',raw.upper())
+    inv=re.search(r'(?:invoice\s*(?:no|number)?\s*[:#-]?\s*)([A-Z0-9\-/]+)',raw,re.I)
+    total_matches=re.findall(r'(?:grand\s+total|invoice\s+total|total)\s*[:₹Rs.]*\s*([\d,]+(?:\.\d{1,2})?)',raw,re.I)
+    date_match=re.search(r'\b(\d{1,2}[/-]\d{1,2}[/-]\d{2,4})\b',raw)
+    return {'invoiceNumber':inv.group(1) if inv else '', 'gstin':gst.group(0) if gst else '', 'invoiceDate':date_match.group(1) if date_match else '', 'total':float(total_matches[-1].replace(',','')) if total_matches else 0, 'lineItems':[]}
+
+@csrf_exempt
+@require_http_methods(['GET','POST','PATCH'])
+@roles_allowed('OWNER','MANAGER','ACCOUNTANT','WAREHOUSE')
+def invoice_ocr(request):
+    if request.method=='POST':
+        body=_json_body(request) or {}; raw=str(body.get('rawText',''))[:30000]; data=_extract_invoice_text(raw)
+        supplier=Supplier.objects.filter(company=request.company,gstin=data.get('gstin')).first() if data.get('gstin') else None
+        cap=PurchaseInvoiceCapture.objects.create(company=request.company,supplier=supplier,file_name=str(body.get('fileName','supplier-invoice.pdf'))[:200],file_url=str(body.get('fileUrl',''))[:200],raw_text=raw,extracted_data=data,confidence=Decimal('88.00') if data.get('invoiceNumber') and data.get('total') else Decimal('62.00'),status=PurchaseInvoiceCapture.Status.EXTRACTED,created_by=request.api_user)
+        return JsonResponse({'capture':{'id':cap.id,'status':cap.status,'confidence':float(cap.confidence),'data':cap.extracted_data}},status=201)
+    if request.method=='PATCH':
+        body=_json_body(request) or {}; cap=PurchaseInvoiceCapture.objects.filter(pk=body.get('id'),company=request.company).first()
+        if not cap:return JsonResponse({'detail':'Capture not found.'},status=404)
+        if isinstance(body.get('data'),dict):cap.extracted_data=body['data']
+        cap.status=body.get('status',PurchaseInvoiceCapture.Status.REVIEWED);cap.save(update_fields=['extracted_data','status','updated_at'])
+        return JsonResponse({'ok':True,'status':cap.status})
+    rows=PurchaseInvoiceCapture.objects.filter(company=request.company).select_related('supplier').order_by('-created_at')[:50]
+    return JsonResponse({'captures':[{'id':x.id,'fileName':x.file_name,'supplier':x.supplier.name if x.supplier else 'Unmatched supplier','status':x.status,'confidence':float(x.confidence),'data':x.extracted_data,'createdAt':x.created_at.isoformat()} for x in rows]})

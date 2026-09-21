@@ -3,7 +3,7 @@ import ProductionModulePage from './ProductionModulePage';
 import GrowthModulePage from './GrowthModulePage';
 
 const productionModules = ['products','inventory','customers','orders','invoices','purchases','warehouses','quotations','payments','reports','team','settings','audit'];
-const growthModules = ['delivery','approvals'];
+const growthModules = ['delivery','approvals','invoice-ocr'];
 const enhancedModules = ['ledger','barcode','whatsapp','tax','pricing','returns','field-sales','insights'];
 
 export default function ModulePage({ module }) {

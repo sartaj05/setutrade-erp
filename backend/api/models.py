@@ -790,3 +790,17 @@ class ApprovalRequest(models.Model):
     decided_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True,related_name='approval_requests_decided')
     decision_note=models.CharField(max_length=240,blank=True)
     created_at=models.DateTimeField(auto_now_add=True); decided_at=models.DateTimeField(null=True,blank=True)
+
+
+class PurchaseInvoiceCapture(models.Model):
+    class Status(models.TextChoices): UPLOADED='Uploaded','Uploaded'; EXTRACTED='Extracted','Extracted'; REVIEWED='Reviewed','Reviewed'; POSTED='Posted','Posted'; FAILED='Failed','Failed'
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='invoice_captures')
+    supplier=models.ForeignKey(Supplier,on_delete=models.SET_NULL,null=True,blank=True,related_name='invoice_captures')
+    file_name=models.CharField(max_length=200)
+    file_url=models.URLField(blank=True)
+    raw_text=models.TextField(blank=True)
+    extracted_data=models.JSONField(default=dict,blank=True)
+    confidence=models.DecimalField(max_digits=5,decimal_places=2,default=0)
+    status=models.CharField(max_length=20,choices=Status.choices,default=Status.UPLOADED)
+    created_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True); updated_at=models.DateTimeField(auto_now=True)
