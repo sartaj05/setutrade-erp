@@ -1,73 +1,124 @@
-# SetuStock NCR Enhancement Suite
+# SetuStock production feature map
 
-The demo now includes ten distribution-focused enhancements on top of the original inventory, customer, order and GST-invoice starter.
+## Core business foundation
 
-## 1. Suppliers, purchases and GRN
-- Supplier master and payable context
-- Purchase orders and expected dates
-- Purchase line items and received quantity
-- Goods receipt records
-- React purchase pipeline + Django endpoints
+### Tenant and role isolation
+- Company → Branch → Warehouse → User hierarchy
+- Company-scoped operational queries
+- Tenant-scoped product SKU/barcode, customer code, supplier code and warehouse code constraints
+- Owner/Manager/Sales/Warehouse/Accountant permissions
+- Read-only reference access where a role needs catalogues to perform its workflow
 
-## 2. Customer credit ledger and collections
-- Invoice/payment/credit-note/adjustment ledger entries
-- Due dates and ageing buckets
-- Receivable and overdue dashboard
-- Collection-ready customer view
+### Authentication and security
+- Access + refresh signed sessions stored server-side
+- Session revocation on logout/password reset
+- Password change and password-reset flow
+- Login throttling
+- Production security headers/CORS controls
+- Demo fallback disabled in production mode
 
-## 3. Multi-warehouse inventory
-- Warehouse master
-- Product balance and reserved stock per warehouse
-- Stock transfer headers/items
-- In-transit/received transfer states
+## Sell-to-cash
 
-## 4. Barcode and QR workflow
-- Product barcode and QR fields
-- Scan log model
-- Barcode/SKU lookup API
-- USB-scanner-friendly React input and label workflow
+### Customers and quotations
+- Customer GST/contact/credit data
+- Customer-specific prices and quantity slabs
+- Quote creation and quote-to-order conversion
 
-## 5. WhatsApp B2B ordering
-- Inbound/outbound WhatsApp message records
-- WhatsApp draft-order model
-- Message-to-product parsing example
-- Draft order preview, stock context and quotation hand-off UI
+### Sales orders
+- Order lines, GST calculation and discounts
+- Warehouse assignment
+- Confirm → reserve → pack → ready → dispatch flow
+- Stock reservation and release
+- Dispatch inventory movements
 
-The repository does not ship Meta credentials. Production WhatsApp Business Platform credentials, approved templates and webhooks must be configured by the deployer.
-
-## 6. Advanced GST and tax notes
-- Product HSN code and GST rate
-- Place of supply and intra/inter-state invoice context
-- CGST/SGST/IGST presentation
+### GST invoices and collections
+- CGST/SGST/IGST context
+- HSN/GST rate lines
+- Customer ledger posting
+- Due dates and receivable ageing
+- Customer receipts and payment methods
+- Print-ready A4 invoice that can be saved as PDF
 - Credit/debit notes
-- Provider-ready e-invoice/e-way-bill status fields
+- Invoice attachments
 
-No government or GST-provider credentials are embedded in the demo.
+## Procure-to-pay
 
-## 7. Customer-specific pricing and schemes
-- Price lists
-- Customer-specific lists
-- Quantity break rules
-- Discount and scheme text
-- Interactive quantity-to-rate simulator
+### Suppliers and purchases
+- Supplier master and outstanding balance
+- Purchase order lines
+- Approval gate
+- GRN with partial receipt support
+- Inventory increment on receipt
+- Supplier ledger posting
+- Supplier payments
 
-## 8. Returns, damaged stock and adjustments
-- Sales/purchase returns
-- Return line items and condition
-- Damaged/count/expiry/other adjustments
-- Return register and stock-adjustment audit-style UI
+## Inventory and fulfilment
 
-## 9. Field sales
-- Sales visit plan and visit outcome
-- Territory, customer, order value and collections
-- Monthly sales and collection targets
-- Mobile-friendly target progress view
+### Warehouses
+- Per-warehouse quantity/reserved balances
+- Transfer request → approval → dispatch → receipt
+- Inventory movements at source and destination
 
-## 10. Smart reorder and business intelligence
-- Reorder suggestion model per SKU/warehouse
-- Daily-sales rate, lead time, days of cover and risk
-- Suggested replenishment quantity
-- Receivable concentration and working-capital view
+### Barcode / scanning
+- Barcode/SKU lookup
+- USB scanner/manual workflow
+- Browser camera scanning where `BarcodeDetector` is supported
+- Stock-in/stock-out actions
+- Printable labels
 
-## Demo-mode architecture
-Every enhanced React screen has bundled demo data. `useApiData` tries Django when the authenticated session is in API mode and falls back to demo data if the API request is unavailable. This lets the frontend be deployed by itself for sales demonstrations.
+### Returns and corrections
+- Sales returns
+- Purchase returns
+- Damaged/expired/count/other adjustments
+- Audit trail for inventory changes
+
+## Sales channels and customer communication
+
+### WhatsApp
+- Inbound text-to-draft parser
+- Outbound customer messages
+- Optional Meta WhatsApp Business Platform adapter via backend credentials
+- Credentials never shipped to React
+
+### Field sales
+- Customer visit plan/results
+- Territory, order value and collections
+- Monthly targets
+
+## Management and operations
+
+### Reports and intelligence
+- Sales, purchases, collections, receivables, payables and stock value
+- Reorder suggestions, days-of-cover and risk
+- Top customer views
+- CSV exports
+
+### Administration
+- Company onboarding and client branding
+- Branch creation
+- Team account creation/deactivation
+- Global search
+- Notifications
+- Audit history
+- File attachments
+- Product/customer CSV import
+
+## Deployment foundation
+- React PWA shell
+- Django WSGI/Gunicorn
+- PostgreSQL-ready settings
+- Dockerfiles + Docker Compose
+- Static files through WhiteNoise
+- Media volume support
+- Database backup/restore scripts
+- Health-check script
+- GitHub Actions CI
+- Transaction-flow API tests
+
+## Integrations requiring client/vendor credentials
+The repository deliberately does not contain third-party secrets. Production configuration is still required for:
+- Meta WhatsApp Business Platform credentials and approved templates/webhooks
+- SMTP/email provider for password reset
+- Authorised GST/e-invoice/e-way-bill provider adapter
+- Production object storage if files should not live on a server filesystem
+- Error tracking/APM provider if desired

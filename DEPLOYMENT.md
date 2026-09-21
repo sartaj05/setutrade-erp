@@ -1,75 +1,123 @@
-# Deployment Guide
+# Deployment guide
 
-## 1. Frontend demo-only deployment
-The React app can be deployed without Django. It will use its built-in demo accounts and data.
+## A. Frontend-only sales demo
 
-### Vercel
-1. Import the repository.
-2. Set **Root Directory** to `frontend`.
-3. Build command: `npm run build`.
-4. Output directory: `dist`.
-5. Keep `VITE_DEMO_FALLBACK=true`.
-6. If you do not have a backend yet, `VITE_API_URL` may point to an unavailable local/default URL; login will fall back automatically for the supplied demo accounts.
+Use Vercel, Netlify, Cloudflare Pages, or any static host.
 
-### Netlify / Cloudflare Pages
-Use `frontend` as the project root, `npm run build` as the build command, and `dist` as the output directory. `_redirects` is included for SPA navigation on Netlify-compatible hosts.
+- Root: `frontend`
+- Build: `npm run build`
+- Output: `dist`
 
-## 2. Django backend deployment
-The backend is a standard WSGI Django app.
+Environment:
 
-Typical commands:
+```env
+VITE_APP_MODE=demo
+VITE_DEMO_FALLBACK=true
+VITE_API_URL=https://unused.example/api
+```
+
+This mode is for demonstration data only.
+
+## B. Production deployment
+
+Recommended topology:
+
+```text
+React static host / CDN
+        |
+      HTTPS
+        |
+Django + Gunicorn
+        |
+    PostgreSQL
+        |
+backup/object storage
+```
+
+Backend minimum environment:
+
+```env
+DJANGO_SECRET_KEY=<long-random-secret>
+DJANGO_DEBUG=false
+DJANGO_ALLOWED_HOSTS=api.example.com
+CORS_ALLOWED_ORIGINS=https://app.example.com
+CSRF_TRUSTED_ORIGINS=https://app.example.com
+SECURE_SSL_REDIRECT=true
+DB_ENGINE=django.db.backends.postgresql
+DB_NAME=setustock
+DB_USER=setustock
+DB_PASSWORD=<secret>
+DB_HOST=<postgres-host>
+DB_PORT=5432
+FRONTEND_URL=https://app.example.com
+EMAIL_BACKEND=django.core.mail.backends.smtp.EmailBackend
+EMAIL_HOST=<smtp-host>
+EMAIL_PORT=587
+EMAIL_HOST_USER=<smtp-user>
+EMAIL_HOST_PASSWORD=<smtp-secret>
+DEFAULT_FROM_EMAIL=noreply@example.com
+SETUSTOCK_DEMO_MODE=false
+```
+
+Frontend:
+
+```env
+VITE_APP_MODE=production
+VITE_API_URL=https://api.example.com/api
+VITE_DEMO_FALLBACK=false
+```
+
+Deploy backend:
 
 ```bash
-cd backend
 pip install -r requirements.txt
-python manage.py migrate
-python manage.py seed_demo
+python manage.py migrate --noinput
+python manage.py collectstatic --noinput
+python manage.py check --deploy
 gunicorn config.wsgi:application --bind 0.0.0.0:$PORT
 ```
 
-Set these environment variables in the backend host:
+Do **not** run `seed_demo` against the live client database.
 
-```text
-DJANGO_SECRET_KEY=<strong random value>
-DJANGO_DEBUG=false
-DJANGO_ALLOWED_HOSTS=<your-api-domain>
-CORS_ALLOWED_ORIGINS=https://<your-frontend-domain>
-DB_ENGINE=django.db.backends.postgresql
-DB_NAME=...
-DB_USER=...
-DB_PASSWORD=...
-DB_HOST=...
-DB_PORT=5432
+## C. Docker Compose
+
+```bash
+export DJANGO_SECRET_KEY='replace-me'
+export DB_PASSWORD='replace-me'
+docker compose up --build
 ```
 
-Run `python manage.py seed_demo` once if you want the public demo users/data available.
+The Compose stack provides PostgreSQL, Django/Gunicorn and an Nginx-served React production build.
 
-## 3. Connect frontend to backend
-Set on the frontend host:
+## Backups
 
-```text
-VITE_API_URL=https://<your-api-domain>/api
-VITE_DEMO_FALLBACK=true
+Scripts are in `scripts/`:
+
+```bash
+./scripts/backup_postgres.sh
+./scripts/restore_postgres.sh backups/<file>.dump
+./scripts/healthcheck.sh http://localhost:8000/api/health/
 ```
 
-Redeploy the frontend. Login will use Django when the API is online. If the API has a network outage, the supplied demo accounts can still enter local demo mode.
+Set `DATABASE_URL`-style variables as described inside the scripts or use the Docker defaults. Test restores regularly.
 
-## 4. Production hardening before real customer data
-This repository is deliberately a sales/demo-ready starter, not a finished accounting product. Before storing real business data:
+## Uploaded files
 
-- Replace demo bearer-token signing with your chosen production auth/session architecture and token rotation strategy.
-- Add tenant/company isolation to every operational model and query.
-- Add audit logs for price, stock, credit and invoice changes.
-- Add GST invoice numbering rules, tax place-of-supply logic and validated GSTIN fields for your actual compliance scope.
-- Put rate limiting and stricter CORS/security headers at the reverse proxy/API layer.
-- Add backups, object storage for documents, monitoring and error reporting.
-- Add proper permissions to create/update/delete operations, not only read access.
-- Do not keep the public `demo123` accounts enabled in a real customer deployment.
+The Docker stack persists `backend/media` in a named volume. For scalable/cloud production, move Django's default file storage to S3-compatible object storage and use private/signed URLs where appropriate.
 
-## Demo credentials
-All demo accounts use password `demo123`:
-- owner@setustock.demo
-- manager@setustock.demo
-- sales@setustock.demo
-- warehouse@setustock.demo
-- accountant@setustock.demo
+## Optional integrations
+
+```env
+WHATSAPP_ACCESS_TOKEN=
+WHATSAPP_PHONE_NUMBER_ID=
+GST_PROVIDER_API_KEY=
+```
+
+The WhatsApp adapter can send outbound text when valid Meta credentials are configured. GST provider credentials are represented as readiness/configuration only; connect and test the authorised provider API before treating e-invoice/e-way-bill generation as live.
+
+## Monitoring
+
+- Poll `/api/health/` from an external uptime service.
+- Centralise Gunicorn/application logs.
+- Add an error/APM product suitable for the client's infrastructure.
+- Alert on failed backups, database disk growth and elevated 5xx rates.
