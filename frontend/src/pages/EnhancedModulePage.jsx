@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useApiData } from '../services/useApiData';
-import { demoPurchases, demoLedger, demoWarehouses, demoBarcodes, demoWhatsAppDrafts, demoTax, demoPricing, demoReturns, demoFieldSales } from '../data/featureData';
+import { demoPurchases, demoLedger, demoWarehouses, demoBarcodes, demoWhatsAppDrafts, demoTax, demoPricing, demoReturns, demoFieldSales, demoInsights } from '../data/featureData';
 
 const money = (value) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
 
@@ -80,7 +80,7 @@ function WhatsAppPage() {
 
 function TaxPage() {
   const [search, setSearch] = useState('');
-  const { data } = useApiData('tax', { tax: demoTax, demoPricing, demoReturns, demoFieldSales }, 'tax');
+  const { data } = useApiData('tax', { tax: demoTax, demoPricing, demoReturns, demoFieldSales, demoInsights }, 'tax');
   const tax = data?.invoices ? data : demoTax;
   const rows = tax.invoices.filter((x)=>`${x.id} ${x.customer} ${x.gstin}`.toLowerCase().includes(search.toLowerCase()));
   return <div><FeatureHeader eyebrow="Compliance" title="GST, credit notes & e-invoice readiness" subtitle="Keep tax fields explicit: HSN/GST rates, place of supply, CGST/SGST/IGST, credit notes and provider-ready e-invoice status." action="Create credit note" search={search} setSearch={setSearch} />
@@ -106,7 +106,7 @@ function PricingPage() {
 
 function ReturnsPage() {
   const [search, setSearch] = useState('');
-  const { data } = useApiData('returns', { returns: demoReturns, demoFieldSales }, 'returns');
+  const { data } = useApiData('returns', { returns: demoReturns, demoFieldSales, demoInsights }, 'returns');
   const payload = data?.returns ? data : demoReturns;
   const rows = payload.returns.filter((x)=>`${x.id} ${x.type} ${x.party} ${x.reason}`.toLowerCase().includes(search.toLowerCase()));
   return <div><FeatureHeader eyebrow="Stock integrity" title="Returns, damage & adjustments" subtitle="Record sales and purchase returns, inspect condition, create credit-note-ready values and keep every manual stock change auditable." action="New return" search={search} setSearch={setSearch} />
@@ -118,7 +118,7 @@ function ReturnsPage() {
 
 function FieldSalesPage() {
   const [search, setSearch] = useState('');
-  const { data } = useApiData('field-sales', { fieldSales: demoFieldSales }, 'fieldSales');
+  const { data } = useApiData('field-sales', { fieldSales: demoFieldSales, demoInsights }, 'fieldSales');
   const payload = data?.visits ? data : demoFieldSales;
   const rows = payload.visits.filter((x)=>`${x.customer} ${x.city} ${x.territory} ${x.status}`.toLowerCase().includes(search.toLowerCase()));
   const achieved = rows.reduce((sum,x)=>sum+x.orderValue,0); const collected = rows.reduce((sum,x)=>sum+x.collection,0);
@@ -126,6 +126,18 @@ function FieldSalesPage() {
     <Kpis items={[{label:'Today visits',value:'18',note:'11 completed'},{label:'Orders captured',value:money(achieved),note:`of ${money(payload.target.sales)} target`},{label:'Collections',value:money(collected),note:`of ${money(payload.target.collection)} target`}]} />
     <div className="target-bars"><div><span>Sales target</span><i><b style={{width:`${Math.min(100,(achieved/payload.target.sales)*100)}%`}}/></i><strong>{Math.round((achieved/payload.target.sales)*100)}%</strong></div><div><span>Collection target</span><i><b style={{width:`${Math.min(100,(collected/payload.target.collection)*100)}%`}}/></i><strong>{Math.round((collected/payload.target.collection)*100)}%</strong></div></div>
     <article className="panel module-panel"><div className="table-wrap"><table className="data-table module-table"><thead><tr><th>Customer</th><th>Territory</th><th>Date</th><th>Order</th><th>Collection</th><th>Notes</th><th>Status</th></tr></thead><tbody>{rows.map((v)=><tr key={v.id}><td><strong>{v.customer}</strong><small>{v.city}</small></td><td>{v.territory}</td><td>{v.date}</td><td>{money(v.orderValue)}</td><td>{money(v.collection)}</td><td>{v.notes}</td><td><Badge>{v.status}</Badge></td></tr>)}</tbody></table></div></article>
+  </div>;
+}
+
+function InsightsPage() {
+  const [search, setSearch] = useState('');
+  const { data } = useApiData('insights', { insights: demoInsights }, 'insights');
+  const payload = data?.reorder ? data : demoInsights;
+  const rows = payload.reorder.filter((x)=>`${x.product} ${x.sku} ${x.warehouse} ${x.risk}`.toLowerCase().includes(search.toLowerCase()));
+  return <div><FeatureHeader eyebrow="Decision support" title="Smart reorder & business intelligence" subtitle="Surface stock-out risk, suggested replenishment and working-capital signals from operational data instead of asking someone to inspect six spreadsheets." action="Refresh insights" search={search} setSearch={setSearch} />
+    <Kpis items={[{label:'Sales tracked',value:money(payload.metrics.sales),note:'available order history'},{label:'Stock value',value:money(payload.metrics.stockValue),note:'at purchase cost'},{label:'High-risk SKUs',value:String(payload.metrics.highRisk),note:'reorder before stock-out'}]} />
+    <div className="insight-grid"><article className="panel"><div className="panel-head"><div><span>Inventory intelligence</span><h3>Reorder recommendations</h3></div></div><div className="table-wrap"><table className="data-table module-table"><thead><tr><th>Product</th><th>Warehouse</th><th>Stock</th><th>Daily sale</th><th>Cover</th><th>Lead time</th><th>Suggested</th><th>Risk</th></tr></thead><tbody>{rows.map((r)=><tr key={`${r.sku}-${r.warehouse}`}><td><strong>{r.product}</strong><small>{r.sku}</small></td><td>{r.warehouse}</td><td>{r.stock}</td><td>{r.dailySales}</td><td>{r.daysCover} days</td><td>{r.leadTime} days</td><td><strong>{r.suggested}</strong></td><td><Badge>{r.risk}</Badge></td></tr>)}</tbody></table></div></article>
+      <aside className="receivable-radar"><span className="section-kicker">Working capital</span><h3>Largest receivables</h3>{payload.receivables.map((r)=><div key={r.customer}><span><strong>{r.customer}</strong><small>{r.city}</small></span><b>{money(r.outstanding)}</b><i><em style={{width:`${Math.min(100,(r.outstanding/r.limit)*100)}%`}}/></i></div>)}</aside></div>
   </div>;
 }
 
@@ -139,5 +151,6 @@ export default function EnhancedModulePage({ module }) {
   if (module === 'pricing') return <PricingPage />;
   if (module === 'returns') return <ReturnsPage />;
   if (module === 'field-sales') return <FieldSalesPage />;
+  if (module === 'insights') return <InsightsPage />;
   return null;
 }

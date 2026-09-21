@@ -89,3 +89,18 @@ export const demoFieldSales = {
     { id: 4, salesperson: 'Rohit Bansal', customer: 'Sethi Hardware House', city: 'Faridabad', date: '22 Sep', status: 'Planned', territory: 'Faridabad', orderValue: 0, collection: 0, notes: 'Priority collection follow-up.' },
   ],
 };
+
+export const demoInsights = {
+  metrics: { sales: 4286400, stockValue: 3184500, receivable: 472350, highRisk: 3 },
+  reorder: [
+    { sku: 'PC-25-RD', product: 'Polycab 2.5mm Wire Red', warehouse: 'Delhi Central', stock: 7, dailySales: 3.2, leadTime: 5, suggested: 50, daysCover: 2.2, risk: 'High' },
+    { sku: 'GM-PLT-8', product: 'GM 8 Module Plate', warehouse: 'Delhi Central', stock: 12, dailySales: 2.1, leadTime: 7, suggested: 36, daysCover: 5.7, risk: 'High' },
+    { sku: 'LE-FAN-48', product: 'Legrand Exhaust Fan 48W', warehouse: 'Gurugram Depot', stock: 9, dailySales: 1.1, leadTime: 6, suggested: 18, daysCover: 8.2, risk: 'Medium' },
+    { sku: 'AN-MCB-32', product: 'Anchor 32A DP MCB', warehouse: 'Noida Hub', stock: 24, dailySales: 2.4, leadTime: 4, suggested: 20, daysCover: 10, risk: 'Low' },
+  ],
+  receivables: [
+    { customer: 'Sethi Hardware House', city: 'Faridabad', outstanding: 124600, limit: 180000 },
+    { customer: 'NCR Buildmart', city: 'Gurugram', outstanding: 76750, limit: 250000 },
+    { customer: 'R.K. Trading Co.', city: 'Ghaziabad', outstanding: 58240, limit: 150000 },
+  ],
+};

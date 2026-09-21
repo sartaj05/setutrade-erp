@@ -357,3 +357,22 @@ class SalesTarget(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['salesperson', 'month'], name='unique_sales_target_month')]
+
+class ReorderSuggestion(models.Model):
+    class Risk(models.TextChoices):
+        HIGH = 'High', 'High'
+        MEDIUM = 'Medium', 'Medium'
+        LOW = 'Low', 'Low'
+
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='reorder_suggestions')
+    warehouse = models.ForeignKey(Warehouse, on_delete=models.CASCADE, related_name='reorder_suggestions')
+    current_stock = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    avg_daily_sales = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    lead_time_days = models.PositiveIntegerField(default=1)
+    suggested_quantity = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    days_cover = models.DecimalField(max_digits=8, decimal_places=2, default=0)
+    risk = models.CharField(max_length=10, choices=Risk.choices, default=Risk.MEDIUM)
+    generated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['product', 'warehouse'], name='unique_reorder_suggestion')]

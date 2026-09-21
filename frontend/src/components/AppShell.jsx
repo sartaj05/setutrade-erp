@@ -19,6 +19,7 @@ const moduleLabels = {
   pricing: ['Price Rules', 'receipt'],
   returns: ['Returns & Damage', 'box'],
   'field-sales': ['Field Sales', 'users'],
+  insights: ['Smart Insights', 'chart'],
   quotations: ['Quotations', 'receipt'],
   payments: ['Payments', 'receipt'],
   reports: ['Reports', 'chart'],

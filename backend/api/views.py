@@ -8,14 +8,14 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from .auth import api_auth_required, create_token, roles_allowed
-from .models import Customer, Invoice, Order, Product, Supplier, PurchaseOrder, PurchaseItem, GoodsReceipt, LedgerEntry, Warehouse, StockBalance, StockTransfer, BarcodeScanLog, WhatsAppMessage, WhatsAppOrderDraft, TaxNote, PriceList, PriceRule, StockAdjustment, ReturnOrder, SalesVisit, SalesTarget
+from .models import Customer, Invoice, Order, Product, Supplier, PurchaseOrder, PurchaseItem, GoodsReceipt, LedgerEntry, Warehouse, StockBalance, StockTransfer, BarcodeScanLog, WhatsAppMessage, WhatsAppOrderDraft, TaxNote, PriceList, PriceRule, StockAdjustment, ReturnOrder, SalesVisit, SalesTarget, ReorderSuggestion
 
 PERMISSIONS = {
-    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','quotations','payments','reports','team','settings'],
-    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','quotations','payments','reports'],
-    'SALES': ['dashboard','customers','orders','invoices','ledger','whatsapp','tax','pricing','returns','field-sales','quotations','payments'],
-    'WAREHOUSE': ['dashboard','products','inventory','orders','purchases','warehouses','barcode','returns'],
-    'ACCOUNTANT': ['dashboard','customers','orders','invoices','purchases','ledger','tax','returns','payments','reports'],
+    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','team','settings'],
+    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports'],
+    'SALES': ['dashboard','customers','orders','invoices','ledger','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments'],
+    'WAREHOUSE': ['dashboard','products','inventory','orders','purchases','warehouses','barcode','returns','insights'],
+    'ACCOUNTANT': ['dashboard','customers','orders','invoices','purchases','ledger','tax','returns','insights','payments','reports'],
 }
 
 def user_payload(user):
@@ -156,7 +156,7 @@ def suppliers(request):
 @roles_allowed('OWNER', 'MANAGER', 'SALES', 'ACCOUNTANT')
 def ledger(request):
     today = timezone.localdate()
-    rows = LedgerEntry, Warehouse, StockBalance, StockTransfer, BarcodeScanLog, WhatsAppMessage, WhatsAppOrderDraft, TaxNote, PriceList, PriceRule, StockAdjustment, ReturnOrder, SalesVisit, SalesTarget.objects.select_related('customer').order_by('-entry_date', '-id')
+    rows = LedgerEntry, Warehouse, StockBalance, StockTransfer, BarcodeScanLog, WhatsAppMessage, WhatsAppOrderDraft, TaxNote, PriceList, PriceRule, StockAdjustment, ReturnOrder, SalesVisit, SalesTarget, ReorderSuggestion.objects.select_related('customer').order_by('-entry_date', '-id')
     payload = []
     for row in rows:
         age = (today - row.due_date).days if row.due_date and today > row.due_date else 0
@@ -169,7 +169,7 @@ def ledger(request):
 @roles_allowed('OWNER', 'MANAGER', 'WAREHOUSE')
 def warehouses(request):
     locations = Warehouse.objects.filter(is_active=True).order_by('name')
-    transfers = StockTransfer, BarcodeScanLog, WhatsAppMessage, WhatsAppOrderDraft, TaxNote, PriceList, PriceRule, StockAdjustment, ReturnOrder, SalesVisit, SalesTarget.objects.select_related('from_warehouse', 'to_warehouse').prefetch_related('items').order_by('-transfer_date')[:10]
+    transfers = StockTransfer, BarcodeScanLog, WhatsAppMessage, WhatsAppOrderDraft, TaxNote, PriceList, PriceRule, StockAdjustment, ReturnOrder, SalesVisit, SalesTarget, ReorderSuggestion.objects.select_related('from_warehouse', 'to_warehouse').prefetch_related('items').order_by('-transfer_date')[:10]
     return JsonResponse({
         'warehouses': [{'id': w.code, 'name': w.name, 'city': w.city, 'stock': float(sum((b.quantity for b in w.stock_balances.all()), Decimal('0'))), 'reserved': float(sum((b.reserved for b in w.stock_balances.all()), Decimal('0')))} for w in locations.prefetch_related('stock_balances')],
         'transfers': [{'id': t.transfer_no, 'from': t.from_warehouse.name, 'to': t.to_warehouse.name, 'status': t.status, 'date': t.transfer_date.strftime('%d %b'), 'units': float(sum((i.quantity for i in t.items.all()), Decimal('0')))} for t in transfers],
@@ -187,7 +187,7 @@ def barcode(request):
         product = Product.objects.filter(barcode=code).first() or Product.objects.filter(sku__iexact=code).first()
         if not product: return JsonResponse({'detail': 'Product not found.'}, status=404)
         warehouse = Warehouse.objects.filter(code=body.get('warehouse')).first() if body.get('warehouse') else None
-        log = BarcodeScanLog, WhatsAppMessage, WhatsAppOrderDraft, TaxNote, PriceList, PriceRule, StockAdjustment, ReturnOrder, SalesVisit, SalesTarget.objects.create(product=product, warehouse=warehouse, action=body.get('action', 'Lookup'), quantity=body.get('quantity', 1), scanned_by=request.api_user)
+        log = BarcodeScanLog, WhatsAppMessage, WhatsAppOrderDraft, TaxNote, PriceList, PriceRule, StockAdjustment, ReturnOrder, SalesVisit, SalesTarget, ReorderSuggestion.objects.create(product=product, warehouse=warehouse, action=body.get('action', 'Lookup'), quantity=body.get('quantity', 1), scanned_by=request.api_user)
         return JsonResponse({'scan': {'id': log.id, 'sku': product.sku, 'name': product.name, 'barcode': product.barcode, 'action': log.action, 'quantity': float(log.quantity)}})
     rows = Product.objects.filter(is_active=True).order_by('name')
     return JsonResponse({'barcodes': [{'sku': p.sku, 'name': p.name, 'barcode': p.barcode or p.sku, 'stock': float(p.stock), 'unit': p.unit, 'location': p.location} for p in rows]})
@@ -224,10 +224,10 @@ def whatsapp(request):
         items = _parse_whatsapp_items(raw)
         total = sum(Decimal(str(item['quantity'])) * Decimal(str(item['price'])) for item in items)
         draft_no = f'WA-{timezone.now().strftime("%y%m%d%H%M%S")}'
-        draft = WhatsAppOrderDraft, TaxNote, PriceList, PriceRule, StockAdjustment, ReturnOrder, SalesVisit, SalesTarget.objects.create(draft_no=draft_no, customer=customer, raw_message=raw, parsed_items=items, estimated_total=total)
+        draft = WhatsAppOrderDraft, TaxNote, PriceList, PriceRule, StockAdjustment, ReturnOrder, SalesVisit, SalesTarget, ReorderSuggestion.objects.create(draft_no=draft_no, customer=customer, raw_message=raw, parsed_items=items, estimated_total=total)
         WhatsAppMessage.objects.create(customer=customer, direction='Inbound', message=raw, status='Received')
         return JsonResponse({'draft': {'id': draft.draft_no, 'customer': customer.name, 'items': items, 'total': float(total), 'status': draft.status}}, status=201)
-    drafts = WhatsAppOrderDraft, TaxNote, PriceList, PriceRule, StockAdjustment, ReturnOrder, SalesVisit, SalesTarget.objects.select_related('customer').order_by('-created_at')[:12]
+    drafts = WhatsAppOrderDraft, TaxNote, PriceList, PriceRule, StockAdjustment, ReturnOrder, SalesVisit, SalesTarget, ReorderSuggestion.objects.select_related('customer').order_by('-created_at')[:12]
     return JsonResponse({'whatsapp': [{'id': d.draft_no, 'customer': d.customer.name, 'message': d.raw_message, 'items': d.parsed_items, 'total': float(d.estimated_total), 'status': d.status} for d in drafts]})
 
 
@@ -235,7 +235,7 @@ def whatsapp(request):
 @roles_allowed('OWNER', 'MANAGER', 'SALES', 'ACCOUNTANT')
 def tax_compliance(request):
     invoices_qs = Invoice.objects.select_related('order__customer').order_by('-invoice_date')[:12]
-    notes = TaxNote, PriceList, PriceRule, StockAdjustment, ReturnOrder, SalesVisit, SalesTarget.objects.select_related('customer', 'invoice').order_by('-note_date')[:10]
+    notes = TaxNote, PriceList, PriceRule, StockAdjustment, ReturnOrder, SalesVisit, SalesTarget, ReorderSuggestion.objects.select_related('customer', 'invoice').order_by('-note_date')[:10]
     return JsonResponse({
         'tax': {
             'invoices': [{'id': i.invoice_no, 'customer': i.order.customer.name, 'gstin': i.gstin, 'taxable': float(i.taxable_amount), 'cgst': float(i.cgst), 'sgst': float(i.sgst), 'igst': float(i.igst), 'total': float(i.total), 'supplyType': i.supply_type, 'placeOfSupply': i.place_of_supply, 'einvoice': i.e_invoice_status, 'irn': i.e_invoice_irn} for i in invoices_qs],
@@ -277,4 +277,18 @@ def field_sales(request):
     return JsonResponse({'fieldSales': {
         'visits': [{'id': v.id, 'salesperson': v.salesperson.get_full_name() or v.salesperson.username, 'customer': v.customer.name, 'city': v.customer.city, 'date': v.visit_date.strftime('%d %b'), 'status': v.status, 'territory': v.territory, 'orderValue': float(v.order_value), 'collection': float(v.collection_amount), 'notes': v.notes} for v in visits[:25]],
         'target': {'sales': float(target.target_sales), 'collection': float(target.target_collection)} if target else {'sales': 0, 'collection': 0},
+    }})
+
+
+@require_GET
+@roles_allowed('OWNER', 'MANAGER', 'WAREHOUSE', 'ACCOUNTANT')
+def insights(request):
+    suggestions = ReorderSuggestion.objects.select_related('product', 'warehouse').order_by('risk', 'days_cover')
+    top_receivables = Customer.objects.order_by('-outstanding')[:5]
+    total_stock_value = sum((p.stock * p.purchase_price for p in Product.objects.all()), Decimal('0'))
+    month_sales = Order.objects.aggregate(total=Sum('total'))['total'] or Decimal('0')
+    return JsonResponse({'insights': {
+        'metrics': {'sales': float(month_sales), 'stockValue': float(total_stock_value), 'receivable': float(Customer.objects.aggregate(total=Sum('outstanding'))['total'] or Decimal('0')), 'highRisk': suggestions.filter(risk='High').count()},
+        'reorder': [{'sku': s.product.sku, 'product': s.product.name, 'warehouse': s.warehouse.name, 'stock': float(s.current_stock), 'dailySales': float(s.avg_daily_sales), 'leadTime': s.lead_time_days, 'suggested': float(s.suggested_quantity), 'daysCover': float(s.days_cover), 'risk': s.risk} for s in suggestions],
+        'receivables': [{'customer': c.name, 'city': c.city, 'outstanding': float(c.outstanding), 'limit': float(c.credit_limit)} for c in top_receivables],
     }})
