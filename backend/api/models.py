@@ -1196,3 +1196,29 @@ class CRMActivity(models.Model):
     completed=models.BooleanField(default=False)
     created_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
     created_at=models.DateTimeField(auto_now_add=True)
+
+# --- Growth v4 / Phase 18: manufacturer schemes & claims ---
+class ManufacturerScheme(models.Model):
+    class SchemeType(models.TextChoices): REBATE='Rebate','Rebate'; TARGET='Target','Target'; FREE_QTY='Free Qty','Free Qty'; SLAB='Slab','Slab'
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='manufacturer_schemes')
+    supplier=models.ForeignKey(Supplier,on_delete=models.PROTECT,related_name='schemes')
+    name=models.CharField(max_length=180)
+    scheme_type=models.CharField(max_length=30,choices=SchemeType.choices,default=SchemeType.REBATE)
+    start_date=models.DateField(); end_date=models.DateField()
+    target_value=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    rebate_percent=models.DecimalField(max_digits=7,decimal_places=2,default=0)
+    rules=models.JSONField(default=dict,blank=True)
+    is_active=models.BooleanField(default=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+
+class SchemeClaim(models.Model):
+    class Status(models.TextChoices): ACCRUED='Accrued','Accrued'; SUBMITTED='Submitted','Submitted'; APPROVED='Approved','Approved'; REJECTED='Rejected','Rejected'; SETTLED='Settled','Settled'
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='scheme_claims')
+    scheme=models.ForeignKey(ManufacturerScheme,on_delete=models.PROTECT,related_name='claims')
+    claim_no=models.CharField(max_length=40,unique=True)
+    period_from=models.DateField(); period_to=models.DateField()
+    eligible_value=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    claim_amount=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    status=models.CharField(max_length=20,choices=Status.choices,default=Status.ACCRUED)
+    evidence=models.JSONField(default=list,blank=True)
+    submitted_at=models.DateTimeField(null=True,blank=True); settled_at=models.DateTimeField(null=True,blank=True)

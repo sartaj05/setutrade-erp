@@ -68,4 +68,5 @@ urlpatterns = [
     path('channels/webhook/<int:channel_id>/', expansion_views.channel_webhook),
     path('distribution-networks/', expansion_views.distribution_networks),
     path('crm/', strategic_views.crm),
+    path('schemes/', strategic_views.schemes),
 ]
