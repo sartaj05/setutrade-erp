@@ -20,6 +20,9 @@ from api.models import (
     CRMLead, CRMActivity, ManufacturerScheme, SchemeClaim, GSTReconciliationItem, VendorScorecard, ProcurementRecommendation,
     FleetVehicle, RoutePlan, RoutePlanStop, CustomerCreditScore, FinanceApplication, UserMFASetting, TrustedDevice, SecurityEvent, PrivacyRequest, ConsentRecord,
     IntegrationConnector, DeveloperApiKey, WebhookSubscription, IntegrationDelivery, ProfitabilitySnapshot, CopilotActionProposal,
+    ProductMasterProfile, ProductChangeRequest, InventoryLot, SerialUnit, TraceabilityEvent, BankAccount, BankTransaction, CashFlowForecast,
+    RateAgreement, RateAgreementItem, Tender, QualityInspection, QuarantineStock, SupplyPlanScenario, ReplenishmentPlan, ServiceTicket, RMA,
+    ExpenseClaim, PettyCashAccount, PettyCashTransaction, ReportDefinition, ScheduledReport, ReportRun, ServiceHealth, BackgroundJob, WebhookReplay, AlertPolicy,
 )
 
 ACCOUNTS = [
@@ -233,5 +236,48 @@ class Command(BaseCommand):
 
         ProfitabilitySnapshot.objects.update_or_create(company=company,dimension='Customer',entity_key=str(customers['C-101'].id),period_from=date(2026,9,1),period_to=date(2026,9,21),defaults={'entity_name':customers['C-101'].name,'revenue':842000,'cogs':694000,'gross_profit':148000,'discounts':21400,'returns':8900,'delivery_cost':18200,'finance_cost':4200,'contribution_profit':95300,'margin_percent':Decimal('11.32')})
         CopilotActionProposal.objects.update_or_create(company=company,requested_by=users['OWNER'],title='Create collection tasks for outstanding customers',defaults={'action_type':'CREATE_COLLECTION_TASKS','rationale':'Demo proposal; owner or manager must approve before execution.','payload':{'customerIds':[customers['C-101'].id,customers['C-105'].id]},'risk_level':'Medium','requires_approval':True,'status':'Proposed'})
+
+        # Growth v5 demo data: PIM, traceability, treasury, contracts, quality, planning, service, expenses, reports and observability.
+        pim,_=ProductMasterProfile.objects.update_or_create(company=company,product=products['PC-25-RD'],defaults={'brand':'Polycab','manufacturer':'Polycab India','primary_uom':'coil','purchase_uom':'carton','sales_uom':'coil','uom_conversions':{'carton_to_coil':6},'alternate_barcodes':['8901002500017-A'],'mrp':2250,'dealer_price':2100,'distributor_price':2040,'batch_required':True,'minimum_stock':12,'maximum_stock':80,'reorder_quantity':24,'preferred_supplier':suppliers['S-001'],'data_quality_score':96,'governance_status':'Approved','updated_by':users['OWNER']})
+        ProductMasterProfile.objects.update_or_create(company=company,product=products['HA-LED-12'],defaults={'brand':'Havells','manufacturer':'Havells India','primary_uom':'pcs','purchase_uom':'box','sales_uom':'pcs','uom_conversions':{'box_to_pcs':20},'mrp':170,'dealer_price':150,'distributor_price':145,'batch_required':True,'minimum_stock':30,'maximum_stock':250,'reorder_quantity':80,'preferred_supplier':suppliers['S-002'],'data_quality_score':82,'governance_status':'Approved','updated_by':users['OWNER']})
+        ProductChangeRequest.objects.update_or_create(company=company,product=products['HA-LED-12'],change_type='GST update',status='Pending',defaults={'requested_changes':{'gst':12},'reason':'Tax master review','requested_by':users['ACCOUNTANT']})
+
+        lot,_=InventoryLot.objects.update_or_create(company=company,product=products['HA-LED-12'],lot_no='LOT-260901',defaults={'warehouse':warehouses['WH-DEL'],'supplier':suppliers['S-002'],'batch_no':'HV2609A','manufactured_on':date(2026,8,15),'expiry_date':date(2028,9,1),'received_qty':120,'available_qty':86,'unit_cost':118,'status':'Available'})
+        TraceabilityEvent.objects.get_or_create(company=company,product=products['HA-LED-12'],lot=lot,event_type='Received',reference='GRN-1082',defaults={'quantity':120,'created_by':users['WAREHOUSE']})
+        serial,_=SerialUnit.objects.update_or_create(company=company,serial_no='LGFAN26090081',defaults={'product':products['LE-FAN-48'],'warehouse':warehouses['WH-DEL'],'status':'In Stock','warranty_until':date(2029,9,15)})
+        TraceabilityEvent.objects.get_or_create(company=company,product=products['LE-FAN-48'],serial=serial,event_type='Serialized',reference='GRN-1088',defaults={'quantity':1,'created_by':users['WAREHOUSE']})
+
+        hdfc,_=BankAccount.objects.update_or_create(company=company,name='HDFC Current',defaults={'bank_name':'HDFC Bank','account_last4':'8842','account_type':'Current','opening_balance':780000,'current_balance':840000})
+        icici,_=BankAccount.objects.update_or_create(company=company,name='ICICI Current',defaults={'bank_name':'ICICI Bank','account_last4':'2218','account_type':'Current','opening_balance':300000,'current_balance':325000})
+        BankTransaction.objects.update_or_create(company=company,bank_account=hdfc,reference='PAY-260921-01',defaults={'transaction_date':date(2026,9,21),'amount':58240,'transaction_type':'Credit','description':'R.K. Trading Co.','matching_status':'Unmatched'})
+        BankTransaction.objects.update_or_create(company=company,bank_account=icici,reference='UTR992181',defaults={'transaction_date':date(2026,9,21),'amount':38400,'transaction_type':'Credit','description':'Unidentified receipt','matching_status':'Unmatched'})
+        CashFlowForecast.objects.update_or_create(company=company,forecast_date=date(2026,9,22),defaults={'expected_inflow':91428,'expected_outflow':68857,'projected_balance':1259571,'source_snapshot':{'mode':'demo'}})
+
+        agreement,_=RateAgreement.objects.update_or_create(company=company,agreement_no='AGR-2026-014',defaults={'customer':customers['C-102'],'title':'FY27 Electrical Rate Contract','start_date':date(2026,10,1),'end_date':date(2027,3,31),'status':'Active','minimum_monthly_purchase':500000,'credit_days':45,'created_by':users['MANAGER']})
+        RateAgreementItem.objects.update_or_create(agreement=agreement,product=products['PC-25-RD'],defaults={'rate':1980,'minimum_qty':10,'escalation_percent':2})
+        Tender.objects.update_or_create(company=company,tender_no='TND-2609-18',defaults={'customer':customers['C-104'],'title':'Noida Commercial Tower Electrical Package','due_date':date(2026,10,5),'expected_value':950000,'status':'Draft','terms':{'paymentDays':45}})
+
+        inspection,_=QualityInspection.objects.update_or_create(company=company,inspection_no='QC-260921-01',defaults={'inspection_type':'Incoming','product':products['HA-LED-12'],'warehouse':warehouses['WH-DEL'],'supplier':suppliers['S-002'],'quantity_received':200,'quantity_inspected':20,'quantity_passed':18,'quantity_rejected':2,'quantity_quarantined':2,'status':'Completed','checklist':{'physicalDamage':2},'inspected_by':users['WAREHOUSE'],'inspected_at':timezone.now()})
+        QuarantineStock.objects.update_or_create(company=company,inspection=inspection,product=products['HA-LED-12'],warehouse=warehouses['WH-DEL'],defaults={'quantity':2,'reason':'Physical damage','status':'Quarantined'})
+
+        scenario,_=SupplyPlanScenario.objects.update_or_create(company=company,name='October base plan',defaults={'horizon_days':30,'demand_multiplier':Decimal('1.0'),'supplier_delay_days':0,'status':'Generated','created_by':users['MANAGER']})
+        ReplenishmentPlan.objects.update_or_create(company=company,scenario=scenario,product=products['PC-25-RD'],to_warehouse=warehouses['WH-DEL'],defaults={'from_warehouse':warehouses['WH-NOI'],'forecast_demand':80,'available_stock':7,'safety_stock':12,'transfer_qty':10,'purchase_qty':75,'recommendation':'Transfer then purchase','status':'Recommended'})
+
+        ticket,_=ServiceTicket.objects.update_or_create(company=company,ticket_no='SRV-260921-08',defaults={'customer':customers['C-101'],'product':products['LE-FAN-48'],'serial':serial,'complaint':'Motor noise after installation','status':'In Service','warranty_valid':True,'warranty_until':date(2029,9,15),'technician':users['WAREHOUSE'],'diagnosis':'Bearing noise confirmed'})
+        RMA.objects.update_or_create(company=company,rma_no='RMA-260921-03',defaults={'ticket':ticket,'action':'Replace','status':'Manufacturer Review','manufacturer_claim_amount':4200,'manufacturer_claim_status':'Submitted'})
+
+        petty,_=PettyCashAccount.objects.update_or_create(company=company,name='Delhi Office Petty Cash',defaults={'branch':branch,'balance':72000})
+        claim,_=ExpenseClaim.objects.update_or_create(company=company,claim_no='EXP-260921-11',defaults={'employee':users['SALES'],'branch':branch,'category':'Travel','amount':2450,'expense_date':date(2026,9,21),'payment_method':'UPI','description':'Customer visits - West Delhi','status':'Submitted'})
+        PettyCashTransaction.objects.get_or_create(account=petty,transaction_date=date(2026,9,20),transaction_type='Debit',amount=1800,note='Approved loading expense',defaults={'created_by':users['ACCOUNTANT']})
+
+        report,_=ReportDefinition.objects.update_or_create(company=company,name='Salesperson Brand Margin',defaults={'data_source':'Sales','dimensions':['Salesperson','Brand'],'measures':['Revenue','Gross Profit'],'filters':{'territory':'Delhi NCR'},'group_by':['Salesperson'],'owner':users['OWNER'],'is_shared':True})
+        schedule,_=ScheduledReport.objects.update_or_create(company=company,report=report,defaults={'frequency':'Weekly','delivery_time':'09:00','weekdays':['Monday'],'recipients':['accounts@khanna.demo'],'output_format':'XLSX','is_active':True})
+        ReportRun.objects.get_or_create(report=report,status='Completed',row_count=48,defaults={'schedule':schedule,'started_at':timezone.now(),'finished_at':timezone.now()})
+
+        for service,category,status,latency,message in [('Django API','Internal','Healthy',42,'Operational'),('PostgreSQL','Internal','Healthy',18,'Operational'),('Redis / Queue','Internal','Healthy',8,'Operational'),('WhatsApp','Provider','Healthy',110,'Operational'),('GST IRP','Provider','Degraded',380,'Elevated latency'),('Payment Provider','Provider','Healthy',142,'Operational')]:
+            ServiceHealth.objects.update_or_create(company=company,service_name=service,defaults={'category':category,'status':status,'latency_ms':latency,'message':message})
+        BackgroundJob.objects.update_or_create(company=company,job_key='gst-sync-260921-1400',defaults={'job_type':'GST_SYNC','status':'Failed','attempts':3,'last_error':'Provider timeout','scheduled_at':timezone.now()})
+        WebhookReplay.objects.update_or_create(company=company,source='WhatsApp',event_id='wamid.demo.182',defaults={'status':'Failed','attempts':2,'last_error':'Template unavailable','payload':{'demo':True}})
+        AlertPolicy.objects.update_or_create(company=company,name='Failed jobs alert',defaults={'condition':'failed_jobs','threshold':1,'channels':['email','in-app'],'is_active':True})
 
         self.stdout.write(self.style.SUCCESS('SetuStock production-style demo data created.'))

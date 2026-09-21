@@ -241,3 +241,48 @@ class ProductionApiTests(TestCase):
         execute = self.post('/api/copilot-actions/', {'action':'approve','id':proposal.json()['id']})
         self.assertEqual(execute.status_code, 200, execute.content)
         self.assertEqual(execute.json()['status'], 'Executed')
+
+    def test_growth_v5_operational_modules(self):
+        pim = self.post('/api/product-master/', {'action':'refresh-quality'})
+        self.assertEqual(pim.status_code, 200, pim.content)
+        self.assertGreaterEqual(pim.json()['updated'], 1)
+
+        lot = self.post('/api/traceability/', {'action':'receive-lot','productId':self.product.id,'warehouseId':self.warehouse.id,'supplierId':self.supplier.id,'lotNo':'LOT-T-1','quantity':10})
+        self.assertEqual(lot.status_code, 201, lot.content)
+
+        treasury = self.post('/api/treasury/', {'action':'generate-forecast'})
+        self.assertEqual(treasury.status_code, 200, treasury.content)
+        self.assertEqual(treasury.json()['days'], 7)
+
+        agreement = self.post('/api/contracts/', {'action':'agreement','customerId':self.customer.id,'title':'Test contract','minimumMonthly':10000})
+        self.assertEqual(agreement.status_code, 201, agreement.content)
+        tender = self.post('/api/contracts/', {'action':'tender','customerId':self.customer.id,'title':'Test tender','value':25000})
+        self.assertEqual(tender.status_code, 201, tender.content)
+
+        inspection = self.post('/api/quality/', {'action':'inspection','productId':self.product.id,'warehouseId':self.warehouse.id,'supplierId':self.supplier.id,'quantity':20})
+        self.assertEqual(inspection.status_code, 201, inspection.content)
+        complete = self.post('/api/quality/', {'action':'complete','inspectionId':inspection.json()['id'],'inspected':5,'passed':4,'rejected':1,'quarantined':1})
+        self.assertEqual(complete.status_code, 200, complete.content)
+
+        plan = self.post('/api/supply-planning/', {'action':'generate','name':'Test scenario','horizon':30,'demandMultiplier':1.1})
+        self.assertEqual(plan.status_code, 201, plan.content)
+        self.assertGreaterEqual(plan.json()['plans'], 1)
+
+        ticket = self.post('/api/service-rma/', {'action':'ticket','customerId':self.customer.id,'productId':self.product.id,'complaint':'Test complaint'})
+        self.assertEqual(ticket.status_code, 201, ticket.content)
+        rma = self.post('/api/service-rma/', {'action':'rma','ticketId':ticket.json()['id'],'rmaAction':'Repair','claimAmount':500})
+        self.assertEqual(rma.status_code, 201, rma.content)
+
+        claim = self.post('/api/expenses/', {'action':'submit','category':'Travel','amount':500,'description':'Test claim'})
+        self.assertEqual(claim.status_code, 201, claim.content)
+        approve = self.post('/api/expenses/', {'action':'approve','claimId':claim.json()['id']})
+        self.assertEqual(approve.status_code, 200, approve.content)
+
+        report = self.post('/api/report-builder/', {'action':'create-report','name':'Test Sales Report','source':'Sales','dimensions':['Customer'],'measures':['Revenue']})
+        self.assertEqual(report.status_code, 201, report.content)
+        run = self.post('/api/report-builder/', {'action':'run','reportId':report.json()['id']})
+        self.assertEqual(run.status_code, 201, run.content)
+
+        heartbeat = self.post('/api/operations-center/', {'action':'heartbeat'})
+        self.assertEqual(heartbeat.status_code, 200, heartbeat.content)
+        self.assertGreaterEqual(heartbeat.json()['checked'], 5)

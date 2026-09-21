@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views, expansion_views, strategic_views
+from . import views, expansion_views, strategic_views, nextgen_views
 
 urlpatterns = [
     path('health/', views.health),
@@ -78,4 +78,14 @@ urlpatterns = [
     path('public/v1/order-intake/', strategic_views.public_order_api),
     path('executive-bi/', strategic_views.executive_bi),
     path('copilot-actions/', strategic_views.copilot_actions),
+    path('product-master/', nextgen_views.product_master),
+    path('traceability/', nextgen_views.traceability),
+    path('treasury/', nextgen_views.treasury),
+    path('contracts/', nextgen_views.contracts),
+    path('quality/', nextgen_views.quality),
+    path('supply-planning/', nextgen_views.supply_planning),
+    path('service-rma/', nextgen_views.service_rma),
+    path('expenses/', nextgen_views.expenses),
+    path('report-builder/', nextgen_views.report_builder),
+    path('operations-center/', nextgen_views.operations_center),
 ]

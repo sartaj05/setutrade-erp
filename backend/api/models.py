@@ -1461,3 +1461,359 @@ class CopilotActionProposal(models.Model):
     status=models.CharField(max_length=20,choices=Status.choices,default=Status.PROPOSED)
     result=models.JSONField(default=dict,blank=True)
     created_at=models.DateTimeField(auto_now_add=True); approved_at=models.DateTimeField(null=True,blank=True); executed_at=models.DateTimeField(null=True,blank=True)
+
+# --- Growth v5 / Phase 27: governed product master / PIM ---
+class ProductMasterProfile(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='product_master_profiles')
+    product=models.OneToOneField(Product,on_delete=models.CASCADE,related_name='master_profile')
+    brand=models.CharField(max_length=100,blank=True)
+    manufacturer=models.CharField(max_length=140,blank=True)
+    primary_uom=models.CharField(max_length=30,default='pcs')
+    purchase_uom=models.CharField(max_length=30,default='pcs')
+    sales_uom=models.CharField(max_length=30,default='pcs')
+    uom_conversions=models.JSONField(default=dict,blank=True)
+    alternate_barcodes=models.JSONField(default=list,blank=True)
+    mrp=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    dealer_price=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    distributor_price=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    weight_kg=models.DecimalField(max_digits=10,decimal_places=3,default=0)
+    dimensions=models.JSONField(default=dict,blank=True)
+    batch_required=models.BooleanField(default=False)
+    serial_required=models.BooleanField(default=False)
+    expiry_required=models.BooleanField(default=False)
+    minimum_stock=models.DecimalField(max_digits=12,decimal_places=2,default=0)
+    maximum_stock=models.DecimalField(max_digits=12,decimal_places=2,default=0)
+    reorder_quantity=models.DecimalField(max_digits=12,decimal_places=2,default=0)
+    preferred_supplier=models.ForeignKey('Supplier',on_delete=models.SET_NULL,null=True,blank=True,related_name='preferred_products')
+    data_quality_score=models.PositiveSmallIntegerField(default=0)
+    governance_status=models.CharField(max_length=30,default='Approved')
+    updated_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True,related_name='product_master_updates')
+    updated_at=models.DateTimeField(auto_now=True)
+
+class ProductChangeRequest(models.Model):
+    class Status(models.TextChoices): PENDING='Pending','Pending'; APPROVED='Approved','Approved'; REJECTED='Rejected','Rejected'
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='product_change_requests')
+    product=models.ForeignKey(Product,on_delete=models.CASCADE,related_name='change_requests')
+    change_type=models.CharField(max_length=80)
+    requested_changes=models.JSONField(default=dict)
+    reason=models.CharField(max_length=240,blank=True)
+    status=models.CharField(max_length=20,choices=Status.choices,default=Status.PENDING)
+    requested_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True,related_name='requested_product_changes')
+    approved_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True,related_name='approved_product_changes')
+    created_at=models.DateTimeField(auto_now_add=True); reviewed_at=models.DateTimeField(null=True,blank=True)
+
+# --- Growth v5 / Phase 28: batch / lot / serial / expiry traceability ---
+class InventoryLot(models.Model):
+    class Status(models.TextChoices): AVAILABLE='Available','Available'; QUARANTINE='Quarantine','Quarantine'; EXPIRED='Expired','Expired'; RECALL='Recall','Recall'; CLOSED='Closed','Closed'
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='inventory_lots')
+    product=models.ForeignKey(Product,on_delete=models.PROTECT,related_name='inventory_lots')
+    warehouse=models.ForeignKey(Warehouse,on_delete=models.PROTECT,related_name='inventory_lots')
+    supplier=models.ForeignKey('Supplier',on_delete=models.SET_NULL,null=True,blank=True,related_name='supplied_lots')
+    lot_no=models.CharField(max_length=80)
+    batch_no=models.CharField(max_length=80,blank=True)
+    manufactured_on=models.DateField(null=True,blank=True)
+    expiry_date=models.DateField(null=True,blank=True)
+    received_qty=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    available_qty=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    unit_cost=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    status=models.CharField(max_length=20,choices=Status.choices,default=Status.AVAILABLE)
+    received_at=models.DateTimeField(auto_now_add=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['company','product','lot_no'],name='unique_company_product_lot')]
+
+class SerialUnit(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='serial_units')
+    product=models.ForeignKey(Product,on_delete=models.PROTECT,related_name='serial_units')
+    warehouse=models.ForeignKey(Warehouse,on_delete=models.SET_NULL,null=True,blank=True,related_name='serial_units')
+    lot=models.ForeignKey(InventoryLot,on_delete=models.SET_NULL,null=True,blank=True,related_name='serial_units')
+    serial_no=models.CharField(max_length=120)
+    status=models.CharField(max_length=30,default='In Stock')
+    customer=models.ForeignKey(Customer,on_delete=models.SET_NULL,null=True,blank=True,related_name='serial_units')
+    order=models.ForeignKey(Order,on_delete=models.SET_NULL,null=True,blank=True,related_name='serial_units')
+    warranty_until=models.DateField(null=True,blank=True)
+    sold_at=models.DateTimeField(null=True,blank=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['company','serial_no'],name='unique_company_serial_no')]
+
+class TraceabilityEvent(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='traceability_events')
+    product=models.ForeignKey(Product,on_delete=models.PROTECT,related_name='traceability_events')
+    lot=models.ForeignKey(InventoryLot,on_delete=models.SET_NULL,null=True,blank=True,related_name='events')
+    serial=models.ForeignKey(SerialUnit,on_delete=models.SET_NULL,null=True,blank=True,related_name='events')
+    event_type=models.CharField(max_length=50)
+    reference=models.CharField(max_length=120,blank=True)
+    quantity=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    metadata=models.JSONField(default=dict,blank=True)
+    created_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+
+# --- Growth v5 / Phase 29: treasury / bank reconciliation / cash flow ---
+class BankAccount(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='bank_accounts')
+    name=models.CharField(max_length=120)
+    bank_name=models.CharField(max_length=120)
+    account_last4=models.CharField(max_length=4,blank=True)
+    account_type=models.CharField(max_length=40,default='Current')
+    opening_balance=models.DecimalField(max_digits=16,decimal_places=2,default=0)
+    current_balance=models.DecimalField(max_digits=16,decimal_places=2,default=0)
+    is_active=models.BooleanField(default=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['company','name'],name='unique_company_bank_account_name')]
+
+class BankTransaction(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='bank_transactions')
+    bank_account=models.ForeignKey(BankAccount,on_delete=models.CASCADE,related_name='transactions')
+    transaction_date=models.DateField()
+    amount=models.DecimalField(max_digits=16,decimal_places=2)
+    transaction_type=models.CharField(max_length=20,default='Credit')
+    reference=models.CharField(max_length=120,blank=True)
+    description=models.CharField(max_length=240,blank=True)
+    matching_status=models.CharField(max_length=30,default='Unmatched')
+    matched_payment=models.ForeignKey('PaymentTransaction',on_delete=models.SET_NULL,null=True,blank=True,related_name='bank_matches')
+    imported_at=models.DateTimeField(auto_now_add=True)
+
+class CashFlowForecast(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='cashflow_forecasts')
+    forecast_date=models.DateField()
+    expected_inflow=models.DecimalField(max_digits=16,decimal_places=2,default=0)
+    expected_outflow=models.DecimalField(max_digits=16,decimal_places=2,default=0)
+    projected_balance=models.DecimalField(max_digits=16,decimal_places=2,default=0)
+    source_snapshot=models.JSONField(default=dict,blank=True)
+    generated_at=models.DateTimeField(auto_now=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['company','forecast_date'],name='unique_company_cashflow_date')]
+
+# --- Growth v5 / Phase 30: contract pricing / rate agreements / tenders ---
+class RateAgreement(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='rate_agreements')
+    customer=models.ForeignKey(Customer,on_delete=models.PROTECT,related_name='rate_agreements')
+    agreement_no=models.CharField(max_length=50)
+    title=models.CharField(max_length=180)
+    start_date=models.DateField(); end_date=models.DateField()
+    status=models.CharField(max_length=30,default='Active')
+    minimum_monthly_purchase=models.DecimalField(max_digits=16,decimal_places=2,default=0)
+    credit_days=models.PositiveSmallIntegerField(default=30)
+    notes=models.TextField(blank=True)
+    created_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['company','agreement_no'],name='unique_company_rate_agreement_no')]
+
+class RateAgreementItem(models.Model):
+    agreement=models.ForeignKey(RateAgreement,on_delete=models.CASCADE,related_name='items')
+    product=models.ForeignKey(Product,on_delete=models.PROTECT,related_name='contract_rates')
+    rate=models.DecimalField(max_digits=14,decimal_places=2)
+    minimum_qty=models.DecimalField(max_digits=12,decimal_places=2,default=1)
+    maximum_qty=models.DecimalField(max_digits=12,decimal_places=2,null=True,blank=True)
+    escalation_percent=models.DecimalField(max_digits=7,decimal_places=2,default=0)
+    class Meta: constraints=[models.UniqueConstraint(fields=['agreement','product'],name='unique_agreement_product_rate')]
+
+class Tender(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='tenders')
+    tender_no=models.CharField(max_length=60)
+    customer=models.ForeignKey(Customer,on_delete=models.SET_NULL,null=True,blank=True,related_name='tenders')
+    title=models.CharField(max_length=200)
+    due_date=models.DateField()
+    expected_value=models.DecimalField(max_digits=16,decimal_places=2,default=0)
+    status=models.CharField(max_length=30,default='Draft')
+    terms=models.JSONField(default=dict,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['company','tender_no'],name='unique_company_tender_no')]
+
+# --- Growth v5 / Phase 31: quality control / inspection ---
+class QualityInspection(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='quality_inspections')
+    inspection_no=models.CharField(max_length=60)
+    inspection_type=models.CharField(max_length=30,default='Incoming')
+    product=models.ForeignKey(Product,on_delete=models.PROTECT,related_name='quality_inspections')
+    warehouse=models.ForeignKey(Warehouse,on_delete=models.PROTECT,related_name='quality_inspections')
+    supplier=models.ForeignKey('Supplier',on_delete=models.SET_NULL,null=True,blank=True,related_name='quality_inspections')
+    purchase_order=models.ForeignKey('PurchaseOrder',on_delete=models.SET_NULL,null=True,blank=True,related_name='quality_inspections')
+    order=models.ForeignKey(Order,on_delete=models.SET_NULL,null=True,blank=True,related_name='quality_inspections')
+    quantity_received=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    quantity_inspected=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    quantity_passed=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    quantity_rejected=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    quantity_quarantined=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    status=models.CharField(max_length=30,default='Pending')
+    checklist=models.JSONField(default=dict,blank=True)
+    inspected_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
+    notes=models.TextField(blank=True)
+    inspected_at=models.DateTimeField(null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['company','inspection_no'],name='unique_company_inspection_no')]
+
+class QuarantineStock(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='quarantine_stock')
+    inspection=models.ForeignKey(QualityInspection,on_delete=models.CASCADE,related_name='quarantine_rows')
+    product=models.ForeignKey(Product,on_delete=models.PROTECT,related_name='quarantine_stock')
+    warehouse=models.ForeignKey(Warehouse,on_delete=models.PROTECT,related_name='quarantine_stock')
+    quantity=models.DecimalField(max_digits=14,decimal_places=2)
+    reason=models.CharField(max_length=240)
+    status=models.CharField(max_length=30,default='Quarantined')
+    released_at=models.DateTimeField(null=True,blank=True)
+
+# --- Growth v5 / Phase 32: advanced replenishment / S&OP ---
+class SupplyPlanScenario(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='supply_plan_scenarios')
+    name=models.CharField(max_length=140)
+    horizon_days=models.PositiveIntegerField(default=30)
+    demand_multiplier=models.DecimalField(max_digits=8,decimal_places=3,default=1)
+    supplier_delay_days=models.PositiveIntegerField(default=0)
+    status=models.CharField(max_length=30,default='Draft')
+    notes=models.CharField(max_length=300,blank=True)
+    created_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+
+class ReplenishmentPlan(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='replenishment_plans')
+    scenario=models.ForeignKey(SupplyPlanScenario,on_delete=models.CASCADE,related_name='plans')
+    product=models.ForeignKey(Product,on_delete=models.PROTECT,related_name='replenishment_plans')
+    from_warehouse=models.ForeignKey(Warehouse,on_delete=models.SET_NULL,null=True,blank=True,related_name='outbound_replenishment_plans')
+    to_warehouse=models.ForeignKey(Warehouse,on_delete=models.SET_NULL,null=True,blank=True,related_name='inbound_replenishment_plans')
+    forecast_demand=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    available_stock=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    open_purchase_qty=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    open_sales_qty=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    safety_stock=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    transfer_qty=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    purchase_qty=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    recommendation=models.CharField(max_length=240,blank=True)
+    status=models.CharField(max_length=30,default='Recommended')
+    generated_at=models.DateTimeField(auto_now=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['scenario','product','to_warehouse'],name='unique_scenario_product_destination')]
+
+# --- Growth v5 / Phase 33: warranty / RMA / after-sales ---
+class ServiceTicket(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='service_tickets')
+    ticket_no=models.CharField(max_length=60)
+    customer=models.ForeignKey(Customer,on_delete=models.PROTECT,related_name='service_tickets')
+    product=models.ForeignKey(Product,on_delete=models.PROTECT,related_name='service_tickets')
+    serial=models.ForeignKey(SerialUnit,on_delete=models.SET_NULL,null=True,blank=True,related_name='service_tickets')
+    complaint=models.TextField()
+    status=models.CharField(max_length=30,default='Open')
+    warranty_valid=models.BooleanField(default=False)
+    warranty_until=models.DateField(null=True,blank=True)
+    technician=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True,related_name='service_tickets')
+    diagnosis=models.TextField(blank=True)
+    resolution=models.TextField(blank=True)
+    created_at=models.DateTimeField(auto_now_add=True); closed_at=models.DateTimeField(null=True,blank=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['company','ticket_no'],name='unique_company_service_ticket_no')]
+
+class RMA(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='rmas')
+    rma_no=models.CharField(max_length=60)
+    ticket=models.ForeignKey(ServiceTicket,on_delete=models.CASCADE,related_name='rmas')
+    action=models.CharField(max_length=40,default='Repair')
+    status=models.CharField(max_length=30,default='Created')
+    replacement_product=models.ForeignKey(Product,on_delete=models.SET_NULL,null=True,blank=True,related_name='replacement_rmas')
+    cost=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    manufacturer_claim_amount=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    manufacturer_claim_status=models.CharField(max_length=30,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True); updated_at=models.DateTimeField(auto_now=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['company','rma_no'],name='unique_company_rma_no')]
+
+# --- Growth v5 / Phase 34: expense / petty cash / employee claims ---
+class ExpenseClaim(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='expense_claims')
+    claim_no=models.CharField(max_length=60)
+    employee=models.ForeignKey(User,on_delete=models.PROTECT,related_name='expense_claims')
+    branch=models.ForeignKey(Branch,on_delete=models.SET_NULL,null=True,blank=True,related_name='expense_claims')
+    category=models.CharField(max_length=80)
+    amount=models.DecimalField(max_digits=14,decimal_places=2)
+    expense_date=models.DateField()
+    payment_method=models.CharField(max_length=30,default='Cash')
+    description=models.CharField(max_length=300,blank=True)
+    receipt_url=models.URLField(blank=True)
+    status=models.CharField(max_length=30,default='Submitted')
+    approved_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True,related_name='approved_expense_claims')
+    approved_at=models.DateTimeField(null=True,blank=True); paid_at=models.DateTimeField(null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['company','claim_no'],name='unique_company_expense_claim_no')]
+
+class PettyCashAccount(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='petty_cash_accounts')
+    branch=models.ForeignKey(Branch,on_delete=models.SET_NULL,null=True,blank=True,related_name='petty_cash_accounts')
+    name=models.CharField(max_length=120)
+    balance=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    class Meta: constraints=[models.UniqueConstraint(fields=['company','name'],name='unique_company_petty_cash_name')]
+
+class PettyCashTransaction(models.Model):
+    account=models.ForeignKey(PettyCashAccount,on_delete=models.CASCADE,related_name='transactions')
+    claim=models.ForeignKey(ExpenseClaim,on_delete=models.SET_NULL,null=True,blank=True,related_name='petty_cash_transactions')
+    transaction_date=models.DateField()
+    transaction_type=models.CharField(max_length=20,default='Debit')
+    amount=models.DecimalField(max_digits=14,decimal_places=2)
+    note=models.CharField(max_length=240,blank=True)
+    created_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+
+# --- Growth v5 / Phase 35: custom report builder / scheduled reports ---
+class ReportDefinition(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='report_definitions')
+    name=models.CharField(max_length=160)
+    data_source=models.CharField(max_length=80)
+    dimensions=models.JSONField(default=list,blank=True)
+    measures=models.JSONField(default=list,blank=True)
+    filters=models.JSONField(default=dict,blank=True)
+    group_by=models.JSONField(default=list,blank=True)
+    owner=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True,related_name='report_definitions')
+    is_shared=models.BooleanField(default=False)
+    created_at=models.DateTimeField(auto_now_add=True); updated_at=models.DateTimeField(auto_now=True)
+
+class ScheduledReport(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='scheduled_reports')
+    report=models.ForeignKey(ReportDefinition,on_delete=models.CASCADE,related_name='schedules')
+    frequency=models.CharField(max_length=30,default='Weekly')
+    delivery_time=models.TimeField(null=True,blank=True)
+    weekdays=models.JSONField(default=list,blank=True)
+    recipients=models.JSONField(default=list,blank=True)
+    output_format=models.CharField(max_length=20,default='XLSX')
+    is_active=models.BooleanField(default=True)
+    last_run_at=models.DateTimeField(null=True,blank=True); next_run_at=models.DateTimeField(null=True,blank=True)
+
+class ReportRun(models.Model):
+    report=models.ForeignKey(ReportDefinition,on_delete=models.CASCADE,related_name='runs')
+    schedule=models.ForeignKey(ScheduledReport,on_delete=models.SET_NULL,null=True,blank=True,related_name='runs')
+    status=models.CharField(max_length=30,default='Queued')
+    row_count=models.PositiveIntegerField(default=0)
+    output_url=models.URLField(blank=True)
+    error=models.CharField(max_length=300,blank=True)
+    started_at=models.DateTimeField(null=True,blank=True); finished_at=models.DateTimeField(null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+
+# --- Growth v5 / Phase 36: operations control center / observability ---
+class ServiceHealth(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='service_health_rows')
+    service_name=models.CharField(max_length=100)
+    category=models.CharField(max_length=60,default='Internal')
+    status=models.CharField(max_length=30,default='Healthy')
+    latency_ms=models.PositiveIntegerField(default=0)
+    message=models.CharField(max_length=300,blank=True)
+    checked_at=models.DateTimeField(auto_now=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['company','service_name'],name='unique_company_service_health')]
+
+class BackgroundJob(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='background_jobs')
+    job_type=models.CharField(max_length=100)
+    job_key=models.CharField(max_length=120)
+    status=models.CharField(max_length=30,default='Queued')
+    attempts=models.PositiveIntegerField(default=0)
+    payload=models.JSONField(default=dict,blank=True)
+    last_error=models.CharField(max_length=300,blank=True)
+    scheduled_at=models.DateTimeField(null=True,blank=True); started_at=models.DateTimeField(null=True,blank=True); finished_at=models.DateTimeField(null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['company','job_key'],name='unique_company_background_job_key')]
+
+class WebhookReplay(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='webhook_replays')
+    source=models.CharField(max_length=80)
+    event_id=models.CharField(max_length=120)
+    status=models.CharField(max_length=30,default='Failed')
+    attempts=models.PositiveIntegerField(default=0)
+    payload=models.JSONField(default=dict,blank=True)
+    last_error=models.CharField(max_length=300,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True); updated_at=models.DateTimeField(auto_now=True)
+
+class AlertPolicy(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='alert_policies')
+    name=models.CharField(max_length=120)
+    condition=models.CharField(max_length=100)
+    threshold=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    channels=models.JSONField(default=list,blank=True)
+    is_active=models.BooleanField(default=True)
+    created_at=models.DateTimeField(auto_now_add=True)
