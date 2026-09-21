@@ -7,7 +7,7 @@ import StrategicModulePage from './StrategicModulePage';
 const productionModules = ['products','inventory','customers','orders','invoices','purchases','warehouses','quotations','payments','reports','team','settings','audit'];
 const growthModules = ['delivery','approvals','invoice-ocr','accounting','offline','subscription','forecasting','assistant'];
 const expansionModules = ['collections','wms','supplier-portal-admin','automations','channels','distribution-network'];
-const strategicModules = ['crm','schemes','gst-cockpit','procurement-intelligence','fleet-routes','credit-risk','security-center'];
+const strategicModules = ['crm','schemes','gst-cockpit','procurement-intelligence','fleet-routes','credit-risk','security-center','integrations'];
 const enhancedModules = ['ledger','barcode','whatsapp','tax','pricing','returns','field-sales','insights'];
 
 export default function ModulePage({ module }) {

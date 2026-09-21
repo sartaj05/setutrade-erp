@@ -161,3 +161,31 @@ def security_center(request):
     if action=='consent':
         row=m.ConsentRecord.objects.create(company=company,subject_key=data.get('subjectKey','anonymous'),purpose=data.get('purpose','Customer communications'),granted=bool(data.get('granted',True)),source=data.get('source','Portal'));return JsonResponse({'id':row.id},status=201)
     return JsonResponse({'detail':'Unsupported action.'},status=400)
+
+@csrf_exempt
+@require_http_methods(['GET','POST'])
+@api_auth_required
+def integration_hub(request):
+    company=request.company
+    if request.method=='GET':
+        connectors=m.IntegrationConnector.objects.filter(company=company).order_by('provider'); keys=m.DeveloperApiKey.objects.filter(company=company,revoked_at__isnull=True).order_by('-created_at'); hooks=m.WebhookSubscription.objects.filter(company=company).order_by('-created_at'); deliveries=m.IntegrationDelivery.objects.filter(company=company).order_by('-id')[:50]
+        return JsonResponse({'summary':{'connected':connectors.filter(status='Connected').count(),'connectors':connectors.count(),'apiKeys':keys.count(),'webhooks':hooks.filter(is_active=True).count(),'failedDeliveries':deliveries.filter(status='Failed').count()},'connectors':[{'id':x.id,'provider':x.provider,'name':x.name,'status':x.status,'lastSync':_dt(x.last_sync_at),'lastError':x.last_error} for x in connectors],'apiKeys':[{'id':x.id,'name':x.name,'prefix':x.key_prefix,'scopes':x.scopes,'lastUsed':_dt(x.last_used_at),'createdAt':_dt(x.created_at)} for x in keys],'webhooks':[{'id':x.id,'event':x.event,'url':x.target_url,'active':x.is_active} for x in hooks],'deliveries':[{'id':x.id,'event':x.event,'status':x.status,'attempts':x.attempt_count,'error':x.last_error,'createdAt':_dt(x.created_at)} for x in deliveries]})
+    data=_body(request);action=data.get('action')
+    if action=='connector':
+        row,_=m.IntegrationConnector.objects.update_or_create(company=company,provider=data.get('provider','CUSTOM'),name=data.get('name','Custom integration'),defaults={'status':data.get('status','Connected'),'config':data.get('config',{}),'last_sync_at':timezone.now() if data.get('status','Connected')=='Connected' else None});audit(request,'UPSERT','IntegrationConnector',row.id,row.name);return JsonResponse({'id':row.id,'status':row.status},status=201)
+    if action=='api-key':
+        raw='ssk_'+secrets.token_urlsafe(30);digest=hashlib.sha256(raw.encode()).hexdigest();row=m.DeveloperApiKey.objects.create(company=company,name=data.get('name','API client'),key_prefix=raw[:12],key_hash=digest,scopes=data.get('scopes',['orders:write']),created_by=request.api_user);audit(request,'CREATE','DeveloperApiKey',row.id,row.name);return JsonResponse({'id':row.id,'apiKey':raw,'prefix':row.key_prefix,'note':'This key is returned once. Store it securely.'},status=201)
+    if action=='webhook':
+        raw=secrets.token_urlsafe(24);row=m.WebhookSubscription.objects.create(company=company,event=data.get('event','order.created'),target_url=data.get('url','https://example.com/webhook'),signing_secret_hash=hashlib.sha256(raw.encode()).hexdigest());return JsonResponse({'id':row.id,'signingSecret':raw,'note':'Returned once; use it to verify deliveries when a worker/provider is connected.'},status=201)
+    return JsonResponse({'detail':'Unsupported action.'},status=400)
+
+@csrf_exempt
+@require_http_methods(['POST'])
+def public_order_api(request):
+    raw=request.headers.get('X-SetuStock-Key',''); digest=hashlib.sha256(raw.encode()).hexdigest() if raw else ''
+    key=m.DeveloperApiKey.objects.select_related('company').filter(key_hash=digest,revoked_at__isnull=True).first()
+    if not key or 'orders:write' not in key.scopes:return JsonResponse({'detail':'Valid API key with orders:write scope required.'},status=401)
+    data=_body(request); key.last_used_at=timezone.now();key.save(update_fields=['last_used_at'])
+    channel,_=m.ExternalChannel.objects.get_or_create(company=key.company,name='Developer API',defaults={'provider':'API','external_store_id':'public-v1','is_active':True})
+    ext_id=data.get('externalId') or f"API-{timezone.now().strftime('%y%m%d%H%M%S%f')}"; order,created=m.ExternalOrder.objects.get_or_create(channel=channel,external_id=ext_id,defaults={'company':key.company,'customer_name':data.get('customerName','API Customer'),'customer_phone':data.get('phone',''),'total':data.get('total',0),'status':'New','raw_payload':data})
+    return JsonResponse({'id':order.id,'externalId':order.external_id,'created':created,'status':order.status},status=201 if created else 200)

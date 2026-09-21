@@ -1384,3 +1384,45 @@ class ConsentRecord(models.Model):
     source=models.CharField(max_length=80,default='Portal')
     captured_at=models.DateTimeField(auto_now_add=True)
     withdrawn_at=models.DateTimeField(null=True,blank=True)
+
+# --- Growth v4 / Phase 24: integration hub + public API ---
+class IntegrationConnector(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='integration_connectors')
+    provider=models.CharField(max_length=60)
+    name=models.CharField(max_length=120)
+    status=models.CharField(max_length=30,default='Disconnected')
+    config=models.JSONField(default=dict,blank=True)
+    last_sync_at=models.DateTimeField(null=True,blank=True)
+    last_error=models.CharField(max_length=300,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True); updated_at=models.DateTimeField(auto_now=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['company','provider','name'],name='unique_company_integration_connector')]
+
+class DeveloperApiKey(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='developer_api_keys')
+    name=models.CharField(max_length=100)
+    key_prefix=models.CharField(max_length=16)
+    key_hash=models.CharField(max_length=128,unique=True)
+    scopes=models.JSONField(default=list,blank=True)
+    created_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
+    last_used_at=models.DateTimeField(null=True,blank=True)
+    revoked_at=models.DateTimeField(null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+
+class WebhookSubscription(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='webhook_subscriptions')
+    event=models.CharField(max_length=100)
+    target_url=models.URLField()
+    signing_secret_hash=models.CharField(max_length=128)
+    is_active=models.BooleanField(default=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+
+class IntegrationDelivery(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='integration_deliveries')
+    connector=models.ForeignKey(IntegrationConnector,on_delete=models.SET_NULL,null=True,blank=True,related_name='deliveries')
+    webhook=models.ForeignKey(WebhookSubscription,on_delete=models.SET_NULL,null=True,blank=True,related_name='deliveries')
+    event=models.CharField(max_length=100)
+    status=models.CharField(max_length=30,default='Queued')
+    attempt_count=models.PositiveIntegerField(default=0)
+    payload=models.JSONField(default=dict,blank=True)
+    last_error=models.CharField(max_length=300,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True); updated_at=models.DateTimeField(auto_now=True)
