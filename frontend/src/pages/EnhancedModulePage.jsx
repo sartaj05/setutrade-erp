@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useApiData } from '../services/useApiData';
-import { demoPurchases, demoLedger, demoWarehouses } from '../data/featureData';
+import { demoPurchases, demoLedger, demoWarehouses, demoBarcodes } from '../data/featureData';
 
 const money = (value) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
 
@@ -50,9 +50,22 @@ function WarehousesPage() {
   </div>;
 }
 
+function BarcodePage() {
+  const { data: barcodes } = useApiData('barcode', demoBarcodes, 'barcodes');
+  const [code, setCode] = useState('');
+  const [last, setLast] = useState(barcodes[0] || demoBarcodes[0]);
+  const scan = () => { const match = barcodes.find((p) => p.barcode === code.trim() || p.sku.toLowerCase() === code.trim().toLowerCase()); setLast(match || null); };
+  return <div><FeatureHeader eyebrow="Warehouse speed" title="Barcode & QR scanning" subtitle="Use a USB scanner or phone-friendly input to identify stock, prepare labels and reduce manual SKU mistakes." action="Print labels" search={code} setSearch={setCode} />
+    <div className="scanner-layout"><article className="scanner-box"><span className="section-kicker">Live scan</span><h3>Scan product barcode</h3><p>Place the cursor in the scanner field. Most USB scanners behave like a keyboard and work immediately.</p><div className="scan-entry"><input autoFocus value={code} onChange={(e)=>setCode(e.target.value)} onKeyDown={(e)=>{if(e.key==='Enter') scan();}} placeholder="Barcode or SKU"/><button onClick={scan}>Scan</button></div><small>Demo barcode: 8901762048129</small></article>
+      <article className="scan-result">{last ? <><span>Matched product</span><strong>{last.name}</strong><small>{last.sku} · {last.location}</small><div className="barcode-visual">{last.barcode}</div><p><b>{last.stock}</b> {last.unit} currently available</p></> : <><span>No match</span><strong>Barcode not found</strong><p>Try a demo barcode or an existing SKU.</p></>}</article></div>
+    <article className="panel module-panel"><div className="table-wrap"><table className="data-table module-table"><thead><tr><th>Product</th><th>Barcode</th><th>Location</th><th>Stock</th><th>Label</th></tr></thead><tbody>{barcodes.map((row)=><tr key={row.sku}><td><strong>{row.name}</strong><small>{row.sku}</small></td><td className="mono-cell">{row.barcode}</td><td>{row.location}</td><td>{row.stock} {row.unit}</td><td><button className="table-action">Print</button></td></tr>)}</tbody></table></div></article>
+  </div>;
+}
+
 export default function EnhancedModulePage({ module }) {
   if (module === 'purchases') return <PurchasesPage />;
   if (module === 'ledger') return <LedgerPage />;
   if (module === 'warehouses') return <WarehousesPage />;
+  if (module === 'barcode') return <BarcodePage />;
   return null;
 }

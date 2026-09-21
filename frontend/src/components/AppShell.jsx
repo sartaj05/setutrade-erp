@@ -13,6 +13,7 @@ const moduleLabels = {
   purchases: ['Purchases', 'box'],
   ledger: ['Credit Ledger', 'receipt'],
   warehouses: ['Warehouses', 'box'],
+  barcode: ['Barcode Scan', 'box'],
   quotations: ['Quotations', 'receipt'],
   payments: ['Payments', 'receipt'],
   reports: ['Reports', 'chart'],

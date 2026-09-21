@@ -27,6 +27,8 @@ class Product(models.Model):
     reorder_level = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     location = models.CharField(max_length=40, blank=True)
     is_active = models.BooleanField(default=True)
+    barcode = models.CharField(max_length=80, unique=True, null=True, blank=True)
+    qr_code = models.CharField(max_length=160, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
@@ -201,3 +203,17 @@ class StockTransferItem(models.Model):
     transfer = models.ForeignKey(StockTransfer, on_delete=models.CASCADE, related_name='items')
     product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='transfer_items')
     quantity = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+class BarcodeScanLog(models.Model):
+    class Action(models.TextChoices):
+        LOOKUP = 'Lookup', 'Lookup'
+        STOCK_IN = 'Stock In', 'Stock In'
+        STOCK_OUT = 'Stock Out', 'Stock Out'
+        COUNT = 'Count', 'Count'
+
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='scan_logs')
+    warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name='scan_logs', null=True, blank=True)
+    action = models.CharField(max_length=20, choices=Action.choices, default=Action.LOOKUP)
+    quantity = models.DecimalField(max_digits=12, decimal_places=2, default=1)
+    scanned_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='barcode_scans')
+    scanned_at = models.DateTimeField(auto_now_add=True)

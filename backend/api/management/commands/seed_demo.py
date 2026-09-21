@@ -1,7 +1,7 @@
 from datetime import date
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand
-from api.models import Customer, Invoice, Order, Product, Profile, Supplier, PurchaseOrder, PurchaseItem, GoodsReceipt, LedgerEntry, Warehouse, StockBalance, StockTransfer, StockTransferItem
+from api.models import Customer, Invoice, Order, Product, Profile, Supplier, PurchaseOrder, PurchaseItem, GoodsReceipt, LedgerEntry, Warehouse, StockBalance, StockTransfer, StockTransferItem, BarcodeScanLog
 
 ACCOUNTS = [
     ('owner', 'Arjun', 'Khanna', 'owner@setustock.demo', 'OWNER'),
@@ -70,6 +70,6 @@ class Command(BaseCommand):
         po, _ = PurchaseOrder.objects.update_or_create(po_no='PO-2026-084', defaults={'supplier':supplier,'status':'Partial','order_date':date(2026,9,20),'expected_date':date(2026,9,23),'total':186400})
         PurchaseItem.objects.update_or_create(purchase=po, product=Product.objects.get(sku='PC-25-RD'), defaults={'quantity':100,'received_quantity':60,'unit_price':1820})
         GoodsReceipt.objects.update_or_create(grn_no='GRN-2026-044', defaults={'purchase':po,'received_date':date(2026,9,21),'notes':'Partial receipt for demo.'})
-        LedgerEntry, Warehouse, StockBalance, StockTransfer, StockTransferItem.objects.update_or_create(customer=customer_map['C-105'], reference='INV-2026-1164', defaults={'entry_type':'Invoice','amount':124600,'entry_date':date(2026,8,18),'due_date':date(2026,9,18),'note':'Opening demo receivable'})
-        LedgerEntry, Warehouse, StockBalance, StockTransfer, StockTransferItem.objects.update_or_create(customer=customer_map['C-102'], reference='INV-2026-1171', defaults={'entry_type':'Invoice','amount':38400,'entry_date':date(2026,8,9),'due_date':date(2026,9,9),'note':'Opening demo receivable'})
+        LedgerEntry, Warehouse, StockBalance, StockTransfer, StockTransferItem, BarcodeScanLog.objects.update_or_create(customer=customer_map['C-105'], reference='INV-2026-1164', defaults={'entry_type':'Invoice','amount':124600,'entry_date':date(2026,8,18),'due_date':date(2026,9,18),'note':'Opening demo receivable'})
+        LedgerEntry, Warehouse, StockBalance, StockTransfer, StockTransferItem, BarcodeScanLog.objects.update_or_create(customer=customer_map['C-102'], reference='INV-2026-1171', defaults={'entry_type':'Invoice','amount':38400,'entry_date':date(2026,8,9),'due_date':date(2026,9,9),'note':'Opening demo receivable'})
         self.stdout.write(self.style.SUCCESS('SetuStock demo data created.'))

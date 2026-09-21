@@ -31,3 +31,10 @@ export const demoWarehouses = {
     { id: 'TR-2026-029', from: 'Noida Hub', to: 'Delhi Central', status: 'Draft', date: '20 Sep', units: 18 },
   ],
 };
+
+export const demoBarcodes = [
+  { sku: 'PC-25-RD', name: 'Polycab 2.5mm Wire Red', barcode: '8901002500017', stock: 7, unit: 'coil', location: 'A-01' },
+  { sku: 'HA-LED-12', name: 'Havells 12W LED Bulb', barcode: '8901762048129', stock: 86, unit: 'pcs', location: 'B-07' },
+  { sku: 'AN-MCB-32', name: 'Anchor 32A DP MCB', barcode: '8901442032036', stock: 24, unit: 'pcs', location: 'C-11' },
+  { sku: 'GM-PLT-8', name: 'GM 8 Module Plate', barcode: '8906084407084', stock: 12, unit: 'pcs', location: 'D-04' },
+];

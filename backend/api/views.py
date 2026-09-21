@@ -7,13 +7,13 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from .auth import api_auth_required, create_token, roles_allowed
-from .models import Customer, Invoice, Order, Product, Supplier, PurchaseOrder, PurchaseItem, GoodsReceipt, LedgerEntry, Warehouse, StockBalance, StockTransfer
+from .models import Customer, Invoice, Order, Product, Supplier, PurchaseOrder, PurchaseItem, GoodsReceipt, LedgerEntry, Warehouse, StockBalance, StockTransfer, BarcodeScanLog
 
 PERMISSIONS = {
-    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','quotations','payments','reports','team','settings'],
-    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','quotations','payments','reports'],
+    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','quotations','payments','reports','team','settings'],
+    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','quotations','payments','reports'],
     'SALES': ['dashboard','customers','orders','invoices','ledger','quotations','payments'],
-    'WAREHOUSE': ['dashboard','products','inventory','orders','purchases','warehouses'],
+    'WAREHOUSE': ['dashboard','products','inventory','orders','purchases','warehouses','barcode'],
     'ACCOUNTANT': ['dashboard','customers','orders','invoices','purchases','ledger','payments','reports'],
 }
 
@@ -155,7 +155,7 @@ def suppliers(request):
 @roles_allowed('OWNER', 'MANAGER', 'SALES', 'ACCOUNTANT')
 def ledger(request):
     today = timezone.localdate()
-    rows = LedgerEntry, Warehouse, StockBalance, StockTransfer.objects.select_related('customer').order_by('-entry_date', '-id')
+    rows = LedgerEntry, Warehouse, StockBalance, StockTransfer, BarcodeScanLog.objects.select_related('customer').order_by('-entry_date', '-id')
     payload = []
     for row in rows:
         age = (today - row.due_date).days if row.due_date and today > row.due_date else 0
@@ -168,8 +168,25 @@ def ledger(request):
 @roles_allowed('OWNER', 'MANAGER', 'WAREHOUSE')
 def warehouses(request):
     locations = Warehouse.objects.filter(is_active=True).order_by('name')
-    transfers = StockTransfer.objects.select_related('from_warehouse', 'to_warehouse').prefetch_related('items').order_by('-transfer_date')[:10]
+    transfers = StockTransfer, BarcodeScanLog.objects.select_related('from_warehouse', 'to_warehouse').prefetch_related('items').order_by('-transfer_date')[:10]
     return JsonResponse({
         'warehouses': [{'id': w.code, 'name': w.name, 'city': w.city, 'stock': float(sum((b.quantity for b in w.stock_balances.all()), Decimal('0'))), 'reserved': float(sum((b.reserved for b in w.stock_balances.all()), Decimal('0')))} for w in locations.prefetch_related('stock_balances')],
         'transfers': [{'id': t.transfer_no, 'from': t.from_warehouse.name, 'to': t.to_warehouse.name, 'status': t.status, 'date': t.transfer_date.strftime('%d %b'), 'units': float(sum((i.quantity for i in t.items.all()), Decimal('0')))} for t in transfers],
     })
+
+
+@csrf_exempt
+@require_http_methods(['GET', 'POST'])
+@roles_allowed('OWNER', 'MANAGER', 'WAREHOUSE')
+def barcode(request):
+    if request.method == 'POST':
+        try: body = json.loads(request.body or '{}')
+        except json.JSONDecodeError: return JsonResponse({'detail': 'Invalid JSON.'}, status=400)
+        code = str(body.get('code', '')).strip()
+        product = Product.objects.filter(barcode=code).first() or Product.objects.filter(sku__iexact=code).first()
+        if not product: return JsonResponse({'detail': 'Product not found.'}, status=404)
+        warehouse = Warehouse.objects.filter(code=body.get('warehouse')).first() if body.get('warehouse') else None
+        log = BarcodeScanLog.objects.create(product=product, warehouse=warehouse, action=body.get('action', 'Lookup'), quantity=body.get('quantity', 1), scanned_by=request.api_user)
+        return JsonResponse({'scan': {'id': log.id, 'sku': product.sku, 'name': product.name, 'barcode': product.barcode, 'action': log.action, 'quantity': float(log.quantity)}})
+    rows = Product.objects.filter(is_active=True).order_by('name')
+    return JsonResponse({'barcodes': [{'sku': p.sku, 'name': p.name, 'barcode': p.barcode or p.sku, 'stock': float(p.stock), 'unit': p.unit, 'location': p.location} for p in rows]})
