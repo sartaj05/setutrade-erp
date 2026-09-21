@@ -1304,3 +1304,29 @@ class RoutePlanStop(models.Model):
     estimated_minutes=models.PositiveIntegerField(default=0)
     priority=models.PositiveSmallIntegerField(default=3)
     class Meta: ordering=['sequence']
+
+# --- Growth v4 / Phase 22: credit scoring & embedded finance ---
+class CustomerCreditScore(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='credit_scores')
+    customer=models.OneToOneField(Customer,on_delete=models.CASCADE,related_name='credit_score')
+    score=models.PositiveSmallIntegerField(default=50)
+    risk_band=models.CharField(max_length=20,default='Medium')
+    avg_payment_delay_days=models.DecimalField(max_digits=7,decimal_places=2,default=0)
+    overdue_90=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    utilisation_percent=models.DecimalField(max_digits=7,decimal_places=2,default=0)
+    suggested_limit=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    factors=models.JSONField(default=dict,blank=True)
+    calculated_at=models.DateTimeField(auto_now=True)
+
+class FinanceApplication(models.Model):
+    class Status(models.TextChoices): DRAFT='Draft','Draft'; READY='Ready','Ready'; SUBMITTED='Submitted','Submitted'; APPROVED='Approved','Approved'; DECLINED='Declined','Declined'; FUNDED='Funded','Funded'
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='finance_applications')
+    customer=models.ForeignKey(Customer,on_delete=models.PROTECT,related_name='finance_applications',null=True,blank=True)
+    application_no=models.CharField(max_length=40,unique=True)
+    finance_type=models.CharField(max_length=40,default='Receivable Finance')
+    requested_amount=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    status=models.CharField(max_length=20,choices=Status.choices,default=Status.DRAFT)
+    provider=models.CharField(max_length=100,blank=True)
+    payload=models.JSONField(default=dict,blank=True)
+    created_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True); updated_at=models.DateTimeField(auto_now=True)

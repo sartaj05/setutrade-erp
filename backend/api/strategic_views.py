@@ -118,3 +118,26 @@ def fleet_routes(request):
     route=m.RoutePlan.objects.create(company=company,route_no=f"ROUTE-{timezone.now().strftime('%y%m%d%H%M%S%f')}",vehicle=vehicle,warehouse=warehouse,route_date=data.get('date') or timezone.localdate(),estimated_km=max(12,len(orders)*Decimal('3.4')),optimization_score=91,created_by=request.api_user)
     for i,o in enumerate(orders,1):m.RoutePlanStop.objects.create(route=route,order=o,sequence=i,area=o.customer.city or 'Delhi NCR',delivery_window='10:00–18:00',estimated_km_from_previous=Decimal('3.4'),estimated_minutes=18,priority=1 if o.payment_status=='Paid' else 3)
     route.estimated_cost=(route.estimated_km*vehicle.cost_per_km).quantize(Decimal('0.01'));route.save(update_fields=['estimated_cost']);audit(request,'CREATE','RoutePlan',route.id,route.route_no);return JsonResponse({'id':route.id,'routeNo':route.route_no,'stops':len(orders),'km':_money(route.estimated_km),'cost':_money(route.estimated_cost)},status=201)
+
+
+def _credit_score(customer):
+    limit=Decimal(customer.credit_limit or 0); outstanding=Decimal(customer.outstanding or 0); utilisation=(outstanding/limit*100) if limit>0 else Decimal('100') if outstanding>0 else Decimal('0')
+    overdue=m.LedgerEntry.objects.filter(customer=customer,due_date__lt=timezone.localdate(),entry_type='Invoice').aggregate(v=Sum('amount'))['v'] or Decimal('0')
+    late_penalty=min(35,int((overdue/(limit or Decimal('1')))*35)); util_penalty=max(0,int((utilisation-60)/4)); score=max(10,min(100,92-late_penalty-util_penalty)); risk='Low' if score>=75 else 'Medium' if score>=55 else 'High'; suggested=(limit*Decimal('1.15') if score>=80 else limit if score>=55 else limit*Decimal('0.75')).quantize(Decimal('0.01'))
+    return score,risk,utilisation,overdue,suggested
+
+@csrf_exempt
+@require_http_methods(['GET','POST'])
+@api_auth_required
+def credit_risk(request):
+    company=request.company
+    if request.method=='GET':
+        scores=m.CustomerCreditScore.objects.filter(company=company).select_related('customer').order_by('-score')[:100]; apps=m.FinanceApplication.objects.filter(company=company).select_related('customer').order_by('-id')[:30]
+        return JsonResponse({'summary':{'scored':scores.count(),'highRisk':scores.filter(risk_band='High').count(),'suggestedCredit':_money(scores.aggregate(v=Sum('suggested_limit'))['v'] or 0),'financePipeline':_money(apps.exclude(status__in=['Declined','Funded']).aggregate(v=Sum('requested_amount'))['v'] or 0)},'scores':[{'id':x.id,'customerId':x.customer_id,'customer':x.customer.name,'score':x.score,'risk':x.risk_band,'outstanding':_money(x.customer.outstanding),'creditLimit':_money(x.customer.credit_limit),'utilisation':_money(x.utilisation_percent),'overdue90':_money(x.overdue_90),'suggestedLimit':_money(x.suggested_limit),'factors':x.factors} for x in scores],'applications':[{'id':x.id,'applicationNo':x.application_no,'customer':x.customer.name if x.customer else 'Portfolio','type':x.finance_type,'amount':_money(x.requested_amount),'provider':x.provider,'status':x.status} for x in apps]})
+    data=_body(request);action=data.get('action','rescore')
+    if action=='finance':
+        customer=m.Customer.objects.filter(company=company,pk=data.get('customerId')).first(); row=m.FinanceApplication.objects.create(company=company,customer=customer,application_no=f"FIN-{timezone.now().strftime('%y%m%d%H%M%S%f')}",finance_type=data.get('type','Receivable Finance'),requested_amount=data.get('amount',0),status='Ready',provider=data.get('provider','Provider pending'),payload=data.get('payload',{}),created_by=request.api_user);audit(request,'CREATE','FinanceApplication',row.id,row.application_no);return JsonResponse({'id':row.id,'applicationNo':row.application_no,'status':row.status},status=201)
+    customers=m.Customer.objects.filter(company=company,is_active=True);count=0
+    for c in customers:
+        score,risk,util,overdue,suggested=_credit_score(c);m.CustomerCreditScore.objects.update_or_create(company=company,customer=c,defaults={'score':score,'risk_band':risk,'utilisation_percent':util,'overdue_90':overdue,'suggested_limit':suggested,'factors':{'paymentHistory':'derived from ledger','creditUtilisation':float(util),'overdueAmount':float(overdue)}});count+=1
+    return JsonResponse({'scored':count})
