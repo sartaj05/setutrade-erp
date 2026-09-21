@@ -217,3 +217,29 @@ class BarcodeScanLog(models.Model):
     quantity = models.DecimalField(max_digits=12, decimal_places=2, default=1)
     scanned_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='barcode_scans')
     scanned_at = models.DateTimeField(auto_now_add=True)
+
+class WhatsAppMessage(models.Model):
+    class Direction(models.TextChoices):
+        INBOUND = 'Inbound', 'Inbound'
+        OUTBOUND = 'Outbound', 'Outbound'
+
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='whatsapp_messages')
+    direction = models.CharField(max_length=10, choices=Direction.choices)
+    message = models.TextField()
+    status = models.CharField(max_length=20, default='Delivered')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class WhatsAppOrderDraft(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = 'Draft', 'Draft'
+        QUOTED = 'Quoted', 'Quoted'
+        CONFIRMED = 'Confirmed', 'Confirmed'
+
+    draft_no = models.CharField(max_length=40, unique=True)
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='whatsapp_order_drafts')
+    raw_message = models.TextField()
+    parsed_items = models.JSONField(default=list)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
+    estimated_total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    created_at = models.DateTimeField(auto_now_add=True)

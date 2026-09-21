@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useApiData } from '../services/useApiData';
-import { demoPurchases, demoLedger, demoWarehouses, demoBarcodes } from '../data/featureData';
+import { demoPurchases, demoLedger, demoWarehouses, demoBarcodes, demoWhatsAppDrafts } from '../data/featureData';
 
 const money = (value) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
 
@@ -62,10 +62,27 @@ function BarcodePage() {
   </div>;
 }
 
+function WhatsAppPage() {
+  const { data: drafts } = useApiData('whatsapp', demoWhatsAppDrafts, 'whatsapp');
+  const [message, setMessage] = useState('Need 20 Anchor 32A MCB and 10 Havells 12W LED bulbs');
+  const [draft, setDraft] = useState(demoWhatsAppDrafts[0]);
+  const parseDemo = () => {
+    const lower = message.toLowerCase(); const items = [];
+    demoBarcodes.forEach((p) => { if (lower.includes(p.sku.toLowerCase()) || lower.includes(p.name.toLowerCase().split(' ')[0].toLowerCase())) { const match = message.match(/(\d+)\s+(?:x\s+)?(?:[A-Za-z])/); const quantity = match ? Number(match[1]) : 1; items.push({ ...p, quantity, price: p.sku === 'AN-MCB-32' ? 495 : p.sku === 'HA-LED-12' ? 145 : 2040, available: p.stock }); } });
+    setDraft({ id: 'WA-DEMO-NEW', customer: 'R.K. Trading Co.', message, status: 'Draft', items, total: items.reduce((sum,x)=>sum+x.quantity*x.price,0) });
+  };
+  return <div><FeatureHeader eyebrow="Conversational commerce" title="WhatsApp B2B ordering" subtitle="Turn customer chat messages into structured draft orders, then check stock and move them into quotation or confirmation." action="Connect WhatsApp" search={''} setSearch={()=>{}} />
+    <div className="whatsapp-layout"><article className="chat-card"><div className="chat-head"><span>R.K. Trading Co.</span><Badge>Online</Badge></div><div className="chat-bubble">{message}</div><textarea value={message} onChange={(e)=>setMessage(e.target.value)} /><button onClick={parseDemo}>Parse into order</button></article>
+      <article className="draft-card"><span className="section-kicker">Draft order</span><h3>{draft?.id}</h3><p>{draft?.customer}</p><div className="draft-items">{(draft?.items || []).map((item)=><div key={item.sku}><span>{item.name}<small>{item.sku} · stock {item.available}</small></span><strong>{item.quantity} × {money(item.price)}</strong></div>)}</div><div className="draft-total"><span>Estimated total</span><strong>{money(draft?.total || 0)}</strong></div><div className="draft-actions"><button>Check stock</button><button>Create quotation</button></div></article></div>
+    <article className="panel module-panel"><div className="panel-head"><div><span>Recent</span><h3>WhatsApp order drafts</h3></div></div><div className="table-wrap"><table className="data-table module-table"><thead><tr><th>Draft</th><th>Customer</th><th>Message</th><th>Total</th><th>Status</th></tr></thead><tbody>{drafts.map((row)=><tr key={row.id}><td><strong>{row.id}</strong></td><td>{row.customer}</td><td>{String(row.message).slice(0,55)}{String(row.message).length>55?'…':''}</td><td>{money(row.total)}</td><td><Badge>{row.status}</Badge></td></tr>)}</tbody></table></div></article>
+  </div>;
+}
+
 export default function EnhancedModulePage({ module }) {
   if (module === 'purchases') return <PurchasesPage />;
   if (module === 'ledger') return <LedgerPage />;
   if (module === 'warehouses') return <WarehousesPage />;
   if (module === 'barcode') return <BarcodePage />;
+  if (module === 'whatsapp') return <WhatsAppPage />;
   return null;
 }

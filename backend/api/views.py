@@ -1,4 +1,5 @@
 import json
+import re
 from decimal import Decimal
 from django.contrib.auth import authenticate
 from django.db.models import Sum
@@ -7,12 +8,12 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from .auth import api_auth_required, create_token, roles_allowed
-from .models import Customer, Invoice, Order, Product, Supplier, PurchaseOrder, PurchaseItem, GoodsReceipt, LedgerEntry, Warehouse, StockBalance, StockTransfer, BarcodeScanLog
+from .models import Customer, Invoice, Order, Product, Supplier, PurchaseOrder, PurchaseItem, GoodsReceipt, LedgerEntry, Warehouse, StockBalance, StockTransfer, BarcodeScanLog, WhatsAppMessage, WhatsAppOrderDraft
 
 PERMISSIONS = {
-    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','quotations','payments','reports','team','settings'],
-    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','quotations','payments','reports'],
-    'SALES': ['dashboard','customers','orders','invoices','ledger','quotations','payments'],
+    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','quotations','payments','reports','team','settings'],
+    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','quotations','payments','reports'],
+    'SALES': ['dashboard','customers','orders','invoices','ledger','whatsapp','quotations','payments'],
     'WAREHOUSE': ['dashboard','products','inventory','orders','purchases','warehouses','barcode'],
     'ACCOUNTANT': ['dashboard','customers','orders','invoices','purchases','ledger','payments','reports'],
 }
@@ -155,7 +156,7 @@ def suppliers(request):
 @roles_allowed('OWNER', 'MANAGER', 'SALES', 'ACCOUNTANT')
 def ledger(request):
     today = timezone.localdate()
-    rows = LedgerEntry, Warehouse, StockBalance, StockTransfer, BarcodeScanLog.objects.select_related('customer').order_by('-entry_date', '-id')
+    rows = LedgerEntry, Warehouse, StockBalance, StockTransfer, BarcodeScanLog, WhatsAppMessage, WhatsAppOrderDraft.objects.select_related('customer').order_by('-entry_date', '-id')
     payload = []
     for row in rows:
         age = (today - row.due_date).days if row.due_date and today > row.due_date else 0
@@ -168,7 +169,7 @@ def ledger(request):
 @roles_allowed('OWNER', 'MANAGER', 'WAREHOUSE')
 def warehouses(request):
     locations = Warehouse.objects.filter(is_active=True).order_by('name')
-    transfers = StockTransfer, BarcodeScanLog.objects.select_related('from_warehouse', 'to_warehouse').prefetch_related('items').order_by('-transfer_date')[:10]
+    transfers = StockTransfer, BarcodeScanLog, WhatsAppMessage, WhatsAppOrderDraft.objects.select_related('from_warehouse', 'to_warehouse').prefetch_related('items').order_by('-transfer_date')[:10]
     return JsonResponse({
         'warehouses': [{'id': w.code, 'name': w.name, 'city': w.city, 'stock': float(sum((b.quantity for b in w.stock_balances.all()), Decimal('0'))), 'reserved': float(sum((b.reserved for b in w.stock_balances.all()), Decimal('0')))} for w in locations.prefetch_related('stock_balances')],
         'transfers': [{'id': t.transfer_no, 'from': t.from_warehouse.name, 'to': t.to_warehouse.name, 'status': t.status, 'date': t.transfer_date.strftime('%d %b'), 'units': float(sum((i.quantity for i in t.items.all()), Decimal('0')))} for t in transfers],
@@ -186,7 +187,45 @@ def barcode(request):
         product = Product.objects.filter(barcode=code).first() or Product.objects.filter(sku__iexact=code).first()
         if not product: return JsonResponse({'detail': 'Product not found.'}, status=404)
         warehouse = Warehouse.objects.filter(code=body.get('warehouse')).first() if body.get('warehouse') else None
-        log = BarcodeScanLog.objects.create(product=product, warehouse=warehouse, action=body.get('action', 'Lookup'), quantity=body.get('quantity', 1), scanned_by=request.api_user)
+        log = BarcodeScanLog, WhatsAppMessage, WhatsAppOrderDraft.objects.create(product=product, warehouse=warehouse, action=body.get('action', 'Lookup'), quantity=body.get('quantity', 1), scanned_by=request.api_user)
         return JsonResponse({'scan': {'id': log.id, 'sku': product.sku, 'name': product.name, 'barcode': product.barcode, 'action': log.action, 'quantity': float(log.quantity)}})
     rows = Product.objects.filter(is_active=True).order_by('name')
     return JsonResponse({'barcodes': [{'sku': p.sku, 'name': p.name, 'barcode': p.barcode or p.sku, 'stock': float(p.stock), 'unit': p.unit, 'location': p.location} for p in rows]})
+
+
+def _parse_whatsapp_items(raw_message):
+    items = []
+    lowered = raw_message.lower()
+    products = Product.objects.filter(is_active=True)
+    for product in products:
+        tokens = [token for token in re.split(r'[^a-z0-9]+', product.name.lower()) if len(token) > 2]
+        sku_match = product.sku.lower() in lowered
+        name_match = sum(1 for token in tokens[:4] if token in lowered) >= min(2, len(tokens[:4])) if tokens else False
+        if not (sku_match or name_match):
+            continue
+        quantity = 1
+        lines = [line for line in raw_message.splitlines() if product.sku.lower() in line.lower() or any(t in line.lower() for t in tokens[:2])]
+        if lines:
+            match = re.search(r'\b(\d+(?:\.\d+)?)\b', lines[0])
+            if match: quantity = float(match.group(1))
+        items.append({'sku': product.sku, 'name': product.name, 'quantity': quantity, 'unit': product.unit, 'price': float(product.sell_price), 'available': float(product.stock)})
+    return items
+
+@csrf_exempt
+@require_http_methods(['GET', 'POST'])
+@roles_allowed('OWNER', 'MANAGER', 'SALES')
+def whatsapp(request):
+    if request.method == 'POST':
+        try: body = json.loads(request.body or '{}')
+        except json.JSONDecodeError: return JsonResponse({'detail': 'Invalid JSON.'}, status=400)
+        customer = Customer.objects.filter(code=body.get('customer')).first()
+        raw = str(body.get('message', '')).strip()
+        if not customer or not raw: return JsonResponse({'detail': 'customer and message are required.'}, status=400)
+        items = _parse_whatsapp_items(raw)
+        total = sum(Decimal(str(item['quantity'])) * Decimal(str(item['price'])) for item in items)
+        draft_no = f'WA-{timezone.now().strftime("%y%m%d%H%M%S")}'
+        draft = WhatsAppOrderDraft.objects.create(draft_no=draft_no, customer=customer, raw_message=raw, parsed_items=items, estimated_total=total)
+        WhatsAppMessage.objects.create(customer=customer, direction='Inbound', message=raw, status='Received')
+        return JsonResponse({'draft': {'id': draft.draft_no, 'customer': customer.name, 'items': items, 'total': float(total), 'status': draft.status}}, status=201)
+    drafts = WhatsAppOrderDraft.objects.select_related('customer').order_by('-created_at')[:12]
+    return JsonResponse({'whatsapp': [{'id': d.draft_no, 'customer': d.customer.name, 'message': d.raw_message, 'items': d.parsed_items, 'total': float(d.estimated_total), 'status': d.status} for d in drafts]})

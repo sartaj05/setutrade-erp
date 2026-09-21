@@ -38,3 +38,8 @@ export const demoBarcodes = [
   { sku: 'AN-MCB-32', name: 'Anchor 32A DP MCB', barcode: '8901442032036', stock: 24, unit: 'pcs', location: 'C-11' },
   { sku: 'GM-PLT-8', name: 'GM 8 Module Plate', barcode: '8906084407084', stock: 12, unit: 'pcs', location: 'D-04' },
 ];
+
+export const demoWhatsAppDrafts = [
+  { id: 'WA-260921-014', customer: 'R.K. Trading Co.', message: 'Need 20 Anchor 32A MCB and 10 Havells 12W LED bulbs', total: 11350, status: 'Draft', items: [{ sku: 'AN-MCB-32', name: 'Anchor 32A DP MCB', quantity: 20, unit: 'pcs', price: 495, available: 24 }, { sku: 'HA-LED-12', name: 'Havells 12W LED Bulb', quantity: 10, unit: 'pcs', price: 145, available: 86 }] },
+  { id: 'WA-260921-013', customer: 'Metro Electricals', message: 'Send 5 coils Polycab 2.5mm red today', total: 10200, status: 'Quoted', items: [{ sku: 'PC-25-RD', name: 'Polycab 2.5mm Wire Red', quantity: 5, unit: 'coil', price: 2040, available: 7 }] },
+];

@@ -7,9 +7,9 @@ export const demoAccounts = [
 ];
 
 export const permissions = {
-  OWNER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'warehouses', 'barcode', 'quotations', 'payments', 'reports', 'team', 'settings'],
-  MANAGER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'warehouses', 'barcode', 'quotations', 'payments', 'reports'],
-  SALES: ['dashboard', 'customers', 'orders', 'invoices', 'ledger', 'warehouses', 'barcode', 'quotations', 'payments'],
+  OWNER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'quotations', 'payments', 'reports', 'team', 'settings'],
+  MANAGER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'quotations', 'payments', 'reports'],
+  SALES: ['dashboard', 'customers', 'orders', 'invoices', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'quotations', 'payments'],
   WAREHOUSE: ['dashboard', 'products', 'inventory', 'orders', 'purchases', 'warehouses', 'barcode'],
   ACCOUNTANT: ['dashboard', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'payments', 'reports'],
 };
