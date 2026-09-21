@@ -13,7 +13,7 @@ from api.models import (
 
 from api.models import (
     PaymentPromise, CollectionTask, PaymentTransaction, PaymentLink, CollectionReminder, ReceivableFinanceExport,
-    WarehouseBin, BinStock, PickList, PickListItem, CycleCount, SupplierPortalAccess, SupplierPortalSubmission,
+    WarehouseBin, BinStock, PickList, PickListItem, PickWave, PackingSlip, CycleCount, SupplierPortalAccess, SupplierPortalSubmission,
     AutomationRule, AutomationRun, ExternalChannel, ExternalOrder, ExternalOrderItem, DistributionNetwork, NetworkMember, NetworkSnapshot,
 )
 
@@ -169,6 +169,9 @@ class Command(BaseCommand):
         pick,_=PickList.objects.update_or_create(pick_no='PICK-260921-019',defaults={'company':company,'warehouse':warehouses['WH-DEL'],'status':'Picking','assigned_to':users['WAREHOUSE']})
         PickListItem.objects.update_or_create(pick_list=pick,order=orders['SO-1097'],product=products['AN-MCB-32'],defaults={'source_bin':bin_b,'requested_qty':20,'picked_qty':12})
         CycleCount.objects.update_or_create(company=company,warehouse=warehouses['WH-DEL'],bin=bin_a,product=products['PC-25-RD'],defaults={'expected_qty':7,'counted_qty':6,'status':'Counted','counted_by':users['WAREHOUSE']})
+        wave,_=PickWave.objects.update_or_create(wave_no='WAVE-260921-03',defaults={'company':company,'warehouse':warehouses['WH-DEL'],'status':'Released','created_by':users['WAREHOUSE']})
+        wave.pick_lists.add(pick)
+        PackingSlip.objects.update_or_create(package_no='PKG-260921-18',defaults={'company':company,'warehouse':warehouses['WH-DEL'],'order':orders['SO-1095'],'pick_list':None,'carton_count':2,'weight_kg':Decimal('12.50'),'status':'Packed','packed_by':users['WAREHOUSE']})
 
         SupplierPortalAccess.objects.update_or_create(company=company,supplier=suppliers['S-001'],defaults={'email':'supplier@setustock.demo','pin_hash':make_password('1234'),'is_active':True})
         SupplierPortalSubmission.objects.get_or_create(company=company,supplier=suppliers['S-001'],purchase_order=po,submission_type='ETA',defaults={'payload':{'eta':'2026-09-23','note':'Truck dispatched from Bhiwadi.'},'status':'Submitted'})
