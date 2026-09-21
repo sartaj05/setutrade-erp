@@ -206,3 +206,15 @@ The repository deliberately does not contain third-party secrets. Production con
 - Proposed operational actions with rationale and risk
 - Human approval before execution
 - Permission checks and audit logging
+
+## Growth v5
+- Product Master / PIM + governed changes
+- Batch / lot / serial / expiry traceability
+- Treasury, bank reconciliation and cash-flow forecasting
+- Customer rate agreements and tenders
+- Quality inspection and quarantine
+- Advanced replenishment / S&OP scenarios
+- Warranty, RMA and after-sales service
+- Employee expenses and petty cash
+- Custom report builder and scheduled reporting
+- Operations control center and observability

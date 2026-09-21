@@ -161,3 +161,9 @@ External commerce, payment confirmation, WhatsApp delivery, statutory GST servic
 The repository now also includes CRM, manufacturer scheme claims, GST reconciliation, vendor-scored procurement, fleet route planning, explainable customer credit risk, enterprise security/privacy workflows, an integration hub with scoped developer API keys, contribution-profit BI and an approval-gated AI action copilot.
 
 See `GROWTH_V4.md` and `GROWTH_V4_COMMITS.md` for the implementation map.
+
+## Growth v5: operational depth (Phases 27–36)
+
+Growth v5 adds governed product/PIM data, batch/serial/expiry traceability, treasury and bank reconciliation, B2B rate contracts/tenders, QC/quarantine, S&OP replenishment planning, warranty/RMA service, expense/petty-cash workflows, a custom report builder and an operations control center.
+
+See `GROWTH_V5.md`, `GROWTH_V5_COMMITS.md` and `VALIDATION_V5.md` for feature, commit and validation details.

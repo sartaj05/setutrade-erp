@@ -57,3 +57,7 @@ Provider boundaries remain explicit: generic ONDC/marketplace adapters are not a
 Added CRM pipeline, manufacturer scheme claims, GST reconciliation, smart procurement/vendor scorecards, fleet route planning, explainable customer credit risk, enterprise security/privacy administration, integration hub/public API, contribution-profit BI and approval-gated AI operational actions.
 
 Security-sensitive additions store API keys and MFA setup material as hashes after enrollment; raw API/webhook setup secrets are returned only at creation time. The copilot requires human approval for transactional actions and logs executions.
+
+## Growth v5 — Phases 27–36
+
+Added Product Master/PIM governance, lot/serial traceability, treasury/cash forecasting, rate agreements/tenders, quality inspection/quarantine, multi-location replenishment planning, warranty/RMA service, expense/petty cash, self-service report scheduling and an operations-control center. New migrations extend the API schema through `0052`.
