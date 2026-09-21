@@ -1267,3 +1267,40 @@ class ProcurementRecommendation(models.Model):
     status=models.CharField(max_length=20,choices=Status.choices,default=Status.OPEN)
     generated_at=models.DateTimeField(auto_now=True)
     class Meta: constraints=[models.UniqueConstraint(fields=['company','product','supplier'],name='unique_procurement_product_supplier')]
+
+# --- Growth v4 / Phase 21: fleet & route optimisation ---
+class FleetVehicle(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='fleet_vehicles')
+    vehicle_no=models.CharField(max_length=30)
+    vehicle_type=models.CharField(max_length=60,default='LCV')
+    capacity_kg=models.DecimalField(max_digits=12,decimal_places=2,default=0)
+    driver_name=models.CharField(max_length=120,blank=True)
+    driver_phone=models.CharField(max_length=20,blank=True)
+    cost_per_km=models.DecimalField(max_digits=10,decimal_places=2,default=0)
+    is_active=models.BooleanField(default=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['company','vehicle_no'],name='unique_company_fleet_vehicle')]
+
+class RoutePlan(models.Model):
+    class Status(models.TextChoices): PLANNED='Planned','Planned'; RELEASED='Released','Released'; RUNNING='Running','Running'; COMPLETE='Complete','Complete'
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='route_plans')
+    route_no=models.CharField(max_length=40,unique=True)
+    vehicle=models.ForeignKey(FleetVehicle,on_delete=models.PROTECT,related_name='routes')
+    warehouse=models.ForeignKey(Warehouse,on_delete=models.PROTECT,related_name='route_plans')
+    route_date=models.DateField()
+    status=models.CharField(max_length=20,choices=Status.choices,default=Status.PLANNED)
+    estimated_km=models.DecimalField(max_digits=10,decimal_places=2,default=0)
+    estimated_cost=models.DecimalField(max_digits=12,decimal_places=2,default=0)
+    optimization_score=models.DecimalField(max_digits=5,decimal_places=2,default=0)
+    created_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+
+class RoutePlanStop(models.Model):
+    route=models.ForeignKey(RoutePlan,on_delete=models.CASCADE,related_name='stops')
+    order=models.ForeignKey(Order,on_delete=models.PROTECT,related_name='route_plan_stops')
+    sequence=models.PositiveIntegerField(default=1)
+    area=models.CharField(max_length=120,blank=True)
+    delivery_window=models.CharField(max_length=60,blank=True)
+    estimated_km_from_previous=models.DecimalField(max_digits=9,decimal_places=2,default=0)
+    estimated_minutes=models.PositiveIntegerField(default=0)
+    priority=models.PositiveSmallIntegerField(default=3)
+    class Meta: ordering=['sequence']

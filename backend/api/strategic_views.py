@@ -99,3 +99,22 @@ def procurement_intelligence(request):
         supplier=suppliers[i%len(suppliers)]; score, _=m.VendorScorecard.objects.get_or_create(company=company,supplier=supplier,defaults={'price_score':84,'fill_rate':96,'on_time_rate':92,'quality_score':95,'payment_term_score':80,'overall_score':90,'avg_lead_days':5})
         qty=max(Decimal('1'),p.reorder_level*Decimal('2')-p.stock); m.ProcurementRecommendation.objects.update_or_create(company=company,product=p,supplier=supplier,defaults={'recommended_qty':qty,'expected_unit_cost':p.purchase_price,'expected_lead_days':int(score.avg_lead_days or 5),'reason':f'Stock {p.stock} is at/below reorder level {p.reorder_level}. Vendor score {score.overall_score}.','status':'Open'});created+=1
     return JsonResponse({'created':created})
+
+@csrf_exempt
+@require_http_methods(['GET','POST'])
+@api_auth_required
+def fleet_routes(request):
+    company=request.company
+    if request.method=='GET':
+        vehicles=m.FleetVehicle.objects.filter(company=company,is_active=True).order_by('vehicle_no')
+        routes=m.RoutePlan.objects.filter(company=company).select_related('vehicle','warehouse').prefetch_related('stops__order__customer').order_by('-route_date','-id')[:30]
+        return JsonResponse({'summary':{'vehicles':vehicles.count(),'planned':routes.exclude(status='Complete').count(),'km':_money(routes.aggregate(v=Sum('estimated_km'))['v'] or 0),'cost':_money(routes.aggregate(v=Sum('estimated_cost'))['v'] or 0)},'vehicles':[{'id':v.id,'vehicleNo':v.vehicle_no,'type':v.vehicle_type,'capacityKg':_money(v.capacity_kg),'driver':v.driver_name,'costPerKm':_money(v.cost_per_km)} for v in vehicles],'routes':[{'id':r.id,'routeNo':r.route_no,'date':_dt(r.route_date),'vehicle':r.vehicle.vehicle_no,'warehouse':r.warehouse.name,'status':r.status,'km':_money(r.estimated_km),'cost':_money(r.estimated_cost),'score':_money(r.optimization_score),'stops':[{'sequence':s.sequence,'order':s.order.order_no,'customer':s.order.customer.name,'area':s.area,'km':_money(s.estimated_km_from_previous)} for s in r.stops.all()]} for r in routes]})
+    data=_body(request);action=data.get('action','optimize')
+    if action=='vehicle':
+        v=m.FleetVehicle.objects.create(company=company,vehicle_no=data.get('vehicleNo') or f"DL-DEMO-{timezone.now().strftime('%H%M%S')}",vehicle_type=data.get('type','LCV'),capacity_kg=data.get('capacityKg',1200),driver_name=data.get('driver',''),driver_phone=data.get('phone',''),cost_per_km=data.get('costPerKm',18));return JsonResponse({'id':v.id},status=201)
+    vehicle=m.FleetVehicle.objects.filter(company=company,is_active=True,pk=data.get('vehicleId')).first() or m.FleetVehicle.objects.filter(company=company,is_active=True).first(); warehouse=m.Warehouse.objects.filter(company=company,is_active=True,pk=data.get('warehouseId')).first() or m.Warehouse.objects.filter(company=company,is_active=True).first()
+    if not vehicle or not warehouse:return JsonResponse({'detail':'Vehicle and warehouse are required.'},status=400)
+    orders=list(m.Order.objects.filter(company=company).exclude(status__in=['Dispatched','Cancelled']).select_related('customer').order_by('customer__city','-total')[:25])
+    route=m.RoutePlan.objects.create(company=company,route_no=f"ROUTE-{timezone.now().strftime('%y%m%d%H%M%S%f')}",vehicle=vehicle,warehouse=warehouse,route_date=data.get('date') or timezone.localdate(),estimated_km=max(12,len(orders)*Decimal('3.4')),optimization_score=91,created_by=request.api_user)
+    for i,o in enumerate(orders,1):m.RoutePlanStop.objects.create(route=route,order=o,sequence=i,area=o.customer.city or 'Delhi NCR',delivery_window='10:00–18:00',estimated_km_from_previous=Decimal('3.4'),estimated_minutes=18,priority=1 if o.payment_status=='Paid' else 3)
+    route.estimated_cost=(route.estimated_km*vehicle.cost_per_km).quantize(Decimal('0.01'));route.save(update_fields=['estimated_cost']);audit(request,'CREATE','RoutePlan',route.id,route.route_no);return JsonResponse({'id':route.id,'routeNo':route.route_no,'stops':len(orders),'km':_money(route.estimated_km),'cost':_money(route.estimated_cost)},status=201)
