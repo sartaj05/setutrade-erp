@@ -28,7 +28,7 @@ from .auth import (
     revoke_request_session, roles_allowed,
 )
 from .models import (
-    AccountingConnection, AccountingExportJob, ApprovalPolicy, CompanySubscription, OfflineSyncReceipt, SubscriptionInvoice, SubscriptionPlan, ApprovalRequest, Attachment, AuditLog, PurchaseInvoiceCapture, BarcodeScanLog, Branch, Company, Customer, CustomerPortalAccess, CustomerPortalOrder, DeliveryProof, DeliveryRun, DeliveryStop, GoodsReceipt,
+    AccountingConnection, AccountingExportJob, ApprovalPolicy, AssistantMessage, AssistantThread, CompanySubscription, OfflineSyncReceipt, SubscriptionInvoice, SubscriptionPlan, ApprovalRequest, Attachment, AuditLog, PurchaseInvoiceCapture, BarcodeScanLog, Branch, Company, Customer, CustomerPortalAccess, CustomerPortalOrder, DeliveryProof, DeliveryRun, DeliveryStop, GoodsReceipt,
     GoodsReceiptItem, InventoryMovement, Invoice, LedgerEntry, Notification, Order,
     OrderItem, Payment, PriceList, PriceRule, Product, PurchaseItem, PurchaseOrder,
     Quotation, QuotationItem, ReorderSuggestion, ReturnItem, ReturnOrder, SalesTarget,
@@ -42,11 +42,11 @@ from .services import (
 )
 
 PERMISSIONS = {
-    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','team','settings','audit','delivery','approvals','invoice-ocr', 'accounting', 'offline', 'subscription', 'forecasting'],
-    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','audit','delivery','approvals','invoice-ocr', 'accounting', 'offline', 'forecasting'],
-    'SALES': ['dashboard','customers','orders','invoices','ledger','whatsapp','tax','pricing','field-sales','quotations','payments','approvals','invoice-ocr', 'offline'],
+    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','team','settings','audit','delivery','approvals','invoice-ocr', 'accounting', 'offline', 'subscription', 'forecasting', 'assistant'],
+    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','audit','delivery','approvals','invoice-ocr', 'accounting', 'offline', 'forecasting', 'assistant'],
+    'SALES': ['dashboard','customers','orders','invoices','ledger','whatsapp','tax','pricing','field-sales','quotations','payments','approvals','invoice-ocr', 'offline', 'assistant'],
     'WAREHOUSE': ['dashboard','products','inventory','orders','purchases','warehouses','barcode','returns','insights','delivery','approvals','invoice-ocr', 'offline', 'forecasting'],
-    'ACCOUNTANT': ['dashboard','customers','orders','invoices','purchases','ledger','tax','returns','insights','payments','reports','audit','delivery','approvals','invoice-ocr', 'accounting'],
+    'ACCOUNTANT': ['dashboard','customers','orders','invoices','purchases','ledger','tax','returns','insights','payments','reports','audit','delivery','approvals','invoice-ocr', 'accounting', 'assistant'],
 }
 
 
@@ -1237,3 +1237,38 @@ def forecasting(request):
             avg,trend,forecast,safety,recommend,confidence,current=_forecast_row(request.company,p,None,horizon);preview.append({'product':p.name,'sku':p.sku,'warehouse':'All warehouses','currentStock':float(current),'avgDaily':float(avg),'trend':float(trend),'forecast':float(forecast),'safetyStock':float(safety),'recommendedPurchase':float(recommend),'confidence':float(confidence)})
         return JsonResponse({'horizon':horizon,'forecasts':sorted(preview,key=lambda x:x['recommendedPurchase'],reverse=True)})
     return JsonResponse({'horizon':horizon,'forecasts':[{'product':x.product.name,'sku':x.product.sku,'warehouse':x.warehouse.name if x.warehouse else 'All warehouses','currentStock':float(x.product.stock),'avgDaily':float(x.avg_daily_demand),'trend':float(x.trend_percent),'forecast':float(x.forecast_quantity),'safetyStock':float(x.safety_stock),'recommendedPurchase':float(x.recommended_purchase),'confidence':float(x.confidence)} for x in rows]})
+
+def _assistant_answer(company, question):
+    q=question.lower().strip(); today=timezone.localdate()
+    if any(k in q for k in ['overdue','outstanding','receivable','credit']):
+        rows=Customer.objects.filter(company=company,outstanding__gt=0).order_by('-outstanding')[:5];total=sum((x.outstanding for x in rows),Decimal('0'))
+        return 'receivables', f"Top outstanding customers total ₹{float(total):,.0f} across the five largest balances.", {'customers':[{'name':x.name,'outstanding':float(x.outstanding),'limit':float(x.credit_limit)} for x in rows]}
+    if any(k in q for k in ['run out','low stock','reorder','stockout']):
+        rows=Product.objects.filter(company=company,is_active=True,stock__lte=F('reorder_level')).order_by('stock')[:8]
+        return 'stock-risk', f'{len(rows)} priority products are at or below their reorder level.', {'products':[{'sku':x.sku,'name':x.name,'stock':float(x.stock),'reorderLevel':float(x.reorder_level)} for x in rows]}
+    if any(k in q for k in ['sales','revenue','sold']):
+        start=today.replace(day=1); total=Order.objects.filter(company=company,order_date__gte=start).exclude(status=Order.Status.CANCELLED).aggregate(v=Sum('total'))['v'] or 0
+        count=Order.objects.filter(company=company,order_date__gte=start).exclude(status=Order.Status.CANCELLED).count()
+        return 'sales', f'Month-to-date sales are ₹{float(total):,.0f} from {count} orders.', {'sales':float(total),'orders':count,'from':start.isoformat()}
+    if any(k in q for k in ['purchase','buy','forecast','demand']):
+        rows=DemandForecast.objects.filter(company=company).select_related('product').order_by('-recommended_purchase')[:5]
+        return 'forecast', 'These products currently have the largest forecast-based purchase recommendations.', {'products':[{'sku':x.product.sku,'name':x.product.name,'recommendedPurchase':float(x.recommended_purchase),'confidence':float(x.confidence)} for x in rows]}
+    if any(k in q for k in ['collection','payment']):
+        start=today.replace(day=1); amount=Payment.objects.filter(company=company,payment_date__gte=start).aggregate(v=Sum('amount'))['v'] or 0
+        return 'collections', f'Month-to-date customer collections are ₹{float(amount):,.0f}.', {'collections':float(amount),'from':start.isoformat()}
+    return 'help', 'I can answer questions about sales, collections, overdue customers, low stock and forecast purchase recommendations using your SetuStock data.', {'examples':['Which products may run out?','Show overdue customers','What are month-to-date sales?','What should I reorder?']}
+
+@csrf_exempt
+@require_http_methods(['GET','POST'])
+@api_auth_required
+def ai_assistant(request):
+    if request.method=='GET':
+        threads=AssistantThread.objects.filter(company=request.company,user=request.api_user).order_by('-updated_at')[:10]
+        return JsonResponse({'threads':[{'id':t.id,'title':t.title,'updatedAt':t.updated_at.isoformat()} for t in threads],'capabilities':['sales','collections','receivables','stock risk','forecasting']})
+    body=_json_body(request) or {}; question=str(body.get('question','')).strip()[:1200]
+    if not question:return JsonResponse({'detail':'Ask a business question.'},status=400)
+    thread=AssistantThread.objects.filter(pk=body.get('threadId'),company=request.company,user=request.api_user).first() if body.get('threadId') else None
+    if not thread: thread=AssistantThread.objects.create(company=request.company,user=request.api_user,title=question[:80])
+    AssistantMessage.objects.create(thread=thread,role='user',content=question)
+    intent,answer,data=_assistant_answer(request.company,question);AssistantMessage.objects.create(thread=thread,role='assistant',content=answer,intent=intent,data=data);thread.save(update_fields=['updated_at'])
+    return JsonResponse({'threadId':thread.id,'answer':answer,'intent':intent,'data':data})

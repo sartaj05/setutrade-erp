@@ -886,3 +886,18 @@ class DemandForecast(models.Model):
     confidence=models.DecimalField(max_digits=5,decimal_places=2,default=0)
     generated_at=models.DateTimeField(auto_now=True)
     class Meta: constraints=[models.UniqueConstraint(fields=['company','product','warehouse','horizon_days'],name='unique_company_product_forecast')]
+
+
+class AssistantThread(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='assistant_threads')
+    user=models.ForeignKey(User,on_delete=models.CASCADE,related_name='assistant_threads')
+    title=models.CharField(max_length=160,default='Business assistant')
+    created_at=models.DateTimeField(auto_now_add=True); updated_at=models.DateTimeField(auto_now=True)
+
+class AssistantMessage(models.Model):
+    thread=models.ForeignKey(AssistantThread,on_delete=models.CASCADE,related_name='messages')
+    role=models.CharField(max_length=20,choices=[('user','User'),('assistant','Assistant')])
+    content=models.TextField()
+    intent=models.CharField(max_length=60,blank=True)
+    data=models.JSONField(default=dict,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
