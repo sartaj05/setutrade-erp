@@ -16,4 +16,5 @@ urlpatterns = [
     path('warehouses/', views.warehouses),
     path('barcode/', views.barcode),
     path('whatsapp/', views.whatsapp),
+    path('tax/', views.tax_compliance),
 ]

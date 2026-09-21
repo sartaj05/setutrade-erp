@@ -15,6 +15,7 @@ const moduleLabels = {
   warehouses: ['Warehouses', 'box'],
   barcode: ['Barcode Scan', 'box'],
   whatsapp: ['WhatsApp Orders', 'receipt'],
+  tax: ['GST & Tax', 'receipt'],
   quotations: ['Quotations', 'receipt'],
   payments: ['Payments', 'receipt'],
   reports: ['Reports', 'chart'],

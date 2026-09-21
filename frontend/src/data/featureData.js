@@ -43,3 +43,15 @@ export const demoWhatsAppDrafts = [
   { id: 'WA-260921-014', customer: 'R.K. Trading Co.', message: 'Need 20 Anchor 32A MCB and 10 Havells 12W LED bulbs', total: 11350, status: 'Draft', items: [{ sku: 'AN-MCB-32', name: 'Anchor 32A DP MCB', quantity: 20, unit: 'pcs', price: 495, available: 24 }, { sku: 'HA-LED-12', name: 'Havells 12W LED Bulb', quantity: 10, unit: 'pcs', price: 145, available: 86 }] },
   { id: 'WA-260921-013', customer: 'Metro Electricals', message: 'Send 5 coils Polycab 2.5mm red today', total: 10200, status: 'Quoted', items: [{ sku: 'PC-25-RD', name: 'Polycab 2.5mm Wire Red', quantity: 5, unit: 'coil', price: 2040, available: 7 }] },
 ];
+
+export const demoTax = {
+  invoices: [
+    { id: 'INV-2026-1184', customer: 'R.K. Trading Co.', gstin: '09AABCR1234A1Z5', taxable: 49356, cgst: 4442, sgst: 4442, igst: 0, total: 58240, supplyType: 'Inter-state', placeOfSupply: 'Uttar Pradesh', einvoice: 'Ready', irn: '' },
+    { id: 'INV-2026-1183', customer: 'Ahuja Enterprises', gstin: '07AAECA3344M1Z2', taxable: 64508, cgst: 5806, sgst: 5806, igst: 0, total: 76120, supplyType: 'Intra-state', placeOfSupply: 'Delhi', einvoice: 'Generated', irn: 'DEMO-IRN-1183' },
+  ],
+  notes: [
+    { id: 'CN-2026-043', type: 'Credit Note', customer: 'Metro Electricals', invoice: 'INV-2026-1171', total: 4720, date: '19 Sep', reason: '2 damaged MCBs returned' },
+    { id: 'DN-2026-011', type: 'Debit Note', customer: 'NCR Buildmart', invoice: 'INV-2026-1158', total: 2360, date: '16 Sep', reason: 'Rate difference adjustment' },
+  ],
+  integration: { mode: 'configurable', einvoice: false, ewayBill: false, message: 'Demo mode: connect an authorised provider for production e-invoice/e-way bill generation.' },
+};

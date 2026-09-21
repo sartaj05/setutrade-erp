@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useApiData } from '../services/useApiData';
-import { demoPurchases, demoLedger, demoWarehouses, demoBarcodes, demoWhatsAppDrafts } from '../data/featureData';
+import { demoPurchases, demoLedger, demoWarehouses, demoBarcodes, demoWhatsAppDrafts, demoTax } from '../data/featureData';
 
 const money = (value) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
 
@@ -78,11 +78,25 @@ function WhatsAppPage() {
   </div>;
 }
 
+function TaxPage() {
+  const [search, setSearch] = useState('');
+  const { data } = useApiData('tax', { tax: demoTax }, 'tax');
+  const tax = data?.invoices ? data : demoTax;
+  const rows = tax.invoices.filter((x)=>`${x.id} ${x.customer} ${x.gstin}`.toLowerCase().includes(search.toLowerCase()));
+  return <div><FeatureHeader eyebrow="Compliance" title="GST, credit notes & e-invoice readiness" subtitle="Keep tax fields explicit: HSN/GST rates, place of supply, CGST/SGST/IGST, credit notes and provider-ready e-invoice status." action="Create credit note" search={search} setSearch={setSearch} />
+    <Kpis items={[{label:'Taxable this month',value:'₹15.89L',note:'demo invoice base'},{label:'GST collected',value:'₹2.86L',note:'CGST + SGST + IGST'},{label:'E-invoice queue',value:'7',note:'provider connection required'}]} />
+    <div className="tax-callout"><div><span>E-invoice connector</span><strong>Provider-ready, disabled in demo</strong><small>{tax.integration?.message}</small></div><Badge>Configurable</Badge></div>
+    <article className="panel module-panel"><div className="table-wrap"><table className="data-table module-table"><thead><tr><th>Invoice</th><th>Customer / GSTIN</th><th>Taxable</th><th>CGST + SGST</th><th>IGST</th><th>Supply</th><th>E-invoice</th></tr></thead><tbody>{rows.map((i)=><tr key={i.id}><td><strong>{i.id}</strong></td><td><strong>{i.customer}</strong><small>{i.gstin}</small></td><td>{money(i.taxable)}</td><td>{money(i.cgst+i.sgst)}</td><td>{money(i.igst)}</td><td><strong>{i.supplyType}</strong><small>{i.placeOfSupply}</small></td><td><Badge>{i.einvoice}</Badge></td></tr>)}</tbody></table></div></article>
+    <div className="feature-cards tax-notes">{tax.notes.map((n)=><article className="feature-card-compact" key={n.id}><span>{n.type}</span><strong>{n.id}</strong><small>{n.customer} · {n.invoice}</small><p>{n.reason}</p><b>{money(n.total)}</b></article>)}</div>
+  </div>;
+}
+
 export default function EnhancedModulePage({ module }) {
   if (module === 'purchases') return <PurchasesPage />;
   if (module === 'ledger') return <LedgerPage />;
   if (module === 'warehouses') return <WarehousesPage />;
   if (module === 'barcode') return <BarcodePage />;
   if (module === 'whatsapp') return <WhatsAppPage />;
+  if (module === 'tax') return <TaxPage />;
   return null;
 }

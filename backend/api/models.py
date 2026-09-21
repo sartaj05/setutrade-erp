@@ -29,6 +29,8 @@ class Product(models.Model):
     is_active = models.BooleanField(default=True)
     barcode = models.CharField(max_length=80, unique=True, null=True, blank=True)
     qr_code = models.CharField(max_length=160, blank=True)
+    hsn_code = models.CharField(max_length=20, blank=True)
+    gst_rate = models.DecimalField(max_digits=5, decimal_places=2, default=18)
     updated_at = models.DateTimeField(auto_now=True)
 
     def __str__(self):
@@ -89,6 +91,10 @@ class Invoice(models.Model):
     total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.UNPAID)
     invoice_date = models.DateField()
+    place_of_supply = models.CharField(max_length=100, blank=True)
+    supply_type = models.CharField(max_length=20, default='Intra-state')
+    e_invoice_irn = models.CharField(max_length=100, blank=True)
+    e_invoice_status = models.CharField(max_length=30, default='Not generated')
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
@@ -242,4 +248,20 @@ class WhatsAppOrderDraft(models.Model):
     parsed_items = models.JSONField(default=list)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
     estimated_total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+class TaxNote(models.Model):
+    class NoteType(models.TextChoices):
+        CREDIT = 'Credit Note', 'Credit Note'
+        DEBIT = 'Debit Note', 'Debit Note'
+
+    note_no = models.CharField(max_length=40, unique=True)
+    note_type = models.CharField(max_length=20, choices=NoteType.choices)
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='tax_notes')
+    invoice = models.ForeignKey(Invoice, on_delete=models.PROTECT, related_name='tax_notes', null=True, blank=True)
+    taxable_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    gst_amount = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    note_date = models.DateField()
+    reason = models.CharField(max_length=240, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
