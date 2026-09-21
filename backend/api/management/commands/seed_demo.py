@@ -1,9 +1,10 @@
 from datetime import date
 from decimal import Decimal
 from django.contrib.auth.models import User
+from django.contrib.auth.hashers import make_password
 from django.core.management.base import BaseCommand
 from api.models import (
-    Branch, Company, Customer, Invoice, InventoryMovement, LedgerEntry, Notification,
+    ApprovalPolicy, Branch, Company, Customer, CustomerPortalAccess, DeliveryRun, DeliveryStop, Invoice, InventoryMovement, LedgerEntry, Notification,
     Order, OrderItem, Payment, PriceList, PriceRule, Product, Profile, PurchaseItem,
     PurchaseOrder, ReorderSuggestion, SalesTarget, SalesVisit, StockAdjustment,
     StockBalance, StockTransfer, StockTransferItem, Supplier, TaxNote, Warehouse,
@@ -80,6 +81,13 @@ class Command(BaseCommand):
             c, _ = Customer.objects.update_or_create(company=company, code=code, defaults={'name':name,'city':city,'state':state,'phone':phone,'gstin':gstin,'outstanding':outstanding,'credit_limit':limit,'due_date':due,'address':f'{city}, {state}'})
             customers[code] = c
 
+        CustomerPortalAccess.objects.update_or_create(
+            company=company, customer=customers['C-101'],
+            defaults={'email':'dealer@setustock.demo','pin_hash':make_password('1234'),'is_active':True},
+        )
+        ApprovalPolicy.objects.update_or_create(company=company,key='discount',defaults={'label':'Discount above 10%','threshold':10,'approver_role':'MANAGER','is_active':True})
+        ApprovalPolicy.objects.update_or_create(company=company,key='credit',defaults={'label':'Credit override above ₹50,000','threshold':50000,'approver_role':'OWNER','is_active':True})
+
         suppliers = {}
         for code,name,city,outstanding in [('S-001','Polycab India Supply','Delhi',212600),('S-002','Havells Channel Partner','Noida',124850),('S-003','Legrand NCR Distribution','Gurugram',0)]:
             s,_=Supplier.objects.update_or_create(company=company,code=code,defaults={'name':name,'city':city,'state':'Delhi NCR','phone':'9810000001','gstin':'07AAACP0001A1Z1','outstanding':outstanding})
@@ -97,6 +105,13 @@ class Command(BaseCommand):
             order,_=Order.objects.update_or_create(order_no=no,defaults={'company':company,'branch':branch,'warehouse':warehouses['WH-DEL'],'customer':customers[ccode],'subtotal':taxable,'tax':tax,'total':total,'status':status,'payment_status':payment,'order_date':odate,'created_by':users['SALES']})
             OrderItem.objects.update_or_create(order=order,product=p,defaults={'quantity':qty,'unit_price':price,'gst_rate':p.gst_rate,'taxable_amount':taxable,'tax_amount':tax,'line_total':total})
             orders[no]=order
+
+        run, _ = DeliveryRun.objects.update_or_create(
+            run_no='RUN-260921-07',
+            defaults={'company':company,'route_name':'Noida Central','driver_name':'Vikas Kumar','driver_phone':'9810007788','vehicle_no':'DL1L AB 4421','delivery_date':date(2026,9,21),'status':'Out for Delivery','created_by':users['MANAGER']},
+        )
+        for seq, order_no in enumerate(['SO-1097','SO-1096'], 1):
+            DeliveryStop.objects.update_or_create(run=run, order=orders[order_no], defaults={'sequence':seq,'cod_amount':orders[order_no].total if orders[order_no].payment_status != 'Paid' else 0})
 
         invoice_specs = [
             ('INV-2026-1184','SO-1097','09AABCR1234A1Z5','Unpaid',date(2026,9,21)),

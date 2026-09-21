@@ -131,3 +131,46 @@ class ProductionApiTests(TestCase):
         self.assertEqual(old_session.status_code, 401)
         login = self.client.post('/api/auth/login/', data=json.dumps({'email': self.owner.email, 'password': 'new-secure-password-456'}), content_type='application/json')
         self.assertEqual(login.status_code, 200)
+
+    def test_growth_modules_smoke(self):
+        from django.contrib.auth.hashers import make_password
+        from .models import ApprovalPolicy, CustomerPortalAccess, DeliveryRun
+        CustomerPortalAccess.objects.create(company=self.company, customer=self.customer, email='dealer@example.com', pin_hash=make_password('1234'))
+        portal = self.client.post('/api/portal/login/', data=json.dumps({'email':'dealer@example.com','pin':'1234'}), content_type='application/json')
+        self.assertEqual(portal.status_code, 200, portal.content)
+        portal_token = portal.json()['token']
+        catalog = self.client.get('/api/portal/catalog/', HTTP_AUTHORIZATION=f'Portal {portal_token}')
+        self.assertEqual(catalog.status_code, 200, catalog.content)
+
+        run = self.post('/api/delivery/', {'action':'create-run','routeName':'Test route','driverName':'Driver','orderIds':[]})
+        self.assertEqual(run.status_code, 201, run.content)
+        self.assertTrue(DeliveryRun.objects.filter(company=self.company).exists())
+
+        policy = ApprovalPolicy.objects.create(company=self.company, key='credit', label='Credit override', threshold=1000, approver_role='OWNER')
+        approval = self.post('/api/approvals/', {'action':'request','policyKey':policy.key,'entityType':'Customer','entityId':str(self.customer.id),'title':'Credit override','amount':5000})
+        self.assertEqual(approval.status_code, 201, approval.content)
+        decision = self.post('/api/approvals/', {'action':'approve','id':approval.json()['id']})
+        self.assertEqual(decision.status_code, 200, decision.content)
+
+        ocr = self.post('/api/invoice-ocr/', {'fileName':'supplier.txt','rawText':'Invoice No: ABC-19 GSTIN 07ABCDE1234F1Z5 Date 21/09/2026 Grand Total 12,450.00'})
+        self.assertEqual(ocr.status_code, 201, ocr.content)
+        self.assertEqual(ocr.json()['capture']['data']['invoiceNumber'], 'ABC-19')
+
+        accounting = self.post('/api/accounting/', {'action':'export','from':timezone.localdate().replace(day=1).isoformat(),'to':timezone.localdate().isoformat()})
+        self.assertEqual(accounting.status_code, 201, accounting.content)
+
+        offline = self.post('/api/sync/offline/', {'deviceId':'test','events':[{'id':'evt-1','type':'customer-note','payload':{'notes':'offline'}}]})
+        self.assertEqual(offline.status_code, 200, offline.content)
+        self.assertEqual(offline.json()['synced'], 1)
+
+        billing = self.client.get('/api/subscription/', HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        self.assertEqual(billing.status_code, 200, billing.content)
+        self.assertGreaterEqual(len(billing.json()['plans']), 3)
+
+        forecast = self.client.get('/api/forecasting/', HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        self.assertEqual(forecast.status_code, 200, forecast.content)
+        self.assertIn('forecasts', forecast.json())
+
+        assistant = self.post('/api/assistant/', {'question':'What are month-to-date sales?'})
+        self.assertEqual(assistant.status_code, 200, assistant.content)
+        self.assertEqual(assistant.json()['intent'], 'sales')

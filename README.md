@@ -133,3 +133,8 @@ See `GITHUB_SETUP.md` before pushing it to your GitHub account.
 ## Important compliance note
 
 SetuStock provides GST-oriented invoice/data workflows, but it is not a certified GST filing, e-invoice or accounting product by itself. Live GST/e-invoice/e-way-bill calls must be connected to an authorised provider and validated for the client's actual legal/compliance requirements before relying on them for statutory filing.
+
+
+## Growth v2: 10 additional phases
+
+The repository also includes a separate B2B dealer portal, delivery/e-POD, approvals, purchase invoice OCR review, accounting exports, offline/PWA sync, SaaS subscription billing, advanced forecasting, a data-grounded business assistant, and an Expo Android/iOS client. See `GROWTH_V2.md` for the feature map and production boundaries.

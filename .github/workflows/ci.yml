@@ -36,3 +36,18 @@ jobs:
         run: |
           npm install
           npm run build
+
+
+  mobile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install mobile dependencies
+        working-directory: mobile
+        run: npm install
+      - name: Validate Expo configuration
+        working-directory: mobile
+        run: npx expo config --type public
