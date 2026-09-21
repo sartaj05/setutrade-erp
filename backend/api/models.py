@@ -1,0 +1,71 @@
+from django.contrib.auth.models import User
+from django.db import models
+
+class Profile(models.Model):
+    class Role(models.TextChoices):
+        OWNER = 'OWNER', 'Owner'
+        MANAGER = 'MANAGER', 'Manager'
+        SALES = 'SALES', 'Sales'
+        WAREHOUSE = 'WAREHOUSE', 'Warehouse'
+        ACCOUNTANT = 'ACCOUNTANT', 'Accountant'
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    role = models.CharField(max_length=20, choices=Role.choices, default=Role.SALES)
+    business_name = models.CharField(max_length=160, default='Khanna Electrical Distributors')
+
+    def __str__(self):
+        return f'{self.user.username} - {self.role}'
+
+class Product(models.Model):
+    sku = models.CharField(max_length=40, unique=True)
+    name = models.CharField(max_length=160)
+    category = models.CharField(max_length=100, blank=True)
+    stock = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    unit = models.CharField(max_length=30, default='pcs')
+    purchase_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    sell_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    reorder_level = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    location = models.CharField(max_length=40, blank=True)
+    is_active = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f'{self.sku} - {self.name}'
+
+class Customer(models.Model):
+    code = models.CharField(max_length=30, unique=True)
+    name = models.CharField(max_length=160)
+    city = models.CharField(max_length=100, blank=True)
+    phone = models.CharField(max_length=20, blank=True)
+    gstin = models.CharField(max_length=20, blank=True)
+    outstanding = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    credit_limit = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    due_date = models.DateField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+class Order(models.Model):
+    class Status(models.TextChoices):
+        PROCESSING = 'Processing', 'Processing'
+        PACKED = 'Packed', 'Packed'
+        READY = 'Ready', 'Ready'
+        DISPATCHED = 'Dispatched', 'Dispatched'
+
+    class PaymentStatus(models.TextChoices):
+        PAID = 'Paid', 'Paid'
+        CREDIT = 'Credit', 'Credit'
+        OVERDUE = 'Overdue', 'Overdue'
+
+    order_no = models.CharField(max_length=30, unique=True)
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='orders')
+    total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.PROCESSING)
+    payment_status = models.CharField(max_length=20, choices=PaymentStatus.choices, default=PaymentStatus.CREDIT)
+    order_date = models.DateField()
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.order_no
