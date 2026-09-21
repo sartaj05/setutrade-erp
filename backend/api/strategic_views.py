@@ -1,4 +1,5 @@
 import json, secrets, hashlib
+from datetime import date, timedelta
 from decimal import Decimal
 from django.db import transaction
 from django.db.models import Sum, Count, Avg, F
@@ -15,11 +16,15 @@ def _body(request):
     except json.JSONDecodeError: return {}
 def _money(v): return float(v or 0)
 def _dt(v): return v.isoformat() if v else None
+def _guard(request, roles):
+    return None if request.api_user.profile.role in roles else JsonResponse({'detail':'You do not have access to this module.'},status=403)
 
 @csrf_exempt
 @require_http_methods(['GET','POST'])
 @api_auth_required
 def crm(request):
+    denied=_guard(request,['OWNER','MANAGER','SALES'])
+    if denied:return denied
     company=request.company
     if request.method=='GET':
         leads=m.CRMLead.objects.filter(company=company).select_related('owner').order_by('-updated_at')[:100]
@@ -45,10 +50,12 @@ def crm(request):
 @require_http_methods(['GET','POST'])
 @api_auth_required
 def schemes(request):
+    denied=_guard(request,['OWNER','MANAGER','ACCOUNTANT'])
+    if denied:return denied
     company=request.company
     if request.method=='GET':
-        schemes=m.ManufacturerScheme.objects.filter(company=company).select_related('supplier').order_by('-end_date')[:50]
-        claims=m.SchemeClaim.objects.filter(company=company).select_related('scheme','scheme__supplier').order_by('-id')[:50]
+        schemes=m.ManufacturerScheme.objects.filter(company=company).select_related('supplier').order_by('-end_date')
+        claims=m.SchemeClaim.objects.filter(company=company).select_related('scheme','scheme__supplier').order_by('-id')
         accrued=claims.exclude(status__in=['Rejected','Settled']).aggregate(v=Sum('claim_amount'))['v'] or 0
         return JsonResponse({'summary':{'active':schemes.filter(is_active=True).count(),'accrued':_money(accrued),'claims':claims.count()},'schemes':[{'id':x.id,'name':x.name,'supplier':x.supplier.name,'type':x.scheme_type,'start':_dt(x.start_date),'end':_dt(x.end_date),'target':_money(x.target_value),'rebate':_money(x.rebate_percent),'active':x.is_active} for x in schemes],'claims':[{'id':x.id,'claimNo':x.claim_no,'scheme':x.scheme.name,'supplier':x.scheme.supplier.name,'eligible':_money(x.eligible_value),'amount':_money(x.claim_amount),'status':x.status} for x in claims]})
     data=_body(request); action=data.get('action')
@@ -65,9 +72,11 @@ def schemes(request):
 @require_http_methods(['GET','POST'])
 @api_auth_required
 def gst_cockpit(request):
+    denied=_guard(request,['OWNER','MANAGER','ACCOUNTANT'])
+    if denied:return denied
     company=request.company
     if request.method=='GET':
-        rows=m.GSTReconciliationItem.objects.filter(company=company).select_related('supplier').order_by('-invoice_date','-id')[:100]
+        rows=m.GSTReconciliationItem.objects.filter(company=company).select_related('supplier').order_by('-invoice_date','-id')
         return JsonResponse({'summary':{'matched':rows.filter(status='Matched').count(),'mismatch':rows.filter(status='Mismatch').count(),'missing':rows.filter(status='Missing').count(),'taxDifference':_money(rows.exclude(status='Matched').aggregate(v=Sum('difference'))['v'] or 0)},'items':[{'id':x.id,'invoiceNo':x.invoice_no,'supplier':x.supplier.name if x.supplier else 'Unknown','gstin':x.gstin,'booksTax':_money(x.books_tax),'portalTax':_money(x.portal_tax),'difference':_money(x.difference),'status':x.status,'source':x.source} for x in rows]})
     data=_body(request); action=data.get('action','import')
     if action=='resolve':
@@ -82,10 +91,12 @@ def gst_cockpit(request):
 @require_http_methods(['GET','POST'])
 @api_auth_required
 def procurement_intelligence(request):
+    denied=_guard(request,['OWNER','MANAGER','WAREHOUSE'])
+    if denied:return denied
     company=request.company
     if request.method=='GET':
-        scores=m.VendorScorecard.objects.filter(company=company).select_related('supplier').order_by('-overall_score')[:50]
-        recs=m.ProcurementRecommendation.objects.filter(company=company).select_related('product','supplier').order_by('status','product__name')[:100]
+        scores=m.VendorScorecard.objects.filter(company=company).select_related('supplier').order_by('-overall_score')
+        recs=m.ProcurementRecommendation.objects.filter(company=company).select_related('product','supplier').order_by('status','product__name')
         return JsonResponse({'summary':{'vendors':scores.count(),'openRecommendations':recs.filter(status='Open').count(),'recommendedSpend':_money(sum((x.recommended_qty*x.expected_unit_cost for x in recs.filter(status='Open')),Decimal('0')))},'vendors':[{'id':x.id,'supplier':x.supplier.name,'score':_money(x.overall_score),'fillRate':_money(x.fill_rate),'onTime':_money(x.on_time_rate),'quality':_money(x.quality_score),'leadDays':_money(x.avg_lead_days)} for x in scores],'recommendations':[{'id':x.id,'product':x.product.name,'sku':x.product.sku,'supplier':x.supplier.name,'qty':_money(x.recommended_qty),'unitCost':_money(x.expected_unit_cost),'leadDays':x.expected_lead_days,'reason':x.reason,'status':x.status} for x in recs]})
     data=_body(request); action=data.get('action','recalculate')
     if action=='approve':
@@ -104,10 +115,12 @@ def procurement_intelligence(request):
 @require_http_methods(['GET','POST'])
 @api_auth_required
 def fleet_routes(request):
+    denied=_guard(request,['OWNER','MANAGER','SALES'])
+    if denied:return denied
     company=request.company
     if request.method=='GET':
         vehicles=m.FleetVehicle.objects.filter(company=company,is_active=True).order_by('vehicle_no')
-        routes=m.RoutePlan.objects.filter(company=company).select_related('vehicle','warehouse').prefetch_related('stops__order__customer').order_by('-route_date','-id')[:30]
+        routes=m.RoutePlan.objects.filter(company=company).select_related('vehicle','warehouse').prefetch_related('stops__order__customer').order_by('-route_date','-id')
         return JsonResponse({'summary':{'vehicles':vehicles.count(),'planned':routes.exclude(status='Complete').count(),'km':_money(routes.aggregate(v=Sum('estimated_km'))['v'] or 0),'cost':_money(routes.aggregate(v=Sum('estimated_cost'))['v'] or 0)},'vehicles':[{'id':v.id,'vehicleNo':v.vehicle_no,'type':v.vehicle_type,'capacityKg':_money(v.capacity_kg),'driver':v.driver_name,'costPerKm':_money(v.cost_per_km)} for v in vehicles],'routes':[{'id':r.id,'routeNo':r.route_no,'date':_dt(r.route_date),'vehicle':r.vehicle.vehicle_no,'warehouse':r.warehouse.name,'status':r.status,'km':_money(r.estimated_km),'cost':_money(r.estimated_cost),'score':_money(r.optimization_score),'stops':[{'sequence':s.sequence,'order':s.order.order_no,'customer':s.order.customer.name,'area':s.area,'km':_money(s.estimated_km_from_previous)} for s in r.stops.all()]} for r in routes]})
     data=_body(request);action=data.get('action','optimize')
     if action=='vehicle':
@@ -130,9 +143,11 @@ def _credit_score(customer):
 @require_http_methods(['GET','POST'])
 @api_auth_required
 def credit_risk(request):
+    denied=_guard(request,['OWNER','MANAGER','ACCOUNTANT'])
+    if denied:return denied
     company=request.company
     if request.method=='GET':
-        scores=m.CustomerCreditScore.objects.filter(company=company).select_related('customer').order_by('-score')[:100]; apps=m.FinanceApplication.objects.filter(company=company).select_related('customer').order_by('-id')[:30]
+        scores=m.CustomerCreditScore.objects.filter(company=company).select_related('customer').order_by('-score'); apps=m.FinanceApplication.objects.filter(company=company).select_related('customer').order_by('-id')
         return JsonResponse({'summary':{'scored':scores.count(),'highRisk':scores.filter(risk_band='High').count(),'suggestedCredit':_money(scores.aggregate(v=Sum('suggested_limit'))['v'] or 0),'financePipeline':_money(apps.exclude(status__in=['Declined','Funded']).aggregate(v=Sum('requested_amount'))['v'] or 0)},'scores':[{'id':x.id,'customerId':x.customer_id,'customer':x.customer.name,'score':x.score,'risk':x.risk_band,'outstanding':_money(x.customer.outstanding),'creditLimit':_money(x.customer.credit_limit),'utilisation':_money(x.utilisation_percent),'overdue90':_money(x.overdue_90),'suggestedLimit':_money(x.suggested_limit),'factors':x.factors} for x in scores],'applications':[{'id':x.id,'applicationNo':x.application_no,'customer':x.customer.name if x.customer else 'Portfolio','type':x.finance_type,'amount':_money(x.requested_amount),'provider':x.provider,'status':x.status} for x in apps]})
     data=_body(request);action=data.get('action','rescore')
     if action=='finance':
@@ -146,9 +161,11 @@ def credit_risk(request):
 @require_http_methods(['GET','POST'])
 @api_auth_required
 def security_center(request):
+    denied=_guard(request,['OWNER'])
+    if denied:return denied
     company=request.company
     if request.method=='GET':
-        events=m.SecurityEvent.objects.filter(company=company).select_related('user').order_by('-created_at')[:50]; devices=m.TrustedDevice.objects.filter(company=company).select_related('user').order_by('-last_seen_at')[:50]; privacy=m.PrivacyRequest.objects.filter(company=company).order_by('-created_at')[:50]
+        events=m.SecurityEvent.objects.filter(company=company).select_related('user').order_by('-created_at'); devices=m.TrustedDevice.objects.filter(company=company).select_related('user').order_by('-last_seen_at'); privacy=m.PrivacyRequest.objects.filter(company=company).order_by('-created_at')
         enabled=m.UserMFASetting.objects.filter(company=company,is_enabled=True).count(); users=m.Profile.objects.filter(company=company).count()
         return JsonResponse({'summary':{'mfaEnabled':enabled,'users':users,'trustedDevices':devices.filter(trusted=True).count(),'openPrivacyRequests':privacy.exclude(status__in=['Complete','Rejected']).count(),'criticalEvents':events.filter(severity='Critical').count()},'devices':[{'id':d.id,'user':d.user.get_full_name() or d.user.username,'name':d.device_name or d.device_id,'trusted':d.trusted,'ip':d.last_ip,'lastSeen':_dt(d.last_seen_at)} for d in devices],'events':[{'id':e.id,'type':e.event_type,'severity':e.severity,'user':e.user.get_full_name() if e.user else 'System','ip':e.ip_address,'createdAt':_dt(e.created_at)} for e in events],'privacy':[{'id':p.id,'requestNo':p.request_no,'subject':p.subject_name,'type':p.request_type,'status':p.status,'due':_dt(p.due_date)} for p in privacy]})
     data=_body(request);action=data.get('action')
@@ -157,7 +174,7 @@ def security_center(request):
     if action=='trust-device':
         did=data.get('deviceId') or secrets.token_hex(8); row,_=m.TrustedDevice.objects.update_or_create(company=company,user=request.api_user,device_id=did,defaults={'device_name':data.get('deviceName','Current browser'),'fingerprint_hash':hashlib.sha256(str(data.get('fingerprint',did)).encode()).hexdigest(),'last_ip':request.META.get('REMOTE_ADDR') or None,'trusted':True});m.SecurityEvent.objects.create(company=company,user=request.api_user,event_type='DEVICE_TRUSTED',severity='Info',device_id=did);return JsonResponse({'id':row.id,'trusted':True})
     if action=='privacy-request':
-        row=m.PrivacyRequest.objects.create(company=company,request_no=f"PRIV-{timezone.now().strftime('%y%m%d%H%M%S%f')}",subject_name=data.get('name','Data subject'),subject_email=data.get('email',''),request_type=data.get('type','Access'),due_date=data.get('dueDate') or (timezone.localdate()+timezone.timedelta(days=30)),note=data.get('note',''));audit(request,'CREATE','PrivacyRequest',row.id,row.request_no);return JsonResponse({'id':row.id,'requestNo':row.request_no},status=201)
+        row=m.PrivacyRequest.objects.create(company=company,request_no=f"PRIV-{timezone.now().strftime('%y%m%d%H%M%S%f')}",subject_name=data.get('name','Data subject'),subject_email=data.get('email',''),request_type=data.get('type','Access'),due_date=data.get('dueDate') or (timezone.localdate()+timedelta(days=30)),note=data.get('note',''));audit(request,'CREATE','PrivacyRequest',row.id,row.request_no);return JsonResponse({'id':row.id,'requestNo':row.request_no},status=201)
     if action=='consent':
         row=m.ConsentRecord.objects.create(company=company,subject_key=data.get('subjectKey','anonymous'),purpose=data.get('purpose','Customer communications'),granted=bool(data.get('granted',True)),source=data.get('source','Portal'));return JsonResponse({'id':row.id},status=201)
     return JsonResponse({'detail':'Unsupported action.'},status=400)
@@ -166,9 +183,11 @@ def security_center(request):
 @require_http_methods(['GET','POST'])
 @api_auth_required
 def integration_hub(request):
+    denied=_guard(request,['OWNER'])
+    if denied:return denied
     company=request.company
     if request.method=='GET':
-        connectors=m.IntegrationConnector.objects.filter(company=company).order_by('provider'); keys=m.DeveloperApiKey.objects.filter(company=company,revoked_at__isnull=True).order_by('-created_at'); hooks=m.WebhookSubscription.objects.filter(company=company).order_by('-created_at'); deliveries=m.IntegrationDelivery.objects.filter(company=company).order_by('-id')[:50]
+        connectors=m.IntegrationConnector.objects.filter(company=company).order_by('provider'); keys=m.DeveloperApiKey.objects.filter(company=company,revoked_at__isnull=True).order_by('-created_at'); hooks=m.WebhookSubscription.objects.filter(company=company).order_by('-created_at'); deliveries=m.IntegrationDelivery.objects.filter(company=company).order_by('-id')
         return JsonResponse({'summary':{'connected':connectors.filter(status='Connected').count(),'connectors':connectors.count(),'apiKeys':keys.count(),'webhooks':hooks.filter(is_active=True).count(),'failedDeliveries':deliveries.filter(status='Failed').count()},'connectors':[{'id':x.id,'provider':x.provider,'name':x.name,'status':x.status,'lastSync':_dt(x.last_sync_at),'lastError':x.last_error} for x in connectors],'apiKeys':[{'id':x.id,'name':x.name,'prefix':x.key_prefix,'scopes':x.scopes,'lastUsed':_dt(x.last_used_at),'createdAt':_dt(x.created_at)} for x in keys],'webhooks':[{'id':x.id,'event':x.event,'url':x.target_url,'active':x.is_active} for x in hooks],'deliveries':[{'id':x.id,'event':x.event,'status':x.status,'attempts':x.attempt_count,'error':x.last_error,'createdAt':_dt(x.created_at)} for x in deliveries]})
     data=_body(request);action=data.get('action')
     if action=='connector':
@@ -186,7 +205,7 @@ def public_order_api(request):
     key=m.DeveloperApiKey.objects.select_related('company').filter(key_hash=digest,revoked_at__isnull=True).first()
     if not key or 'orders:write' not in key.scopes:return JsonResponse({'detail':'Valid API key with orders:write scope required.'},status=401)
     data=_body(request); key.last_used_at=timezone.now();key.save(update_fields=['last_used_at'])
-    channel,_=m.ExternalChannel.objects.get_or_create(company=key.company,name='Developer API',defaults={'provider':'API','external_store_id':'public-v1','is_active':True})
+    channel,_=m.ExternalChannel.objects.get_or_create(company=key.company,name='Developer API',defaults={'provider':'CUSTOM','external_store_id':'public-v1','is_active':True})
     ext_id=data.get('externalId') or f"API-{timezone.now().strftime('%y%m%d%H%M%S%f')}"; order,created=m.ExternalOrder.objects.get_or_create(channel=channel,external_id=ext_id,defaults={'company':key.company,'customer_name':data.get('customerName','API Customer'),'customer_phone':data.get('phone',''),'total':data.get('total',0),'status':'New','raw_payload':data})
     return JsonResponse({'id':order.id,'externalId':order.external_id,'created':created,'status':order.status},status=201 if created else 200)
 
@@ -209,9 +228,11 @@ def _rebuild_profitability(company, start, end):
 @require_http_methods(['GET','POST'])
 @api_auth_required
 def executive_bi(request):
+    denied=_guard(request,['OWNER','MANAGER','ACCOUNTANT'])
+    if denied:return denied
     company=request.company; today=timezone.localdate(); start=today.replace(day=1); end=today
     if request.method=='POST':
-        data=_body(request);start=timezone.datetime.fromisoformat(data.get('from')).date() if data.get('from') else start;end=timezone.datetime.fromisoformat(data.get('to')).date() if data.get('to') else end;count=_rebuild_profitability(company,start,end);audit(request,'REBUILD','ProfitabilitySnapshot',f'{start}:{end}',f'Rebuilt {count} profitability rows');return JsonResponse({'rebuilt':count,'from':_dt(start),'to':_dt(end)})
+        data=_body(request);start=date.fromisoformat(data.get('from')) if data.get('from') else start;end=date.fromisoformat(data.get('to')) if data.get('to') else end;count=_rebuild_profitability(company,start,end);audit(request,'REBUILD','ProfitabilitySnapshot',f'{start}:{end}',f'Rebuilt {count} profitability rows');return JsonResponse({'rebuilt':count,'from':_dt(start),'to':_dt(end)})
     rows=m.ProfitabilitySnapshot.objects.filter(company=company,period_from=start,period_to=end).order_by('-contribution_profit')
     if not rows.exists(): _rebuild_profitability(company,start,end);rows=m.ProfitabilitySnapshot.objects.filter(company=company,period_from=start,period_to=end).order_by('-contribution_profit')
     revenue=rows.aggregate(v=Sum('revenue'))['v'] or 0; contribution=rows.aggregate(v=Sum('contribution_profit'))['v'] or 0
@@ -240,9 +261,11 @@ def _execute_copilot(request, proposal):
 @require_http_methods(['GET','POST'])
 @api_auth_required
 def copilot_actions(request):
+    denied=_guard(request,['OWNER','MANAGER','SALES','WAREHOUSE','ACCOUNTANT'])
+    if denied:return denied
     company=request.company
     if request.method=='GET':
-        rows=m.CopilotActionProposal.objects.filter(company=company).select_related('requested_by','approved_by').order_by('-id')[:50]
+        rows=m.CopilotActionProposal.objects.filter(company=company).select_related('requested_by','approved_by').order_by('-id')
         return JsonResponse({'summary':{'proposed':rows.filter(status='Proposed').count(),'executed':rows.filter(status='Executed').count(),'highRisk':rows.filter(risk_level='High',status='Proposed').count()},'proposals':[{'id':x.id,'title':x.title,'actionType':x.action_type,'rationale':x.rationale,'risk':x.risk_level,'status':x.status,'requestedBy':x.requested_by.get_full_name() if x.requested_by else 'System','approvedBy':x.approved_by.get_full_name() if x.approved_by else '', 'result':x.result,'createdAt':_dt(x.created_at)} for x in rows]})
     data=_body(request);action=data.get('action','propose')
     if action=='propose':
