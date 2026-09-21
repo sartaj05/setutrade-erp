@@ -76,4 +76,5 @@ urlpatterns = [
     path('security-center/', strategic_views.security_center),
     path('integrations/', strategic_views.integration_hub),
     path('public/v1/order-intake/', strategic_views.public_order_api),
+    path('executive-bi/', strategic_views.executive_bi),
 ]

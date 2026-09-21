@@ -189,3 +189,30 @@ def public_order_api(request):
     channel,_=m.ExternalChannel.objects.get_or_create(company=key.company,name='Developer API',defaults={'provider':'API','external_store_id':'public-v1','is_active':True})
     ext_id=data.get('externalId') or f"API-{timezone.now().strftime('%y%m%d%H%M%S%f')}"; order,created=m.ExternalOrder.objects.get_or_create(channel=channel,external_id=ext_id,defaults={'company':key.company,'customer_name':data.get('customerName','API Customer'),'customer_phone':data.get('phone',''),'total':data.get('total',0),'status':'New','raw_payload':data})
     return JsonResponse({'id':order.id,'externalId':order.external_id,'created':created,'status':order.status},status=201 if created else 200)
+
+
+def _rebuild_profitability(company, start, end):
+    m.ProfitabilitySnapshot.objects.filter(company=company,period_from=start,period_to=end).delete()
+    customer_rows={}
+    items=m.OrderItem.objects.filter(order__company=company,order__order_date__range=[start,end]).select_related('order__customer','product')
+    for item in items:
+        c=item.order.customer; key=str(c.id); row=customer_rows.setdefault(key,{'name':c.name,'revenue':Decimal('0'),'cogs':Decimal('0'),'discounts':Decimal('0')})
+        row['revenue']+=Decimal(item.taxable_amount or 0); row['cogs']+=Decimal(item.product.purchase_price or 0)*Decimal(item.quantity or 0)
+    discounts={str(x['customer']):Decimal(x['v'] or 0) for x in m.Order.objects.filter(company=company,order_date__range=[start,end]).values('customer').annotate(v=Sum('discount'))}
+    returns={str(x['customer']):Decimal(x['v'] or 0) for x in m.ReturnOrder.objects.filter(company=company,return_type='Sales Return',return_date__range=[start,end],customer__isnull=False).values('customer').annotate(v=Sum('total'))}
+    for key,row in customer_rows.items():
+        disc=discounts.get(key,Decimal('0')); ret=returns.get(key,Decimal('0')); gross=row['revenue']-row['cogs']; contribution=gross-disc-ret; margin=(contribution/row['revenue']*100) if row['revenue'] else Decimal('0')
+        m.ProfitabilitySnapshot.objects.create(company=company,dimension='Customer',entity_key=key,entity_name=row['name'],period_from=start,period_to=end,revenue=row['revenue'],cogs=row['cogs'],gross_profit=gross,discounts=disc,returns=ret,delivery_cost=0,finance_cost=0,contribution_profit=contribution,margin_percent=margin)
+    return len(customer_rows)
+
+@csrf_exempt
+@require_http_methods(['GET','POST'])
+@api_auth_required
+def executive_bi(request):
+    company=request.company; today=timezone.localdate(); start=today.replace(day=1); end=today
+    if request.method=='POST':
+        data=_body(request);start=timezone.datetime.fromisoformat(data.get('from')).date() if data.get('from') else start;end=timezone.datetime.fromisoformat(data.get('to')).date() if data.get('to') else end;count=_rebuild_profitability(company,start,end);audit(request,'REBUILD','ProfitabilitySnapshot',f'{start}:{end}',f'Rebuilt {count} profitability rows');return JsonResponse({'rebuilt':count,'from':_dt(start),'to':_dt(end)})
+    rows=m.ProfitabilitySnapshot.objects.filter(company=company,period_from=start,period_to=end).order_by('-contribution_profit')
+    if not rows.exists(): _rebuild_profitability(company,start,end);rows=m.ProfitabilitySnapshot.objects.filter(company=company,period_from=start,period_to=end).order_by('-contribution_profit')
+    revenue=rows.aggregate(v=Sum('revenue'))['v'] or 0; contribution=rows.aggregate(v=Sum('contribution_profit'))['v'] or 0
+    return JsonResponse({'summary':{'revenue':_money(revenue),'contribution':_money(contribution),'margin':round(float(contribution/revenue*100),2) if revenue else 0,'entities':rows.count()},'rows':[{'id':x.id,'dimension':x.dimension,'entity':x.entity_name,'revenue':_money(x.revenue),'cogs':_money(x.cogs),'grossProfit':_money(x.gross_profit),'discounts':_money(x.discounts),'returns':_money(x.returns),'deliveryCost':_money(x.delivery_cost),'financeCost':_money(x.finance_cost),'contribution':_money(x.contribution_profit),'margin':_money(x.margin_percent)} for x in rows[:100]]})

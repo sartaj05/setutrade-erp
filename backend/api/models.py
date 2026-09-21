@@ -1426,3 +1426,22 @@ class IntegrationDelivery(models.Model):
     payload=models.JSONField(default=dict,blank=True)
     last_error=models.CharField(max_length=300,blank=True)
     created_at=models.DateTimeField(auto_now_add=True); updated_at=models.DateTimeField(auto_now=True)
+
+# --- Growth v4 / Phase 25: executive profitability BI ---
+class ProfitabilitySnapshot(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='profitability_snapshots')
+    dimension=models.CharField(max_length=40)
+    entity_key=models.CharField(max_length=100)
+    entity_name=models.CharField(max_length=180)
+    period_from=models.DateField(); period_to=models.DateField()
+    revenue=models.DecimalField(max_digits=16,decimal_places=2,default=0)
+    cogs=models.DecimalField(max_digits=16,decimal_places=2,default=0)
+    gross_profit=models.DecimalField(max_digits=16,decimal_places=2,default=0)
+    discounts=models.DecimalField(max_digits=16,decimal_places=2,default=0)
+    returns=models.DecimalField(max_digits=16,decimal_places=2,default=0)
+    delivery_cost=models.DecimalField(max_digits=16,decimal_places=2,default=0)
+    finance_cost=models.DecimalField(max_digits=16,decimal_places=2,default=0)
+    contribution_profit=models.DecimalField(max_digits=16,decimal_places=2,default=0)
+    margin_percent=models.DecimalField(max_digits=8,decimal_places=2,default=0)
+    generated_at=models.DateTimeField(auto_now=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['company','dimension','entity_key','period_from','period_to'],name='unique_profitability_snapshot')]
