@@ -729,3 +729,38 @@ class CustomerPortalOrder(models.Model):
     notes = models.TextField(blank=True)
     converted_order = models.ForeignKey(Order, on_delete=models.SET_NULL, null=True, blank=True, related_name='portal_requests')
     created_at = models.DateTimeField(auto_now_add=True)
+
+
+class DeliveryRun(models.Model):
+    class Status(models.TextChoices):
+        PLANNED='Planned','Planned'; LOADING='Loading','Loading'; OUT='Out for Delivery','Out for Delivery'; COMPLETED='Completed','Completed'
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='delivery_runs')
+    run_no=models.CharField(max_length=40,unique=True)
+    route_name=models.CharField(max_length=120)
+    driver_name=models.CharField(max_length=120)
+    driver_phone=models.CharField(max_length=20,blank=True)
+    vehicle_no=models.CharField(max_length=30,blank=True)
+    delivery_date=models.DateField()
+    status=models.CharField(max_length=30,choices=Status.choices,default=Status.PLANNED)
+    created_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+
+class DeliveryStop(models.Model):
+    class Status(models.TextChoices):
+        PENDING='Pending','Pending'; DELIVERED='Delivered','Delivered'; FAILED='Failed','Failed'
+    run=models.ForeignKey(DeliveryRun,on_delete=models.CASCADE,related_name='stops')
+    order=models.ForeignKey(Order,on_delete=models.PROTECT,related_name='delivery_stops')
+    sequence=models.PositiveIntegerField(default=1)
+    status=models.CharField(max_length=20,choices=Status.choices,default=Status.PENDING)
+    cod_amount=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    failure_reason=models.CharField(max_length=240,blank=True)
+    delivered_at=models.DateTimeField(null=True,blank=True)
+
+class DeliveryProof(models.Model):
+    stop=models.OneToOneField(DeliveryStop,on_delete=models.CASCADE,related_name='proof')
+    otp_verified=models.BooleanField(default=False)
+    receiver_name=models.CharField(max_length=120,blank=True)
+    signature_data=models.TextField(blank=True)
+    photo_url=models.URLField(blank=True)
+    note=models.CharField(max_length=240,blank=True)
+    captured_at=models.DateTimeField(auto_now_add=True)

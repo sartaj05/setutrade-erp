@@ -49,4 +49,5 @@ urlpatterns = [
     path('audit/', views.audit_logs),
     path('notifications/', views.notifications),
     path('attachments/', views.attachments),
+    path('delivery/', views.delivery),
 ]

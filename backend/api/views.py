@@ -27,7 +27,7 @@ from .auth import (
     revoke_request_session, roles_allowed,
 )
 from .models import (
-    Attachment, AuditLog, BarcodeScanLog, Branch, Company, Customer, CustomerPortalAccess, CustomerPortalOrder, GoodsReceipt,
+    Attachment, AuditLog, BarcodeScanLog, Branch, Company, Customer, CustomerPortalAccess, CustomerPortalOrder, DeliveryProof, DeliveryRun, DeliveryStop, GoodsReceipt,
     GoodsReceiptItem, InventoryMovement, Invoice, LedgerEntry, Notification, Order,
     OrderItem, Payment, PriceList, PriceRule, Product, PurchaseItem, PurchaseOrder,
     Quotation, QuotationItem, ReorderSuggestion, ReturnItem, ReturnOrder, SalesTarget,
@@ -41,11 +41,11 @@ from .services import (
 )
 
 PERMISSIONS = {
-    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','team','settings','audit'],
-    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','audit'],
+    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','team','settings','audit','delivery'],
+    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','audit','delivery'],
     'SALES': ['dashboard','customers','orders','invoices','ledger','whatsapp','tax','pricing','field-sales','quotations','payments'],
-    'WAREHOUSE': ['dashboard','products','inventory','orders','purchases','warehouses','barcode','returns','insights'],
-    'ACCOUNTANT': ['dashboard','customers','orders','invoices','purchases','ledger','tax','returns','insights','payments','reports','audit'],
+    'WAREHOUSE': ['dashboard','products','inventory','orders','purchases','warehouses','barcode','returns','insights','delivery'],
+    'ACCOUNTANT': ['dashboard','customers','orders','invoices','purchases','ledger','tax','returns','insights','payments','reports','audit','delivery'],
 }
 
 
@@ -1067,3 +1067,26 @@ def portal_place_order(request):
     req=CustomerPortalOrder.objects.create(company=request.company, customer=request.customer, request_no=_next_no('WEB'), items=clean, estimated_total=total, notes=str(body.get('notes',''))[:1000])
     audit(request, 'create', req, f'Customer portal order {req.request_no} submitted', {'total': float(total)})
     return JsonResponse({'ok': True, 'requestNo': req.request_no, 'status': req.status, 'total': float(total)}, status=201)
+
+@csrf_exempt
+@require_http_methods(['GET','POST'])
+@roles_allowed('OWNER','MANAGER','WAREHOUSE','SALES')
+def delivery(request):
+    if request.method=='POST':
+        body=_json_body(request) or {}; action=body.get('action','create-run')
+        if action=='create-run':
+            run=DeliveryRun.objects.create(company=request.company,run_no=_next_no('RUN'),route_name=str(body.get('routeName','Delhi NCR Route'))[:120],driver_name=str(body.get('driverName',''))[:120],driver_phone=str(body.get('driverPhone',''))[:20],vehicle_no=str(body.get('vehicleNo',''))[:30],delivery_date=_date(body.get('deliveryDate')),created_by=request.api_user)
+            for idx,oid in enumerate(body.get('orderIds') or [],1):
+                order=Order.objects.filter(pk=oid,company=request.company).first()
+                if order: DeliveryStop.objects.create(run=run,order=order,sequence=idx,cod_amount=order.total if order.payment_status!=Order.PaymentStatus.PAID else 0)
+            audit(request,'create',run,f'Created delivery run {run.run_no}',{'route':run.route_name})
+            return JsonResponse({'ok':True,'id':run.id,'runNo':run.run_no},status=201)
+        stop=DeliveryStop.objects.select_related('run','order').filter(pk=body.get('stopId'),run__company=request.company).first()
+        if not stop:return JsonResponse({'detail':'Delivery stop not found.'},status=404)
+        if action=='deliver':
+            stop.status=DeliveryStop.Status.DELIVERED;stop.delivered_at=timezone.now();stop.save(update_fields=['status','delivered_at'])
+            DeliveryProof.objects.update_or_create(stop=stop,defaults={'otp_verified':bool(body.get('otpVerified',True)),'receiver_name':str(body.get('receiverName',''))[:120],'photo_url':str(body.get('photoUrl',''))[:200],'signature_data':str(body.get('signature',''))[:5000],'note':str(body.get('note',''))[:240]})
+        elif action=='fail': stop.status=DeliveryStop.Status.FAILED;stop.failure_reason=str(body.get('reason','Unable to deliver'))[:240];stop.save(update_fields=['status','failure_reason'])
+        return JsonResponse({'ok':True,'status':stop.status})
+    runs=DeliveryRun.objects.filter(company=request.company).prefetch_related('stops__order__customer').order_by('-delivery_date','-id')[:30]
+    return JsonResponse({'runs':[{'id':r.id,'runNo':r.run_no,'route':r.route_name,'driver':r.driver_name,'vehicle':r.vehicle_no,'date':r.delivery_date.isoformat(),'status':r.status,'stops':[{'id':s.id,'order':s.order.order_no,'customer':s.order.customer.name,'status':s.status,'cod':float(s.cod_amount),'sequence':s.sequence} for s in r.stops.all()]} for r in runs]})

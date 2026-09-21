@@ -11,7 +11,7 @@ const moduleLabels = {
   orders: ['Orders', 'receipt'], invoices: ['GST Invoices', 'receipt'], purchases: ['Purchases', 'box'], ledger: ['Credit Ledger', 'receipt'],
   warehouses: ['Warehouses', 'box'], barcode: ['Barcode Scan', 'box'], whatsapp: ['WhatsApp Orders', 'receipt'], tax: ['GST & Tax', 'receipt'],
   pricing: ['Price Rules', 'receipt'], returns: ['Returns & Damage', 'box'], 'field-sales': ['Field Sales', 'users'], insights: ['Smart Insights', 'chart'],
-  quotations: ['Quotations', 'receipt'], payments: ['Payments', 'receipt'], reports: ['Reports', 'chart'], team: ['Team', 'users'], settings: ['Settings', 'shield'], audit: ['Audit Log', 'shield'],
+  quotations: ['Quotations', 'receipt'], payments: ['Payments', 'receipt'], reports: ['Reports', 'chart'], team: ['Team', 'users'], settings: ['Settings', 'shield'], audit: ['Audit Log', 'shield'], delivery: ['Delivery', 'box'],
 };
 
 export default function AppShell({ module, onModuleChange, children, navigate }) {
