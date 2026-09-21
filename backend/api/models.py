@@ -161,3 +161,43 @@ class LedgerEntry(models.Model):
 
     def __str__(self):
         return f'{self.customer.code} {self.reference}'
+
+class Warehouse(models.Model):
+    code = models.CharField(max_length=30, unique=True)
+    name = models.CharField(max_length=120)
+    city = models.CharField(max_length=100, blank=True)
+    address = models.CharField(max_length=240, blank=True)
+    is_active = models.BooleanField(default=True)
+
+    def __str__(self):
+        return self.name
+
+
+class StockBalance(models.Model):
+    warehouse = models.ForeignKey(Warehouse, on_delete=models.CASCADE, related_name='stock_balances')
+    product = models.ForeignKey(Product, on_delete=models.CASCADE, related_name='warehouse_balances')
+    quantity = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    reserved = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['warehouse', 'product'], name='unique_warehouse_product')]
+
+
+class StockTransfer(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = 'Draft', 'Draft'
+        IN_TRANSIT = 'In Transit', 'In Transit'
+        RECEIVED = 'Received', 'Received'
+
+    transfer_no = models.CharField(max_length=40, unique=True)
+    from_warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name='outgoing_transfers')
+    to_warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name='incoming_transfers')
+    transfer_date = models.DateField()
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class StockTransferItem(models.Model):
+    transfer = models.ForeignKey(StockTransfer, on_delete=models.CASCADE, related_name='items')
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='transfer_items')
+    quantity = models.DecimalField(max_digits=12, decimal_places=2, default=0)

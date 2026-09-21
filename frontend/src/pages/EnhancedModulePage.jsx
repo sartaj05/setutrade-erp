@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useApiData } from '../services/useApiData';
-import { demoPurchases, demoLedger } from '../data/featureData';
+import { demoPurchases, demoLedger, demoWarehouses } from '../data/featureData';
 
 const money = (value) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
 
@@ -39,8 +39,20 @@ function LedgerPage() {
   </div>;
 }
 
+function WarehousesPage() {
+  const [search, setSearch] = useState('');
+  const { data } = useApiData('warehouses', demoWarehouses);
+  const locations = data.warehouses || demoWarehouses.warehouses;
+  const transfers = (data.transfers || demoWarehouses.transfers).filter((x) => `${x.id} ${x.from} ${x.to}`.toLowerCase().includes(search.toLowerCase()));
+  return <div><FeatureHeader eyebrow="Inventory network" title="Multi-warehouse control" subtitle="See available and reserved stock by location, then move inventory with a traceable transfer workflow." action="New transfer" search={search} setSearch={setSearch} />
+    <div className="warehouse-grid">{locations.map((w) => <article className="warehouse-card" key={w.id}><span>{w.id}</span><strong>{w.name}</strong><small>{w.city}</small><div><b>{w.stock}</b> units <em>{w.reserved} reserved</em></div></article>)}</div>
+    <article className="panel module-panel"><div className="panel-head"><div><span>Movement</span><h3>Recent stock transfers</h3></div></div><div className="table-wrap"><table className="data-table module-table"><thead><tr><th>Transfer</th><th>From</th><th>To</th><th>Units</th><th>Date</th><th>Status</th></tr></thead><tbody>{transfers.map((row) => <tr key={row.id}><td><strong>{row.id}</strong></td><td>{row.from}</td><td>{row.to}</td><td>{row.units}</td><td>{row.date}</td><td><Badge>{row.status}</Badge></td></tr>)}</tbody></table></div></article>
+  </div>;
+}
+
 export default function EnhancedModulePage({ module }) {
   if (module === 'purchases') return <PurchasesPage />;
   if (module === 'ledger') return <LedgerPage />;
+  if (module === 'warehouses') return <WarehousesPage />;
   return null;
 }

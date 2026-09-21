@@ -7,13 +7,13 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from .auth import api_auth_required, create_token, roles_allowed
-from .models import Customer, Invoice, Order, Product, Supplier, PurchaseOrder, PurchaseItem, GoodsReceipt, LedgerEntry
+from .models import Customer, Invoice, Order, Product, Supplier, PurchaseOrder, PurchaseItem, GoodsReceipt, LedgerEntry, Warehouse, StockBalance, StockTransfer
 
 PERMISSIONS = {
-    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','quotations','payments','reports','team','settings'],
-    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','quotations','payments','reports'],
+    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','quotations','payments','reports','team','settings'],
+    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','quotations','payments','reports'],
     'SALES': ['dashboard','customers','orders','invoices','ledger','quotations','payments'],
-    'WAREHOUSE': ['dashboard','products','inventory','orders','purchases'],
+    'WAREHOUSE': ['dashboard','products','inventory','orders','purchases','warehouses'],
     'ACCOUNTANT': ['dashboard','customers','orders','invoices','purchases','ledger','payments','reports'],
 }
 
@@ -155,10 +155,21 @@ def suppliers(request):
 @roles_allowed('OWNER', 'MANAGER', 'SALES', 'ACCOUNTANT')
 def ledger(request):
     today = timezone.localdate()
-    rows = LedgerEntry.objects.select_related('customer').order_by('-entry_date', '-id')
+    rows = LedgerEntry, Warehouse, StockBalance, StockTransfer.objects.select_related('customer').order_by('-entry_date', '-id')
     payload = []
     for row in rows:
         age = (today - row.due_date).days if row.due_date and today > row.due_date else 0
         bucket = 'Current' if age <= 0 else ('1-30 days' if age <= 30 else ('31-60 days' if age <= 60 else ('61-90 days' if age <= 90 else '90+ days')))
         payload.append({'customer': row.customer.name, 'customerId': row.customer.code, 'type': row.entry_type, 'reference': row.reference, 'amount': float(row.amount), 'date': row.entry_date.strftime('%d %b'), 'due': row.due_date.strftime('%d %b') if row.due_date else '—', 'bucket': bucket})
     return JsonResponse({'ledger': payload})
+
+
+@require_GET
+@roles_allowed('OWNER', 'MANAGER', 'WAREHOUSE')
+def warehouses(request):
+    locations = Warehouse.objects.filter(is_active=True).order_by('name')
+    transfers = StockTransfer.objects.select_related('from_warehouse', 'to_warehouse').prefetch_related('items').order_by('-transfer_date')[:10]
+    return JsonResponse({
+        'warehouses': [{'id': w.code, 'name': w.name, 'city': w.city, 'stock': float(sum((b.quantity for b in w.stock_balances.all()), Decimal('0'))), 'reserved': float(sum((b.reserved for b in w.stock_balances.all()), Decimal('0')))} for w in locations.prefetch_related('stock_balances')],
+        'transfers': [{'id': t.transfer_no, 'from': t.from_warehouse.name, 'to': t.to_warehouse.name, 'status': t.status, 'date': t.transfer_date.strftime('%d %b'), 'units': float(sum((i.quantity for i in t.items.all()), Decimal('0')))} for t in transfers],
+    })

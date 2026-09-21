@@ -18,3 +18,16 @@ export const demoLedger = [
   { customer: 'Ahuja Enterprises', customerId: 'C-103', type: 'Payment', reference: 'RCPT-2026-422', amount: -76000, date: '20 Sep', due: '—', bucket: 'Current' },
   { customer: 'NCR Buildmart', customerId: 'C-104', type: 'Invoice', reference: 'INV-2026-1182', amount: 76750, date: '20 Sep', due: '25 Sep', bucket: 'Current' },
 ];
+
+export const demoWarehouses = {
+  warehouses: [
+    { id: 'WH-DEL', name: 'Delhi Central', city: 'Delhi', stock: 580, reserved: 64 },
+    { id: 'WH-NOI', name: 'Noida Hub', city: 'Noida', stock: 220, reserved: 22 },
+    { id: 'WH-GGN', name: 'Gurugram Depot', city: 'Gurugram', stock: 145, reserved: 18 },
+  ],
+  transfers: [
+    { id: 'TR-2026-031', from: 'Delhi Central', to: 'Noida Hub', status: 'In Transit', date: '21 Sep', units: 50 },
+    { id: 'TR-2026-030', from: 'Delhi Central', to: 'Gurugram Depot', status: 'Received', date: '20 Sep', units: 34 },
+    { id: 'TR-2026-029', from: 'Noida Hub', to: 'Delhi Central', status: 'Draft', date: '20 Sep', units: 18 },
+  ],
+};
