@@ -1,7 +1,7 @@
 import json
 from decimal import Decimal
+from datetime import timedelta
 from django.core import signing
-from django.contrib.auth.hashers import check_password
 from django.contrib.auth.hashers import check_password
 from django.db import transaction
 from django.db.models import Sum
@@ -35,7 +35,7 @@ def collections(request):
     if not customer: return JsonResponse({'detail':'Customer not found.'},status=404)
     if action=='payment-link':
         invoice=Invoice.objects.filter(company=company,pk=data.get('invoiceId')).first() if data.get('invoiceId') else None
-        link=PaymentLink.objects.create(company=company,customer=customer,invoice=invoice,token=signing.b64_encode(f'{company.id}:{customer.id}:{timezone.now().timestamp()}'.encode()).decode()[:72],amount=data.get('amount') or (invoice.total if invoice else customer.outstanding),expires_at=timezone.now()+timezone.timedelta(days=7))
+        link=PaymentLink.objects.create(company=company,customer=customer,invoice=invoice,token=signing.b64_encode(f'{company.id}:{customer.id}:{timezone.now().timestamp()}'.encode()).decode()[:72],amount=data.get('amount') or (invoice.total if invoice else customer.outstanding),expires_at=timezone.now()+timedelta(days=7))
         return JsonResponse({'id':link.id,'token':link.token,'amount':_money(link.amount),'status':link.status},status=201)
     if action=='reminder':
         invoice=Invoice.objects.filter(company=company,pk=data.get('invoiceId')).first() if data.get('invoiceId') else None
