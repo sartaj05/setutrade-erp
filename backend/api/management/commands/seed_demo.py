@@ -11,6 +11,12 @@ from api.models import (
     WhatsAppMessage, WhatsAppOrderDraft,
 )
 
+from api.models import (
+    PaymentPromise, CollectionTask, PaymentTransaction, PaymentLink, CollectionReminder, ReceivableFinanceExport,
+    WarehouseBin, BinStock, PickList, PickListItem, CycleCount, SupplierPortalAccess, SupplierPortalSubmission,
+    AutomationRule, AutomationRun, ExternalChannel, ExternalOrder, ExternalOrderItem, DistributionNetwork, NetworkMember, NetworkSnapshot,
+)
+
 ACCOUNTS = [
     ('owner','Arjun','Khanna','owner@setustock.demo','OWNER'),
     ('manager','Meera','Sethi','manager@setustock.demo','MANAGER'),
@@ -147,5 +153,39 @@ class Command(BaseCommand):
             ReorderSuggestion.objects.update_or_create(product=p,warehouse=warehouses['WH-DEL'],defaults={'current_stock':stock,'avg_daily_sales':daily,'lead_time_days':lead,'suggested_quantity':suggested,'days_cover':days,'risk':risk})
         Notification.objects.get_or_create(company=company,user=None,title='Low stock needs attention',message='Polycab 2.5mm Wire Red is below its reorder level.',level='warning',module='insights',entity_id=str(products['PC-25-RD'].id))
         Notification.objects.get_or_create(company=company,user=None,title='Collections follow-up',message='Two customer balances are overdue.',level='critical',module='ledger')
+
+
+        # Growth v3 demo data: collections, WMS, supplier collaboration, automations and channels.
+        PaymentPromise.objects.update_or_create(company=company, customer=customers['C-105'], promised_date=date(2026,9,25), defaults={'promised_amount':50000,'status':'Open','notes':'Customer committed partial payment','created_by':users['SALES']})
+        CollectionTask.objects.update_or_create(company=company, customer=customers['C-105'], due_date=date(2026,9,21), defaults={'assigned_to':users['SALES'],'amount_due':124600,'priority':'High','status':'Open','notes':'Call before noon'})
+        tx,_=PaymentTransaction.objects.update_or_create(company=company, reference='UPI-DEMO-24000', defaults={'customer':customers['C-103'],'method':'UPI','amount':24000,'transaction_date':date(2026,9,21),'status':'Matched','created_by':users['ACCOUNTANT']})
+        PaymentLink.objects.update_or_create(token='demo-rk-payment-link', defaults={'company':company,'customer':customers['C-101'],'invoice':invoices['INV-2026-1184'],'amount':invoices['INV-2026-1184'].total,'status':'Active'})
+        CollectionReminder.objects.update_or_create(company=company, customer=customers['C-101'], invoice=invoices['INV-2026-1184'], message='Friendly reminder: INV-2026-1184 is due soon.', defaults={'channel':'WhatsApp','scheduled_for':__import__('django.utils.timezone',fromlist=['now']).now(),'status':'Scheduled'})
+
+        bin_a,_=WarehouseBin.objects.update_or_create(warehouse=warehouses['WH-DEL'],code='A-01-01',defaults={'zone':'Fast Moving','capacity':120})
+        bin_b,_=WarehouseBin.objects.update_or_create(warehouse=warehouses['WH-DEL'],code='C-04-03',defaults={'zone':'Switchgear','capacity':80})
+        BinStock.objects.update_or_create(bin=bin_a,product=products['PC-25-RD'],defaults={'quantity':7})
+        BinStock.objects.update_or_create(bin=bin_b,product=products['AN-MCB-32'],defaults={'quantity':24})
+        pick,_=PickList.objects.update_or_create(pick_no='PICK-260921-019',defaults={'company':company,'warehouse':warehouses['WH-DEL'],'status':'Picking','assigned_to':users['WAREHOUSE']})
+        PickListItem.objects.update_or_create(pick_list=pick,order=orders['SO-1097'],product=products['AN-MCB-32'],defaults={'source_bin':bin_b,'requested_qty':20,'picked_qty':12})
+        CycleCount.objects.update_or_create(company=company,warehouse=warehouses['WH-DEL'],bin=bin_a,product=products['PC-25-RD'],defaults={'expected_qty':7,'counted_qty':6,'status':'Counted','counted_by':users['WAREHOUSE']})
+
+        SupplierPortalAccess.objects.update_or_create(company=company,supplier=suppliers['S-001'],defaults={'email':'supplier@setustock.demo','pin_hash':make_password('1234'),'is_active':True})
+        SupplierPortalSubmission.objects.get_or_create(company=company,supplier=suppliers['S-001'],purchase_order=po,submission_type='ETA',defaults={'payload':{'eta':'2026-09-23','note':'Truck dispatched from Bhiwadi.'},'status':'Submitted'})
+
+        AutomationRule.objects.update_or_create(company=company,name='Overdue > ₹50k collection escalation',defaults={'event':'invoice.overdue','conditions':{'outstanding':{'gte':50000}},'actions':[{'type':'create_collection_task'},{'type':'notify','title':'High-value overdue customer','module':'collections'}],'is_active':True,'created_by':users['OWNER']})
+        AutomationRule.objects.update_or_create(company=company,name='Low stock buyer alert',defaults={'event':'stock.low','conditions':{'daysCover':{'gt':0}},'actions':[{'type':'notify','title':'Reorder review required','module':'insights'}],'is_active':True,'created_by':users['OWNER']})
+
+        web_channel,_=ExternalChannel.objects.update_or_create(company=company,name='Khanna Web Catalogue',defaults={'provider':'WEBSITE','external_store_id':'web-delhi-01','is_active':True})
+        ext_order,_=ExternalOrder.objects.update_or_create(channel=web_channel,external_id='WEB-44182',defaults={'company':company,'customer_name':'Bright Electricals','customer_phone':'9811004411','total':26480,'status':'New','raw_payload':{'source':'demo'}})
+        ExternalOrderItem.objects.update_or_create(external_order=ext_order,external_sku='AN-MCB-32',defaults={'product':products['AN-MCB-32'],'name':products['AN-MCB-32'].name,'quantity':20,'unit_price':495})
+        ExternalChannel.objects.update_or_create(company=company,name='ONDC Seller Adapter',defaults={'provider':'ONDC','external_store_id':'pending-credentials','is_active':False})
+
+        demo_partner,_=Company.objects.update_or_create(slug='noida-channel-demo',defaults={'name':'Noida Channel Demo','state':'Uttar Pradesh','is_active':True})
+        network,_=DistributionNetwork.objects.update_or_create(code='NCR-ELEC',defaults={'owner_company':company,'name':'North India Electrical Network','is_active':True})
+        owner_member,_=NetworkMember.objects.update_or_create(network=network,company=company,defaults={'region':'Delhi','territory':'Central Delhi','share_inventory':True,'share_secondary_sales':True})
+        partner_member,_=NetworkMember.objects.update_or_create(network=network,company=demo_partner,defaults={'region':'Uttar Pradesh','territory':'Noida','share_inventory':True,'share_secondary_sales':True})
+        NetworkSnapshot.objects.update_or_create(network=network,member=owner_member,snapshot_date=date(2026,9,21),defaults={'inventory_value':3184500,'stock_units':156,'secondary_sales':4286400,'open_orders':34,'product_summary':[]})
+        NetworkSnapshot.objects.update_or_create(network=network,member=partner_member,snapshot_date=date(2026,9,21),defaults={'inventory_value':1684200,'stock_units':98,'secondary_sales':2248000,'open_orders':17,'product_summary':[]})
 
         self.stdout.write(self.style.SUCCESS('SetuStock production-style demo data created.'))
