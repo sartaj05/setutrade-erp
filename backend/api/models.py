@@ -287,3 +287,48 @@ class PriceRule(models.Model):
 
     class Meta:
         ordering = ['product__name', 'min_quantity']
+
+class StockAdjustment(models.Model):
+    class AdjustmentType(models.TextChoices):
+        DAMAGE = 'Damaged', 'Damaged'
+        COUNT = 'Count correction', 'Count correction'
+        EXPIRY = 'Expired', 'Expired'
+        OTHER = 'Other', 'Other'
+
+    adjustment_no = models.CharField(max_length=40, unique=True)
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='stock_adjustments')
+    warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name='stock_adjustments')
+    adjustment_type = models.CharField(max_length=30, choices=AdjustmentType.choices)
+    quantity = models.DecimalField(max_digits=12, decimal_places=2)
+    reason = models.CharField(max_length=240)
+    adjustment_date = models.DateField()
+    created_at = models.DateTimeField(auto_now_add=True)
+
+
+class ReturnOrder(models.Model):
+    class ReturnType(models.TextChoices):
+        SALES = 'Sales Return', 'Sales Return'
+        PURCHASE = 'Purchase Return', 'Purchase Return'
+
+    class Status(models.TextChoices):
+        OPEN = 'Open', 'Open'
+        INSPECTED = 'Inspected', 'Inspected'
+        COMPLETED = 'Completed', 'Completed'
+
+    return_no = models.CharField(max_length=40, unique=True)
+    return_type = models.CharField(max_length=20, choices=ReturnType.choices)
+    customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='returns', null=True, blank=True)
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name='returns', null=True, blank=True)
+    warehouse = models.ForeignKey(Warehouse, on_delete=models.PROTECT, related_name='returns')
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.OPEN)
+    total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    return_date = models.DateField()
+    reason = models.CharField(max_length=240, blank=True)
+
+
+class ReturnItem(models.Model):
+    return_order = models.ForeignKey(ReturnOrder, on_delete=models.CASCADE, related_name='items')
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='return_items')
+    quantity = models.DecimalField(max_digits=12, decimal_places=2)
+    unit_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    condition = models.CharField(max_length=30, default='Resellable')

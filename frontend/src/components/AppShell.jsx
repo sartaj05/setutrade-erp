@@ -17,6 +17,7 @@ const moduleLabels = {
   whatsapp: ['WhatsApp Orders', 'receipt'],
   tax: ['GST & Tax', 'receipt'],
   pricing: ['Price Rules', 'receipt'],
+  returns: ['Returns & Damage', 'box'],
   quotations: ['Quotations', 'receipt'],
   payments: ['Payments', 'receipt'],
   reports: ['Reports', 'chart'],

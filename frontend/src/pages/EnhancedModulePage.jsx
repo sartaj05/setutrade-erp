@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useApiData } from '../services/useApiData';
-import { demoPurchases, demoLedger, demoWarehouses, demoBarcodes, demoWhatsAppDrafts, demoTax, demoPricing } from '../data/featureData';
+import { demoPurchases, demoLedger, demoWarehouses, demoBarcodes, demoWhatsAppDrafts, demoTax, demoPricing, demoReturns } from '../data/featureData';
 
 const money = (value) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
 
@@ -80,7 +80,7 @@ function WhatsAppPage() {
 
 function TaxPage() {
   const [search, setSearch] = useState('');
-  const { data } = useApiData('tax', { tax: demoTax, demoPricing }, 'tax');
+  const { data } = useApiData('tax', { tax: demoTax, demoPricing, demoReturns }, 'tax');
   const tax = data?.invoices ? data : demoTax;
   const rows = tax.invoices.filter((x)=>`${x.id} ${x.customer} ${x.gstin}`.toLowerCase().includes(search.toLowerCase()));
   return <div><FeatureHeader eyebrow="Compliance" title="GST, credit notes & e-invoice readiness" subtitle="Keep tax fields explicit: HSN/GST rates, place of supply, CGST/SGST/IGST, credit notes and provider-ready e-invoice status." action="Create credit note" search={search} setSearch={setSearch} />
@@ -104,6 +104,18 @@ function PricingPage() {
   </div>;
 }
 
+function ReturnsPage() {
+  const [search, setSearch] = useState('');
+  const { data } = useApiData('returns', { returns: demoReturns }, 'returns');
+  const payload = data?.returns ? data : demoReturns;
+  const rows = payload.returns.filter((x)=>`${x.id} ${x.type} ${x.party} ${x.reason}`.toLowerCase().includes(search.toLowerCase()));
+  return <div><FeatureHeader eyebrow="Stock integrity" title="Returns, damage & adjustments" subtitle="Record sales and purchase returns, inspect condition, create credit-note-ready values and keep every manual stock change auditable." action="New return" search={search} setSearch={setSearch} />
+    <Kpis items={[{label:'Open returns',value:'6',note:'3 awaiting inspection'},{label:'Return value',value:'₹41,860',note:'September total'},{label:'Damaged stock',value:'₹12,480',note:'pending supplier/customer action'}]} />
+    <article className="panel module-panel"><div className="panel-head"><div><span>Reverse logistics</span><h3>Return register</h3></div></div><div className="table-wrap"><table className="data-table module-table"><thead><tr><th>Return</th><th>Type / party</th><th>Warehouse</th><th>Items</th><th>Value</th><th>Reason</th><th>Status</th></tr></thead><tbody>{rows.map((r)=><tr key={r.id}><td><strong>{r.id}</strong><small>{r.date}</small></td><td><strong>{r.type}</strong><small>{r.party}</small></td><td>{r.warehouse}</td><td>{r.items}</td><td>{money(r.total)}</td><td>{r.reason}</td><td><Badge>{r.status}</Badge></td></tr>)}</tbody></table></div></article>
+    <div className="adjustment-list">{payload.adjustments.map((a)=><article key={a.id}><div><span>{a.id}</span><strong>{a.product}</strong><small>{a.warehouse} · {a.reason}</small></div><b className={a.quantity<0?'negative':'positive'}>{a.quantity>0?'+':''}{a.quantity}</b><Badge>{a.type}</Badge></article>)}</div>
+  </div>;
+}
+
 export default function EnhancedModulePage({ module }) {
   if (module === 'purchases') return <PurchasesPage />;
   if (module === 'ledger') return <LedgerPage />;
@@ -112,5 +124,6 @@ export default function EnhancedModulePage({ module }) {
   if (module === 'whatsapp') return <WhatsAppPage />;
   if (module === 'tax') return <TaxPage />;
   if (module === 'pricing') return <PricingPage />;
+  if (module === 'returns') return <ReturnsPage />;
   return null;
 }

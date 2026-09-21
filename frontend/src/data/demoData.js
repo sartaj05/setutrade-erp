@@ -7,11 +7,11 @@ export const demoAccounts = [
 ];
 
 export const permissions = {
-  OWNER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'tax', 'pricing', 'quotations', 'payments', 'reports', 'team', 'settings'],
-  MANAGER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'tax', 'pricing', 'quotations', 'payments', 'reports'],
-  SALES: ['dashboard', 'customers', 'orders', 'invoices', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'tax', 'pricing', 'quotations', 'payments'],
-  WAREHOUSE: ['dashboard', 'products', 'inventory', 'orders', 'purchases', 'warehouses', 'barcode'],
-  ACCOUNTANT: ['dashboard', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'tax', 'payments', 'reports'],
+  OWNER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'tax', 'pricing', 'returns', 'quotations', 'payments', 'reports', 'team', 'settings'],
+  MANAGER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'tax', 'pricing', 'returns', 'quotations', 'payments', 'reports'],
+  SALES: ['dashboard', 'customers', 'orders', 'invoices', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'tax', 'pricing', 'returns', 'quotations', 'payments'],
+  WAREHOUSE: ['dashboard', 'products', 'inventory', 'orders', 'purchases', 'warehouses', 'barcode', 'returns'],
+  ACCOUNTANT: ['dashboard', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'tax', 'returns', 'payments', 'reports'],
 };
 
 export const roleHomeCopy = {

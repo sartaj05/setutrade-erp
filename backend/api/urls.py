@@ -18,4 +18,5 @@ urlpatterns = [
     path('whatsapp/', views.whatsapp),
     path('tax/', views.tax_compliance),
     path('pricing/', views.pricing),
+    path('returns/', views.returns_adjustments),
 ]

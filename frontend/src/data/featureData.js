@@ -67,3 +67,15 @@ export const demoPricing = [
     { sku: 'PC-25-RD', product: 'Polycab 2.5mm Wire Red', minQty: 5, price: 1940, discount: 5, scheme: '5 coil project rate' },
   ]},
 ];
+
+export const demoReturns = {
+  returns: [
+    { id: 'SR-2026-042', type: 'Sales Return', party: 'Metro Electricals', warehouse: 'Delhi Central', items: 2, total: 4720, date: '19 Sep', status: 'Inspected', reason: 'Damaged MCBs received from customer' },
+    { id: 'PR-2026-018', type: 'Purchase Return', party: 'Polycab India Supply', warehouse: 'Delhi Central', items: 1, total: 9100, date: '18 Sep', status: 'Open', reason: 'Outer insulation damaged in transit' },
+    { id: 'SR-2026-041', type: 'Sales Return', party: 'NCR Buildmart', warehouse: 'Gurugram Depot', items: 3, total: 6840, date: '17 Sep', status: 'Completed', reason: 'Incorrect model ordered' },
+  ],
+  adjustments: [
+    { id: 'ADJ-2026-071', type: 'Damaged', product: 'Havells 12W LED Bulb', sku: 'HA-LED-12', warehouse: 'Noida Hub', quantity: -4, date: '21 Sep', reason: 'Broken during shelf handling' },
+    { id: 'ADJ-2026-070', type: 'Count correction', product: 'GM 8 Module Plate', sku: 'GM-PLT-8', warehouse: 'Delhi Central', quantity: 2, date: '20 Sep', reason: 'Cycle count correction' },
+  ],
+};
