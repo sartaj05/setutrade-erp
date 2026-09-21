@@ -47,3 +47,15 @@ Use this sequence during UAT:
 ## Production ownership
 
 Before go-live, replace demo branding and credentials, create a backup owner account, document who controls the domain/database/vendor credentials, and record the restore procedure. A ZIP on someone's Downloads folder is not, despite centuries of human optimism, a disaster-recovery plan.
+
+## Growth v3 client demo checklist
+
+1. Show the Collections module and explain payment allocation, promises and follow-up tasks.
+2. Open `/pay/demo-rk-payment-link` to demonstrate a customer-facing UPI payment request.
+3. Show Advanced WMS bins, picks, waves, packing and cycle-count variance flow.
+4. Open `/supplier-portal` with `supplier@setustock.demo` / `1234`.
+5. Demonstrate an automation test event and its resulting task/notification.
+6. Show Sales Channels as one normalized queue; do not claim the generic ONDC adapter is a certified live integration.
+7. Show Distributor Network aggregate visibility and explain that customer-level records are not shared.
+
+Before using real money or statutory data, connect and test the client's chosen payment/bank, WhatsApp, GST and any financing/network providers in staging.

@@ -122,3 +122,45 @@ The repository deliberately does not contain third-party secrets. Production con
 - Authorised GST/e-invoice/e-way-bill provider adapter
 - Production object storage if files should not live on a server filesystem
 - Error tracking/APM provider if desired
+
+## Growth v3 commercial operations
+
+### Collections command center
+- Collection tasks and promise-to-pay tracking
+- Payment transaction reconciliation and invoice allocations
+- Partial/unapplied payment state
+- Receipt/ledger posting
+- Public payment links and UPI intent payloads
+- Scheduled reminders and customer statements
+- Receivable-financing export payloads
+
+### Advanced WMS
+- Warehouse bins/zones and bin stock
+- Pick lists and source-bin suggestions
+- Pick waves
+- Packing slips
+- Cycle counts and controlled variance posting
+- Mobile WMS queue
+
+### Supplier collaboration
+- Separate supplier portal authentication
+- Purchase-order visibility
+- PO confirmation, ETA and invoice-reference submissions
+- Staff supplier-response inbox
+
+### Workflow automation
+- Event/condition/action rules
+- Notification, collection-task and reminder actions
+- Execution history
+
+### External commerce
+- Website / ONDC / marketplace / custom channel registry
+- Secret-key webhooks
+- Idempotent external-order ingestion
+- SKU matching and order conversion
+
+### Distributor network
+- Network ownership and membership
+- Invitation/acceptance state
+- Opt-in aggregate inventory and secondary-sales sharing
+- Privacy-scoped member snapshots without customer-level exposure

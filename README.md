@@ -138,3 +138,20 @@ SetuStock provides GST-oriented invoice/data workflows, but it is not a certifie
 ## Growth v2: 10 additional phases
 
 The repository also includes a separate B2B dealer portal, delivery/e-POD, approvals, purchase invoice OCR review, accounting exports, offline/PWA sync, SaaS subscription billing, advanced forecasting, a data-grounded business assistant, and an Expo Android/iOS client. See `GROWTH_V2.md` for the feature map and production boundaries.
+
+## Growth v3: collections, WMS and network expansion
+
+Growth v3 adds automated collections/reconciliation, public payment links, advanced WMS waves/packing/cycle counts, a supplier portal, workflow automation, external website/ONDC/marketplace adapter boundaries, and privacy-scoped distributor-network visibility.
+
+See `GROWTH_V3.md` and `GROWTH_V3_COMMITS.md`.
+
+Demo surfaces after `python manage.py seed_demo`:
+
+```text
+Staff ERP:       /login                 password demo123
+Dealer portal:   /portal                dealer@setustock.demo / 1234
+Supplier portal: /supplier-portal       supplier@setustock.demo / 1234
+Payment page:    /pay/demo-rk-payment-link
+```
+
+External commerce, payment confirmation, WhatsApp delivery, statutory GST services and receivable-financing submission are integration boundaries. They require the client's own vendor credentials and compliance setup; no live secrets are embedded in this repository.

@@ -45,3 +45,9 @@ Before using real client data, require a green CI run and complete the UAT check
 ## Growth v2 phases
 
 This release adds the B2B customer portal, delivery/e-POD, approval workflows, purchase invoice OCR review, accounting exports, offline/PWA sync, SaaS subscription billing, advanced demand forecasting, a data-grounded business assistant, and an Expo-based Android/iOS client.
+
+## Growth v3 expansion
+
+Growth v3 adds phases 11–16: collections and reconciliation, advanced WMS, supplier collaboration, workflow automation, external sales-channel ingestion, and distributor-network visibility. It also includes public payment-link/UPI intent pages, WMS waves/packing, supplier demo authentication, mobile collection/WMS queues, additional seed data and API tests.
+
+Provider boundaries remain explicit: generic ONDC/marketplace adapters are not a substitute for protocol certification; payment links do not confirm funds without a bank/payment provider callback; WhatsApp reminders require Meta/provider credentials; financing exports do not submit to a TReDS platform by themselves.

@@ -121,3 +121,13 @@ The WhatsApp adapter can send outbound text when valid Meta credentials are conf
 - Centralise Gunicorn/application logs.
 - Add an error/APM product suitable for the client's infrastructure.
 - Alert on failed backups, database disk growth and elevated 5xx rates.
+
+## Growth v3 integration configuration
+
+Growth v3 introduces additional integration boundaries:
+
+- Payment links use the company `upi_id` for UPI intent generation. Bank/payment-provider callbacks are still required for authoritative payment confirmation.
+- External channel webhooks require the generated per-channel `webhookKey` in the `X-Channel-Key` header. Store production keys in a secret manager/provider-specific configuration rather than exposing them to the browser.
+- The generic ONDC channel type only normalizes orders into SetuStock. A live ONDC integration needs the required protocol adapter, signing/callback infrastructure and compliance review.
+- Supplier invoice files should be stored in production object storage; the supplier portal currently carries metadata/file references through the provider boundary.
+- Automated WhatsApp reminders require a configured outbound WhatsApp provider.
