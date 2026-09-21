@@ -77,3 +77,25 @@ def gst_cockpit(request):
     supplier=m.Supplier.objects.filter(company=company,pk=data.get('supplierId')).first() or m.Supplier.objects.filter(company=company).first()
     books=Decimal(str(data.get('booksTax',18440)));portal=Decimal(str(data.get('portalTax',18440)));diff=books-portal;status='Matched' if abs(diff)<Decimal('0.01') else 'Mismatch'
     row,_=m.GSTReconciliationItem.objects.update_or_create(company=company,invoice_no=data.get('invoiceNo') or f"IMS-{timezone.now().strftime('%y%m%d%H%M%S%f')}",source=data.get('source','IMS'),defaults={'supplier':supplier,'invoice_date':data.get('date') or timezone.localdate(),'gstin':data.get('gstin',''),'books_taxable':data.get('booksTaxable',0),'books_tax':books,'portal_taxable':data.get('portalTaxable',0),'portal_tax':portal,'difference':diff,'status':status});return JsonResponse({'id':row.id,'status':row.status,'difference':_money(row.difference)},status=201)
+
+@csrf_exempt
+@require_http_methods(['GET','POST'])
+@api_auth_required
+def procurement_intelligence(request):
+    company=request.company
+    if request.method=='GET':
+        scores=m.VendorScorecard.objects.filter(company=company).select_related('supplier').order_by('-overall_score')[:50]
+        recs=m.ProcurementRecommendation.objects.filter(company=company).select_related('product','supplier').order_by('status','product__name')[:100]
+        return JsonResponse({'summary':{'vendors':scores.count(),'openRecommendations':recs.filter(status='Open').count(),'recommendedSpend':_money(sum((x.recommended_qty*x.expected_unit_cost for x in recs.filter(status='Open')),Decimal('0')))},'vendors':[{'id':x.id,'supplier':x.supplier.name,'score':_money(x.overall_score),'fillRate':_money(x.fill_rate),'onTime':_money(x.on_time_rate),'quality':_money(x.quality_score),'leadDays':_money(x.avg_lead_days)} for x in scores],'recommendations':[{'id':x.id,'product':x.product.name,'sku':x.product.sku,'supplier':x.supplier.name,'qty':_money(x.recommended_qty),'unitCost':_money(x.expected_unit_cost),'leadDays':x.expected_lead_days,'reason':x.reason,'status':x.status} for x in recs]})
+    data=_body(request); action=data.get('action','recalculate')
+    if action=='approve':
+        rec=m.ProcurementRecommendation.objects.filter(company=company,pk=data.get('id')).first()
+        if not rec:return JsonResponse({'detail':'Recommendation not found.'},status=404)
+        rec.status='Approved';rec.save(update_fields=['status']);audit(request,'APPROVE','ProcurementRecommendation',rec.id,'Approved procurement recommendation');return JsonResponse({'id':rec.id,'status':rec.status})
+    suppliers=list(m.Supplier.objects.filter(company=company,is_active=True)); products=m.Product.objects.filter(company=company,is_active=True,stock__lte=F('reorder_level'))
+    if not suppliers:return JsonResponse({'detail':'Add a supplier before recalculating.'},status=400)
+    created=0
+    for i,p in enumerate(products):
+        supplier=suppliers[i%len(suppliers)]; score, _=m.VendorScorecard.objects.get_or_create(company=company,supplier=supplier,defaults={'price_score':84,'fill_rate':96,'on_time_rate':92,'quality_score':95,'payment_term_score':80,'overall_score':90,'avg_lead_days':5})
+        qty=max(Decimal('1'),p.reorder_level*Decimal('2')-p.stock); m.ProcurementRecommendation.objects.update_or_create(company=company,product=p,supplier=supplier,defaults={'recommended_qty':qty,'expected_unit_cost':p.purchase_price,'expected_lead_days':int(score.avg_lead_days or 5),'reason':f'Stock {p.stock} is at/below reorder level {p.reorder_level}. Vendor score {score.overall_score}.','status':'Open'});created+=1
+    return JsonResponse({'created':created})

@@ -1241,3 +1241,29 @@ class GSTReconciliationItem(models.Model):
     resolution_note=models.CharField(max_length=300,blank=True)
     updated_at=models.DateTimeField(auto_now=True)
     class Meta: constraints=[models.UniqueConstraint(fields=['company','invoice_no','source'],name='unique_company_gst_recon_invoice')]
+
+# --- Growth v4 / Phase 20: smart procurement & vendor scorecards ---
+class VendorScorecard(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='vendor_scorecards')
+    supplier=models.OneToOneField(Supplier,on_delete=models.CASCADE,related_name='scorecard')
+    price_score=models.DecimalField(max_digits=5,decimal_places=2,default=0)
+    fill_rate=models.DecimalField(max_digits=5,decimal_places=2,default=0)
+    on_time_rate=models.DecimalField(max_digits=5,decimal_places=2,default=0)
+    quality_score=models.DecimalField(max_digits=5,decimal_places=2,default=0)
+    payment_term_score=models.DecimalField(max_digits=5,decimal_places=2,default=0)
+    overall_score=models.DecimalField(max_digits=5,decimal_places=2,default=0)
+    avg_lead_days=models.DecimalField(max_digits=7,decimal_places=2,default=0)
+    updated_at=models.DateTimeField(auto_now=True)
+
+class ProcurementRecommendation(models.Model):
+    class Status(models.TextChoices): OPEN='Open','Open'; APPROVED='Approved','Approved'; ORDERED='Ordered','Ordered'; DISMISSED='Dismissed','Dismissed'
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='procurement_recommendations')
+    product=models.ForeignKey(Product,on_delete=models.CASCADE,related_name='procurement_recommendations')
+    supplier=models.ForeignKey(Supplier,on_delete=models.PROTECT,related_name='procurement_recommendations')
+    recommended_qty=models.DecimalField(max_digits=12,decimal_places=2,default=0)
+    expected_unit_cost=models.DecimalField(max_digits=12,decimal_places=2,default=0)
+    expected_lead_days=models.PositiveIntegerField(default=0)
+    reason=models.CharField(max_length=300,blank=True)
+    status=models.CharField(max_length=20,choices=Status.choices,default=Status.OPEN)
+    generated_at=models.DateTimeField(auto_now=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['company','product','supplier'],name='unique_procurement_product_supplier')]

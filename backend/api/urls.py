@@ -70,4 +70,5 @@ urlpatterns = [
     path('crm/', strategic_views.crm),
     path('schemes/', strategic_views.schemes),
     path('gst-cockpit/', strategic_views.gst_cockpit),
+    path('procurement-intelligence/', strategic_views.procurement_intelligence),
 ]
