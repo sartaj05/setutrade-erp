@@ -1,7 +1,7 @@
 from datetime import date
 from django.contrib.auth.models import User
 from django.core.management.base import BaseCommand
-from api.models import Customer, Invoice, Order, Product, Profile
+from api.models import Customer, Invoice, Order, Product, Profile, Supplier, PurchaseOrder, PurchaseItem, GoodsReceipt
 
 ACCOUNTS = [
     ('owner', 'Arjun', 'Khanna', 'owner@setustock.demo', 'OWNER'),
@@ -65,4 +65,9 @@ class Command(BaseCommand):
         ]
         for invoice_no, order_no, gstin, taxable, cgst, sgst, igst, total, status, invoice_date in invoice_rows:
             Invoice.objects.update_or_create(invoice_no=invoice_no, defaults={'order':order_map[order_no],'gstin':gstin,'taxable_amount':taxable,'cgst':cgst,'sgst':sgst,'igst':igst,'total':total,'status':status,'invoice_date':invoice_date})
+
+        supplier, _ = Supplier.objects.update_or_create(code='S-001', defaults={'name':'Polycab India Supply','city':'Delhi','phone':'9810000001','gstin':'07AAACP0001A1Z1','outstanding':212600})
+        po, _ = PurchaseOrder.objects.update_or_create(po_no='PO-2026-084', defaults={'supplier':supplier,'status':'Partial','order_date':date(2026,9,20),'expected_date':date(2026,9,23),'total':186400})
+        PurchaseItem.objects.update_or_create(purchase=po, product=Product.objects.get(sku='PC-25-RD'), defaults={'quantity':100,'received_quantity':60,'unit_price':1820})
+        GoodsReceipt.objects.update_or_create(grn_no='GRN-2026-044', defaults={'purchase':po,'received_date':date(2026,9,21),'notes':'Partial receipt for demo.'})
         self.stdout.write(self.style.SUCCESS('SetuStock demo data created.'))

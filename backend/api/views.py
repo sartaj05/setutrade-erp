@@ -7,7 +7,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from .auth import api_auth_required, create_token, roles_allowed
-from .models import Customer, Invoice, Order, Product
+from .models import Customer, Invoice, Order, Product, Supplier, PurchaseOrder, PurchaseItem, GoodsReceipt
 
 PERMISSIONS = {
     'OWNER': ['dashboard','products','inventory','customers','orders','invoices','quotations','payments','reports','team','settings'],
@@ -128,3 +128,24 @@ def invoices(request):
         'taxable': float(i.taxable_amount), 'tax': float(i.cgst + i.sgst + i.igst), 'total': float(i.total),
         'status': i.status, 'date': i.invoice_date.strftime('%d %b')
     } for i in rows]})
+
+
+@require_GET
+@roles_allowed('OWNER', 'MANAGER', 'WAREHOUSE', 'ACCOUNTANT')
+def purchases(request):
+    rows = PurchaseOrder.objects.select_related('supplier').prefetch_related('items').order_by('-order_date', '-id')
+    return JsonResponse({'purchases': [{
+        'id': po.po_no, 'supplier': po.supplier.name, 'status': po.status,
+        'total': float(po.total), 'date': po.order_date.strftime('%d %b'),
+        'expected': po.expected_date.strftime('%d %b') if po.expected_date else '—',
+        'items': po.items.count(),
+    } for po in rows]})
+
+@require_GET
+@roles_allowed('OWNER', 'MANAGER', 'WAREHOUSE', 'ACCOUNTANT')
+def suppliers(request):
+    rows = Supplier.objects.order_by('name')
+    return JsonResponse({'suppliers': [{
+        'id': s.code, 'name': s.name, 'city': s.city, 'phone': s.phone, 'gstin': s.gstin,
+        'outstanding': float(s.outstanding),
+    } for s in rows]})

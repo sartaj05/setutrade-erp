@@ -195,3 +195,18 @@ a { color: inherit; text-decoration: none; }
 @media (max-width: 850px) { .module-header { align-items: flex-start; flex-direction: column; }.module-actions { width: 100%; }.module-actions input { flex: 1; width: auto; }.module-summary, .coming-grid { grid-template-columns: 1fr; }.order-board { grid-template-columns: 1fr 1fr; }.order-board > i { display: none; } }
 @media (max-width: 600px) { .module-header h1 { font-size: 31px; }.module-actions { flex-wrap: wrap; }.module-actions input, .module-actions button { width: 100%; flex: auto; }.module-summary { grid-template-columns: 1fr 1fr; }.module-summary > div:last-child { grid-column: 1 / -1; }.order-board { grid-template-columns: 1fr; } }
 .text-status.unpaid { background: #f4e7df; color: #9d604f; }
+
+/* Distribution-suite enhancements */
+.feature-flow { display:flex; align-items:center; gap:10px; margin:0 0 14px; padding:13px 15px; background:#f0f4ee; border:1px solid #dde6dd; border-radius:13px; color:#657572; font-size:9px; font-weight:800; }
+.feature-flow span { background:#fff; border:1px solid #e1e5df; border-radius:9px; padding:8px 10px; color:var(--teal); }
+.feature-flow i { font-style:normal; color:#a5afac; }
+.feature-badge { display:inline-flex; min-height:22px; align-items:center; padding:0 8px; border-radius:7px; background:#eceff4; color:#64708f; font-size:8px; font-weight:900; }
+.feature-badge.received, .feature-badge.approved, .feature-badge.completed, .feature-badge.healthy, .feature-badge.sent { background:#e8f1ea; color:#507562; }
+.feature-badge.partial, .feature-badge.pending, .feature-badge.medium, .feature-badge.open { background:#f4ecd9; color:#9a743a; }
+.feature-badge.draft, .feature-badge.in-transit, .feature-badge.processing { background:#ebedf7; color:#5c6caa; }
+.feature-badge.overdue, .feature-badge.high, .feature-badge.damaged, .feature-badge.rejected { background:#f5e5e0; color:#a25f51; }
+.feature-cards { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:14px; }
+.feature-card-compact { background:#fff; border:1px solid #e1e3dc; border-radius:15px; padding:18px; }
+.feature-card-compact span, .feature-card-compact small { color:#84908d; font-size:8px; }
+.feature-card-compact strong { display:block; font-size:19px; margin:9px 0 5px; }
+@media(max-width:800px){ .feature-flow{overflow-x:auto}.feature-flow span{min-width:max-content}.feature-cards{grid-template-columns:1fr} }

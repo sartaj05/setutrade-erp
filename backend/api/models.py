@@ -91,3 +91,54 @@ class Invoice(models.Model):
 
     def __str__(self):
         return self.invoice_no
+
+class Supplier(models.Model):
+    code = models.CharField(max_length=30, unique=True)
+    name = models.CharField(max_length=160)
+    city = models.CharField(max_length=100, blank=True)
+    phone = models.CharField(max_length=20, blank=True)
+    gstin = models.CharField(max_length=20, blank=True)
+    outstanding = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.name
+
+
+class PurchaseOrder(models.Model):
+    class Status(models.TextChoices):
+        DRAFT = 'Draft', 'Draft'
+        SENT = 'Sent', 'Sent'
+        PARTIAL = 'Partial', 'Partial'
+        RECEIVED = 'Received', 'Received'
+
+    po_no = models.CharField(max_length=40, unique=True)
+    supplier = models.ForeignKey(Supplier, on_delete=models.PROTECT, related_name='purchase_orders')
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
+    order_date = models.DateField()
+    expected_date = models.DateField(null=True, blank=True)
+    total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.po_no
+
+
+class PurchaseItem(models.Model):
+    purchase = models.ForeignKey(PurchaseOrder, on_delete=models.CASCADE, related_name='items')
+    product = models.ForeignKey(Product, on_delete=models.PROTECT, related_name='purchase_items')
+    quantity = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    received_quantity = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    unit_price = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+
+
+class GoodsReceipt(models.Model):
+    grn_no = models.CharField(max_length=40, unique=True)
+    purchase = models.ForeignKey(PurchaseOrder, on_delete=models.PROTECT, related_name='receipts')
+    received_date = models.DateField()
+    notes = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    def __str__(self):
+        return self.grn_no

@@ -10,6 +10,7 @@ const moduleLabels = {
   customers: ['Customers', 'users'],
   orders: ['Orders', 'receipt'],
   invoices: ['GST Invoices', 'receipt'],
+  purchases: ['Purchases', 'box'],
   quotations: ['Quotations', 'receipt'],
   payments: ['Payments', 'receipt'],
   reports: ['Reports', 'chart'],

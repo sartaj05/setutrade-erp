@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { demoCustomers, demoDashboard, demoInvoices, demoProducts } from '../data/demoData';
 import { useApiData } from '../services/useApiData';
+import EnhancedModulePage from './EnhancedModulePage';
 
 const money = (value) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
 
@@ -102,6 +103,7 @@ function SimpleModule({ module }) {
 }
 
 export default function ModulePage({ module }) {
+  if (['purchases'].includes(module)) return <EnhancedModulePage module={module} />;
   if (module === 'products') return <Products />;
   if (module === 'inventory') return <Products inventoryOnly />;
   if (module === 'customers') return <Customers />;
