@@ -1,6 +1,7 @@
 import { useAuth } from '../context/AuthContext';
 import { demoDashboard, roleHomeCopy } from '../data/demoData';
 import StatCard from '../components/StatCard';
+import { useApiData } from '../services/useApiData';
 
 const money = (value) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
 
@@ -23,7 +24,8 @@ const meta = {
 
 export default function DashboardPage() {
   const { user } = useAuth();
-  const data = demoDashboard;
+  const { data: apiData } = useApiData('dashboard', demoDashboard);
+  const data = { ...demoDashboard, ...apiData, metrics: { ...demoDashboard.metrics, ...(apiData.metrics || {}) }, recentOrders: apiData.recentOrders || demoDashboard.recentOrders, activity: demoDashboard.activity };
   const keys = roleMetrics[user.role] || roleMetrics.OWNER;
 
   return (

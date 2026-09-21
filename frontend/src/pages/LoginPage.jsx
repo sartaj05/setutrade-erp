@@ -5,7 +5,7 @@ import { demoAccounts } from '../data/demoData';
 import { useAuth } from '../context/AuthContext';
 
 export default function LoginPage({ navigate }) {
-  const { loginDemo } = useAuth();
+  const { login } = useAuth();
   const [email, setEmail] = useState('owner@setustock.demo');
   const [password, setPassword] = useState('demo123');
   const [error, setError] = useState('');
@@ -16,7 +16,7 @@ export default function LoginPage({ navigate }) {
     setError('');
     setLoading(true);
     try {
-      await loginDemo(email, password);
+      await login(email, password);
       navigate('/app');
     } catch (err) {
       setError(err.message);
@@ -55,7 +55,7 @@ export default function LoginPage({ navigate }) {
           <div className="login-heading">
             <span className="demo-pill"><span /> Demo workspace</span>
             <h2>Welcome back</h2>
-            <p>Use a demo role below. The same screen later connects to Django authentication.</p>
+            <p>Use a demo role below. It tries Django first and automatically falls back to local demo data if the API is offline.</p>
           </div>
 
           <form onSubmit={submit} className="login-form">

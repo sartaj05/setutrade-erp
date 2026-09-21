@@ -1,15 +1,13 @@
 import { createContext, useContext, useMemo, useState } from 'react';
 import { demoAccounts, permissions } from '../data/demoData';
+import { loginApi } from '../services/api';
 
 const AuthContext = createContext(null);
 const STORAGE_KEY = 'setustock_auth';
 
 function readStoredUser() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || null;
-  } catch {
-    return null;
-  }
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || null; }
+  catch { return null; }
 }
 
 export function AuthProvider({ children }) {
@@ -17,33 +15,37 @@ export function AuthProvider({ children }) {
   const [mode, setMode] = useState(user?.mode || 'demo');
 
   const loginDemo = async (email, password) => {
-    await new Promise((resolve) => setTimeout(resolve, 300));
+    await new Promise((resolve) => setTimeout(resolve, 180));
     const account = demoAccounts.find((item) => item.email.toLowerCase() === email.trim().toLowerCase() && item.password === password);
     if (!account) throw new Error('Invalid email or password. Use one of the demo accounts shown below.');
     const safeUser = { id: account.id, name: account.name, email: account.email, role: account.role, business: account.business, mode: 'demo' };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(safeUser));
-    setUser(safeUser);
-    setMode('demo');
+    setUser(safeUser); setMode('demo');
     return safeUser;
   };
 
-  const setAuthenticatedUser = (nextUser, authMode = 'api') => {
-    const safeUser = { ...nextUser, mode: authMode };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(safeUser));
-    setUser(safeUser);
-    setMode(authMode);
+  const login = async (email, password) => {
+    const fallbackEnabled = String(import.meta.env.VITE_DEMO_FALLBACK ?? 'true').toLowerCase() !== 'false';
+    try {
+      const apiUser = await loginApi(email, password);
+      const safeUser = { ...apiUser, mode: 'api' };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(safeUser));
+      setUser(safeUser); setMode('api');
+      return safeUser;
+    } catch (error) {
+      if (!error.network || !fallbackEnabled) throw error;
+      return loginDemo(email, password);
+    }
   };
 
   const logout = () => {
     localStorage.removeItem(STORAGE_KEY);
     localStorage.removeItem('setustock_token');
-    setUser(null);
-    setMode('demo');
+    setUser(null); setMode('demo');
   };
 
   const can = (module) => Boolean(user && permissions[user.role]?.includes(module));
-
-  const value = useMemo(() => ({ user, mode, loginDemo, logout, can, setAuthenticatedUser }), [user, mode]);
+  const value = useMemo(() => ({ user, mode, login, loginDemo, logout, can }), [user, mode]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

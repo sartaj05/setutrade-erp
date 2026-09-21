@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { demoCustomers, demoDashboard, demoProducts } from '../data/demoData';
+import { useApiData } from '../services/useApiData';
 
 const money = (value) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
 
@@ -14,7 +15,8 @@ function Toolbar({ title, subtitle, action = 'Add new', search, setSearch }) {
 
 function Products({ inventoryOnly = false }) {
   const [search, setSearch] = useState('');
-  const rows = useMemo(() => demoProducts.filter((p) => `${p.name} ${p.sku} ${p.category}`.toLowerCase().includes(search.toLowerCase())), [search]);
+  const { data: products } = useApiData('products', demoProducts, 'products');
+  const rows = useMemo(() => products.filter((p) => `${p.name} ${p.sku} ${p.category}`.toLowerCase().includes(search.toLowerCase())), [search, products]);
   return (
     <div>
       <Toolbar title={inventoryOnly ? 'Inventory' : 'Products'} subtitle={inventoryOnly ? 'Know what is available, low and due for replenishment.' : 'Your sellable catalogue, pricing and stock position.'} action={inventoryOnly ? 'Stock adjustment' : 'Add product'} search={search} setSearch={setSearch} />
@@ -34,7 +36,8 @@ function Products({ inventoryOnly = false }) {
 
 function Customers() {
   const [search, setSearch] = useState('');
-  const rows = useMemo(() => demoCustomers.filter((c) => `${c.name} ${c.city} ${c.phone}`.toLowerCase().includes(search.toLowerCase())), [search]);
+  const { data: customers } = useApiData('customers', demoCustomers, 'customers');
+  const rows = useMemo(() => customers.filter((c) => `${c.name} ${c.city} ${c.phone}`.toLowerCase().includes(search.toLowerCase())), [search, customers]);
   return (
     <div>
       <Toolbar title="Customers & credit" subtitle="Credit limits, outstanding balances and collection follow-ups in one ledger view." action="Add customer" search={search} setSearch={setSearch} />
@@ -48,7 +51,8 @@ function Customers() {
 
 function Orders() {
   const [search, setSearch] = useState('');
-  const rows = useMemo(() => demoDashboard.recentOrders.filter((o) => `${o.id} ${o.customer} ${o.status}`.toLowerCase().includes(search.toLowerCase())), [search]);
+  const { data: orders } = useApiData('orders', demoDashboard.recentOrders, 'orders');
+  const rows = useMemo(() => orders.filter((o) => `${o.id} ${o.customer} ${o.status}`.toLowerCase().includes(search.toLowerCase())), [search, orders]);
   return (
     <div>
       <Toolbar title="B2B orders" subtitle="Move counter, phone and WhatsApp orders through one dispatch queue." action="Create order" search={search} setSearch={setSearch} />
