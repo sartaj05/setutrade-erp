@@ -1,5 +1,5 @@
 from django.urls import path
-from . import views, expansion_views
+from . import views, expansion_views, strategic_views
 
 urlpatterns = [
     path('health/', views.health),
@@ -67,4 +67,5 @@ urlpatterns = [
     path('channels/', expansion_views.channels),
     path('channels/webhook/<int:channel_id>/', expansion_views.channel_webhook),
     path('distribution-networks/', expansion_views.distribution_networks),
+    path('crm/', strategic_views.crm),
 ]

@@ -1166,3 +1166,33 @@ class PackingSlip(models.Model):
     packed_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
     packed_at=models.DateTimeField(null=True,blank=True)
     created_at=models.DateTimeField(auto_now_add=True)
+
+# --- Growth v4 / Phase 17: CRM + sales pipeline ---
+class CRMLead(models.Model):
+    class Status(models.TextChoices):
+        NEW='New','New'; QUALIFIED='Qualified','Qualified'; MEETING='Meeting','Meeting'; QUOTED='Quoted','Quoted'; NEGOTIATION='Negotiation','Negotiation'; WON='Won','Won'; LOST='Lost','Lost'
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='crm_leads')
+    lead_no=models.CharField(max_length=40,unique=True)
+    name=models.CharField(max_length=160)
+    business_name=models.CharField(max_length=180,blank=True)
+    phone=models.CharField(max_length=20,blank=True)
+    email=models.EmailField(blank=True)
+    source=models.CharField(max_length=80,default='Referral')
+    territory=models.CharField(max_length=100,blank=True)
+    status=models.CharField(max_length=20,choices=Status.choices,default=Status.NEW)
+    estimated_value=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    expected_close=models.DateField(null=True,blank=True)
+    owner=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True,related_name='crm_leads')
+    lost_reason=models.CharField(max_length=240,blank=True)
+    converted_customer=models.ForeignKey(Customer,on_delete=models.SET_NULL,null=True,blank=True,related_name='source_leads')
+    created_at=models.DateTimeField(auto_now_add=True); updated_at=models.DateTimeField(auto_now=True)
+
+class CRMActivity(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='crm_activities')
+    lead=models.ForeignKey(CRMLead,on_delete=models.CASCADE,related_name='activities')
+    activity_type=models.CharField(max_length=40,default='Call')
+    note=models.CharField(max_length=300)
+    next_follow_up=models.DateTimeField(null=True,blank=True)
+    completed=models.BooleanField(default=False)
+    created_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
