@@ -2,6 +2,7 @@ import json
 from decimal import Decimal
 from django.core import signing
 from django.contrib.auth.hashers import check_password
+from django.contrib.auth.hashers import check_password
 from django.db import transaction
 from django.db.models import Sum
 from django.http import JsonResponse
@@ -9,7 +10,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 from .auth import api_auth_required
-from .models import Customer, Invoice, PaymentTransaction, PaymentAllocation, PaymentPromise, CollectionTask, Warehouse, WarehouseBin, BinStock, PickList, PickListItem, CycleCount, Order, OrderItem, Product
+from .models import Customer, Invoice, PaymentTransaction, PaymentAllocation, PaymentPromise, CollectionTask, Warehouse, WarehouseBin, BinStock, PickList, PickListItem, CycleCount, Order, OrderItem, Product, Supplier, SupplierPortalAccess, SupplierPortalSubmission, PurchaseOrder
 
 
 def _body(request):
@@ -88,3 +89,42 @@ def wms(request):
         c=CycleCount.objects.create(company=company,warehouse=warehouse,bin=b,product=product,expected_qty=expected,counted_qty=data.get('countedQty'),status='Counted',counted_by=request.api_user)
         return JsonResponse({'id':c.id,'variance':_money(Decimal(str(c.counted_qty or 0))-Decimal(str(expected)))},status=201)
     return JsonResponse({'detail':'Unsupported action.'},status=400)
+
+
+SUPPLIER_PORTAL_SALT='setustock.supplier.portal'
+
+@csrf_exempt
+@require_POST
+def supplier_portal_login(request):
+    data=_body(request) or {}
+    access=SupplierPortalAccess.objects.select_related('supplier','company').filter(email__iexact=data.get('email',''),is_active=True).first()
+    if not access or not check_password(str(data.get('pin','')),access.pin_hash): return JsonResponse({'detail':'Invalid supplier portal credentials.'},status=401)
+    access.last_login_at=timezone.now(); access.save(update_fields=['last_login_at'])
+    token=signing.dumps({'aid':access.id,'sid':access.supplier_id,'co':access.company_id},salt=SUPPLIER_PORTAL_SALT,compress=True)
+    return JsonResponse({'token':token,'supplier':{'id':access.supplier_id,'name':access.supplier.name,'company':access.company.name}})
+
+def _supplier_access(request):
+    h=request.headers.get('Authorization','')
+    if not h.startswith('Supplier '): return None
+    try:
+        p=signing.loads(h[9:].strip(),salt=SUPPLIER_PORTAL_SALT,max_age=60*60*24*30)
+        return SupplierPortalAccess.objects.select_related('supplier','company').get(pk=p['aid'],is_active=True)
+    except Exception: return None
+
+@csrf_exempt
+@require_http_methods(['GET','POST'])
+def supplier_portal(request):
+    access=_supplier_access(request)
+    if not access: return JsonResponse({'detail':'Supplier portal authentication required.'},status=401)
+    supplier=access.supplier
+    if request.method=='GET':
+        pos=PurchaseOrder.objects.filter(company=access.company,supplier=supplier).order_by('-order_date','-id')[:30]
+        return JsonResponse({'supplier':supplier.name,'purchaseOrders':[{'id':p.id,'poNo':p.po_no,'date':p.order_date.isoformat(),'status':p.status,'total':_money(p.total),'expected':p.expected_date.isoformat() if p.expected_date else None} for p in pos],'submissions':[{'id':x.id,'type':x.submission_type,'status':x.status,'payload':x.payload,'createdAt':x.created_at.isoformat()} for x in supplier.portal_submissions.order_by('-id')[:20]]})
+    data=_body(request) or {}; po=PurchaseOrder.objects.filter(company=access.company,supplier=supplier,pk=data.get('purchaseOrderId')).first() if data.get('purchaseOrderId') else None
+    sub=SupplierPortalSubmission.objects.create(company=access.company,supplier=supplier,purchase_order=po,submission_type=data.get('type','NOTE'),payload=data.get('payload') or {})
+    return JsonResponse({'id':sub.id,'status':sub.status},status=201)
+
+@api_auth_required
+def supplier_portal_admin(request):
+    rows=SupplierPortalSubmission.objects.filter(company=request.company).select_related('supplier','purchase_order').order_by('-id')[:50]
+    return JsonResponse({'submissions':[{'id':x.id,'supplier':x.supplier.name,'po':x.purchase_order.po_no if x.purchase_order else '', 'type':x.submission_type,'status':x.status,'payload':x.payload} for x in rows]})

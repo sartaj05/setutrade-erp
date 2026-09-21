@@ -998,3 +998,24 @@ class CycleCount(models.Model):
     status=models.CharField(max_length=20,choices=Status.choices,default=Status.OPEN)
     counted_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
     created_at=models.DateTimeField(auto_now_add=True)
+
+# --- Growth v3 / Phase 13: supplier portal ---
+class SupplierPortalAccess(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='supplier_portal_access')
+    supplier=models.OneToOneField(Supplier,on_delete=models.CASCADE,related_name='portal_access')
+    email=models.EmailField()
+    pin_hash=models.CharField(max_length=180)
+    is_active=models.BooleanField(default=True)
+    last_login_at=models.DateTimeField(null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['company','email'],name='unique_company_supplier_portal_email')]
+
+class SupplierPortalSubmission(models.Model):
+    class Type(models.TextChoices): PO_CONFIRM='PO_CONFIRM','PO confirmation'; ETA='ETA','Delivery ETA'; INVOICE='INVOICE','Invoice upload'; NOTE='NOTE','Note'
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='supplier_portal_submissions')
+    supplier=models.ForeignKey(Supplier,on_delete=models.PROTECT,related_name='portal_submissions')
+    purchase_order=models.ForeignKey(PurchaseOrder,on_delete=models.SET_NULL,null=True,blank=True,related_name='supplier_submissions')
+    submission_type=models.CharField(max_length=20,choices=Type.choices)
+    payload=models.JSONField(default=dict,blank=True)
+    status=models.CharField(max_length=30,default='Submitted')
+    created_at=models.DateTimeField(auto_now_add=True)

@@ -59,4 +59,7 @@ urlpatterns = [
     path('assistant/', views.ai_assistant),
     path('collections/', expansion_views.collections),
     path('wms/', expansion_views.wms),
+    path('supplier-portal/login/', expansion_views.supplier_portal_login),
+    path('supplier-portal/', expansion_views.supplier_portal),
+    path('supplier-portal-admin/', expansion_views.supplier_portal_admin),
 ]
