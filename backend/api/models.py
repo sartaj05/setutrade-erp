@@ -1108,3 +1108,34 @@ class NetworkSnapshot(models.Model):
     product_summary=models.JSONField(default=list,blank=True)
     created_at=models.DateTimeField(auto_now_add=True)
     class Meta: constraints=[models.UniqueConstraint(fields=['network','member','snapshot_date'],name='unique_network_member_snapshot')]
+
+# Phase 11 supporting collection assets
+class PaymentLink(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='payment_links')
+    customer=models.ForeignKey(Customer,on_delete=models.PROTECT,related_name='payment_links')
+    invoice=models.ForeignKey(Invoice,on_delete=models.SET_NULL,null=True,blank=True,related_name='payment_links')
+    token=models.CharField(max_length=80,unique=True)
+    amount=models.DecimalField(max_digits=14,decimal_places=2)
+    status=models.CharField(max_length=20,default='Active')
+    expires_at=models.DateTimeField(null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+
+class CollectionReminder(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='collection_reminders')
+    customer=models.ForeignKey(Customer,on_delete=models.PROTECT,related_name='collection_reminders')
+    invoice=models.ForeignKey(Invoice,on_delete=models.SET_NULL,null=True,blank=True,related_name='collection_reminders')
+    channel=models.CharField(max_length=20,default='WhatsApp')
+    scheduled_for=models.DateTimeField()
+    status=models.CharField(max_length=20,default='Scheduled')
+    message=models.CharField(max_length=500)
+    created_at=models.DateTimeField(auto_now_add=True)
+
+class ReceivableFinanceExport(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='receivable_finance_exports')
+    export_no=models.CharField(max_length=40,unique=True)
+    provider=models.CharField(max_length=40,default='TReDS-ready CSV')
+    invoice_count=models.PositiveIntegerField(default=0)
+    total_amount=models.DecimalField(max_digits=16,decimal_places=2,default=0)
+    payload=models.JSONField(default=list,blank=True)
+    created_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)

@@ -10,7 +10,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 from .auth import api_auth_required
-from .models import Customer, Invoice, PaymentTransaction, PaymentAllocation, PaymentPromise, CollectionTask, Warehouse, WarehouseBin, BinStock, PickList, PickListItem, CycleCount, Order, OrderItem, Product, Supplier, SupplierPortalAccess, SupplierPortalSubmission, PurchaseOrder, AutomationRule, AutomationRun, Notification, ExternalChannel, ExternalOrder, ExternalOrderItem, DistributionNetwork, NetworkMember, NetworkSnapshot
+from .models import Customer, Invoice, PaymentTransaction, PaymentAllocation, PaymentPromise, CollectionTask, Warehouse, WarehouseBin, BinStock, PickList, PickListItem, CycleCount, Order, OrderItem, Product, Supplier, SupplierPortalAccess, SupplierPortalSubmission, PurchaseOrder, AutomationRule, AutomationRun, Notification, ExternalChannel, ExternalOrder, ExternalOrderItem, DistributionNetwork, NetworkMember, NetworkSnapshot, PaymentLink, CollectionReminder, ReceivableFinanceExport
 
 
 def _body(request):
@@ -29,10 +29,27 @@ def collections(request):
         promises=PaymentPromise.objects.filter(company=company,status='Open').select_related('customer').order_by('promised_date')[:20]
         tasks=CollectionTask.objects.filter(company=company).select_related('customer','assigned_to').order_by('due_date')[:30]
         txns=PaymentTransaction.objects.filter(company=company).select_related('customer').order_by('-transaction_date','-id')[:30]
-        return JsonResponse({'summary':{'receivable':_money(receivable),'openTasks':CollectionTask.objects.filter(company=company,status='Open').count(),'promiseAmount':_money(promises.aggregate(v=Sum('promised_amount'))['v'] or 0),'unmatched':PaymentTransaction.objects.filter(company=company,status='Unmatched').count()},'tasks':[{'id':x.id,'customer':x.customer.name,'amount':_money(x.amount_due),'due':x.due_date.isoformat(),'priority':x.priority,'status':x.status,'assignee':x.assigned_to.get_full_name() if x.assigned_to else ''} for x in tasks],'promises':[{'id':x.id,'customer':x.customer.name,'amount':_money(x.promised_amount),'date':x.promised_date.isoformat(),'status':x.status} for x in promises],'transactions':[{'id':x.id,'reference':x.reference,'customer':x.customer.name,'amount':_money(x.amount),'method':x.method,'date':x.transaction_date.isoformat(),'status':x.status} for x in txns]})
+        return JsonResponse({'summary':{'receivable':_money(receivable),'openTasks':CollectionTask.objects.filter(company=company,status='Open').count(),'promiseAmount':_money(promises.aggregate(v=Sum('promised_amount'))['v'] or 0),'unmatched':PaymentTransaction.objects.filter(company=company,status='Unmatched').count(),'activePaymentLinks':PaymentLink.objects.filter(company=company,status='Active').count(),'scheduledReminders':CollectionReminder.objects.filter(company=company,status='Scheduled').count()},'tasks':[{'id':x.id,'customer':x.customer.name,'amount':_money(x.amount_due),'due':x.due_date.isoformat(),'priority':x.priority,'status':x.status,'assignee':x.assigned_to.get_full_name() if x.assigned_to else ''} for x in tasks],'promises':[{'id':x.id,'customer':x.customer.name,'amount':_money(x.promised_amount),'date':x.promised_date.isoformat(),'status':x.status} for x in promises],'transactions':[{'id':x.id,'reference':x.reference,'customer':x.customer.name,'amount':_money(x.amount),'method':x.method,'date':x.transaction_date.isoformat(),'status':x.status} for x in txns]})
     data=_body(request) or {}; action=data.get('action')
     customer=Customer.objects.filter(company=company,pk=data.get('customerId')).first()
     if not customer: return JsonResponse({'detail':'Customer not found.'},status=404)
+    if action=='payment-link':
+        invoice=Invoice.objects.filter(company=company,pk=data.get('invoiceId')).first() if data.get('invoiceId') else None
+        link=PaymentLink.objects.create(company=company,customer=customer,invoice=invoice,token=signing.b64_encode(f'{company.id}:{customer.id}:{timezone.now().timestamp()}'.encode()).decode()[:72],amount=data.get('amount') or (invoice.total if invoice else customer.outstanding),expires_at=timezone.now()+timezone.timedelta(days=7))
+        return JsonResponse({'id':link.id,'token':link.token,'amount':_money(link.amount),'status':link.status},status=201)
+    if action=='reminder':
+        invoice=Invoice.objects.filter(company=company,pk=data.get('invoiceId')).first() if data.get('invoiceId') else None
+        r=CollectionReminder.objects.create(company=company,customer=customer,invoice=invoice,channel=data.get('channel','WhatsApp'),scheduled_for=data.get('scheduledFor') or timezone.now(),message=data.get('message') or f'Payment reminder: {customer.name} has {customer.outstanding} outstanding.')
+        return JsonResponse({'id':r.id,'status':r.status},status=201)
+    if action=='statement':
+        entries=[{'reference':x.reference,'type':x.entry_type,'date':x.entry_date.isoformat(),'amount':_money(x.amount)} for x in customer.ledger_entries.order_by('entry_date','id')]
+        return JsonResponse({'customer':customer.name,'outstanding':_money(customer.outstanding),'entries':entries})
+    if action=='finance-export':
+        invoices=Invoice.objects.filter(company=company,order__customer=customer).exclude(status='Paid').select_related('order')
+        payload=[{'invoiceNo':i.invoice_no,'date':i.invoice_date.isoformat(),'dueDate':i.due_date.isoformat() if i.due_date else None,'buyer':customer.name,'gstin':customer.gstin,'amount':_money(i.total)} for i in invoices]
+        total=sum((Decimal(str(x['amount'])) for x in payload),Decimal('0'))
+        ex=ReceivableFinanceExport.objects.create(company=company,export_no=f'RF-{timezone.now().strftime("%y%m%d%H%M%S")}',invoice_count=len(payload),total_amount=total,payload=payload,created_by=request.api_user)
+        return JsonResponse({'id':ex.id,'exportNo':ex.export_no,'invoiceCount':ex.invoice_count,'total':_money(total),'payload':payload},status=201)
     if action=='promise':
         p=PaymentPromise.objects.create(company=company,customer=customer,promised_amount=data.get('amount',0),promised_date=data.get('date') or timezone.localdate(),notes=data.get('notes',''),created_by=request.api_user)
         return JsonResponse({'id':p.id,'status':p.status},status=201)
@@ -118,9 +135,9 @@ def supplier_portal(request):
     if not access: return JsonResponse({'detail':'Supplier portal authentication required.'},status=401)
     supplier=access.supplier
     if request.method=='GET':
-        pos=PurchaseOrder, AutomationRule, AutomationRun, Notification, ExternalChannel, ExternalOrder, ExternalOrderItem, DistributionNetwork, NetworkMember, NetworkSnapshot.objects.filter(company=access.company,supplier=supplier).order_by('-order_date','-id')[:30]
+        pos=PurchaseOrder, AutomationRule, AutomationRun, Notification, ExternalChannel, ExternalOrder, ExternalOrderItem, DistributionNetwork, NetworkMember, NetworkSnapshot, PaymentLink, CollectionReminder, ReceivableFinanceExport.objects.filter(company=access.company,supplier=supplier).order_by('-order_date','-id')[:30]
         return JsonResponse({'supplier':supplier.name,'purchaseOrders':[{'id':p.id,'poNo':p.po_no,'date':p.order_date.isoformat(),'status':p.status,'total':_money(p.total),'expected':p.expected_date.isoformat() if p.expected_date else None} for p in pos],'submissions':[{'id':x.id,'type':x.submission_type,'status':x.status,'payload':x.payload,'createdAt':x.created_at.isoformat()} for x in supplier.portal_submissions.order_by('-id')[:20]]})
-    data=_body(request) or {}; po=PurchaseOrder, AutomationRule, AutomationRun, Notification, ExternalChannel, ExternalOrder, ExternalOrderItem, DistributionNetwork, NetworkMember, NetworkSnapshot.objects.filter(company=access.company,supplier=supplier,pk=data.get('purchaseOrderId')).first() if data.get('purchaseOrderId') else None
+    data=_body(request) or {}; po=PurchaseOrder, AutomationRule, AutomationRun, Notification, ExternalChannel, ExternalOrder, ExternalOrderItem, DistributionNetwork, NetworkMember, NetworkSnapshot, PaymentLink, CollectionReminder, ReceivableFinanceExport.objects.filter(company=access.company,supplier=supplier,pk=data.get('purchaseOrderId')).first() if data.get('purchaseOrderId') else None
     sub=SupplierPortalSubmission.objects.create(company=access.company,supplier=supplier,purchase_order=po,submission_type=data.get('type','NOTE'),payload=data.get('payload') or {})
     return JsonResponse({'id':sub.id,'status':sub.status},status=201)
 
@@ -159,7 +176,7 @@ def automations(request):
             action_names=[]
             for item in r.actions:
                 kind=item.get('type') if isinstance(item,dict) else str(item); action_names.append(kind)
-                if kind=='notify': Notification, ExternalChannel, ExternalOrder, ExternalOrderItem, DistributionNetwork, NetworkMember, NetworkSnapshot.objects.create(company=request.company,user=request.api_user,title=item.get('title','Automation alert'),message=item.get('message',r.name),level='info',module=item.get('module','dashboard'))
+                if kind=='notify': Notification, ExternalChannel, ExternalOrder, ExternalOrderItem, DistributionNetwork, NetworkMember, NetworkSnapshot, PaymentLink, CollectionReminder, ReceivableFinanceExport.objects.create(company=request.company,user=request.api_user,title=item.get('title','Automation alert'),message=item.get('message',r.name),level='info',module=item.get('module','dashboard'))
                 elif kind=='create_collection_task' and payload.get('customerId'):
                     c=Customer.objects.filter(company=request.company,pk=payload['customerId']).first()
                     if c: CollectionTask.objects.create(company=request.company,customer=c,assigned_to=request.api_user,due_date=timezone.localdate(),amount_due=c.outstanding,priority='High',notes=f'Automation: {r.name}')
@@ -190,7 +207,7 @@ def channels(request):
         if created:
             for row in data.get('items',[]):
                 sku=str(row.get('sku','')); product=Product.objects.filter(company=company,sku=sku).first()
-                ExternalOrderItem, DistributionNetwork, NetworkMember, NetworkSnapshot.objects.create(external_order=o,external_sku=sku,product=product,name=row.get('name') or (product.name if product else sku),quantity=row.get('quantity',1),unit_price=row.get('unitPrice',0))
+                ExternalOrderItem, DistributionNetwork, NetworkMember, NetworkSnapshot, PaymentLink, CollectionReminder, ReceivableFinanceExport.objects.create(external_order=o,external_sku=sku,product=product,name=row.get('name') or (product.name if product else sku),quantity=row.get('quantity',1),unit_price=row.get('unitPrice',0))
         c.last_sync_at=timezone.now(); c.save(update_fields=['last_sync_at'])
         return JsonResponse({'id':o.id,'created':created,'status':o.status},status=201 if created else 200)
     if action=='convert':
@@ -251,6 +268,6 @@ def distribution_networks(request):
         products=[]
         if m.share_inventory:
             products=[{'sku':p.sku,'name':p.name,'stock':_money(p.stock)} for p in Product.objects.filter(company=member_company,is_active=True).order_by('stock')[:20]]
-        snap,_=NetworkSnapshot.objects.update_or_create(network=n,member=m,snapshot_date=timezone.localdate(),defaults={'inventory_value':inventory_value if m.share_inventory else 0,'stock_units':stock_units if m.share_inventory else 0,'secondary_sales':sales if m.share_secondary_sales else 0,'open_orders':open_orders,'product_summary':products})
+        snap,_=NetworkSnapshot, PaymentLink, CollectionReminder, ReceivableFinanceExport.objects.update_or_create(network=n,member=m,snapshot_date=timezone.localdate(),defaults={'inventory_value':inventory_value if m.share_inventory else 0,'stock_units':stock_units if m.share_inventory else 0,'secondary_sales':sales if m.share_secondary_sales else 0,'open_orders':open_orders,'product_summary':products})
         return JsonResponse({'id':snap.id,'date':snap.snapshot_date.isoformat(),'inventoryValue':_money(snap.inventory_value),'secondarySales':_money(snap.secondary_sales)})
     return JsonResponse({'detail':'Unsupported action.'},status=400)
