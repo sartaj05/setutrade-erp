@@ -9,7 +9,7 @@ from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods, require_POST
 from .auth import api_auth_required
-from .models import Customer, Invoice, PaymentTransaction, PaymentAllocation, PaymentPromise, CollectionTask
+from .models import Customer, Invoice, PaymentTransaction, PaymentAllocation, PaymentPromise, CollectionTask, Warehouse, WarehouseBin, BinStock, PickList, PickListItem, CycleCount, Order, OrderItem, Product
 
 
 def _body(request):
@@ -54,4 +54,37 @@ def collections(request):
             pt.status='Matched' if remaining<=0 else ('Partial' if used>0 else 'Unmatched'); pt.save(update_fields=['status'])
             customer.outstanding=max(Decimal('0'),customer.outstanding-used); customer.save(update_fields=['outstanding'])
         return JsonResponse({'id':pt.id,'status':pt.status,'allocated':_money(used),'unapplied':_money(remaining)},status=201)
+    return JsonResponse({'detail':'Unsupported action.'},status=400)
+
+
+@csrf_exempt
+@require_http_methods(['GET','POST'])
+@api_auth_required
+def wms(request):
+    company=request.company
+    if request.method=='GET':
+        bins=WarehouseBin.objects.filter(warehouse__company=company).select_related('warehouse')[:50]
+        picks=PickList.objects.filter(company=company).select_related('warehouse','assigned_to').prefetch_related('items').order_by('-id')[:20]
+        counts=CycleCount.objects.filter(company=company).select_related('warehouse','bin','product').order_by('-id')[:20]
+        return JsonResponse({'bins':[{'id':b.id,'code':b.code,'zone':b.zone,'warehouse':b.warehouse.name,'capacity':_money(b.capacity)} for b in bins],'picks':[{'id':p.id,'pickNo':p.pick_no,'warehouse':p.warehouse.name,'status':p.status,'lines':p.items.count()} for p in picks],'counts':[{'id':c.id,'warehouse':c.warehouse.name,'bin':c.bin.code,'product':c.product.name,'expected':_money(c.expected_qty),'counted':_money(c.counted_qty),'status':c.status} for c in counts]})
+    data=_body(request) or {}; action=data.get('action')
+    warehouse=Warehouse.objects.filter(company=company,pk=data.get('warehouseId')).first()
+    if not warehouse: return JsonResponse({'detail':'Warehouse not found.'},status=404)
+    if action=='create-bin':
+        b=WarehouseBin.objects.create(warehouse=warehouse,code=data.get('code') or f'BIN-{WarehouseBin.objects.filter(warehouse=warehouse).count()+1}',zone=data.get('zone','General'),capacity=data.get('capacity',0))
+        return JsonResponse({'id':b.id,'code':b.code},status=201)
+    if action=='create-pick':
+        p=PickList.objects.create(company=company,warehouse=warehouse,pick_no=f'PICK-{timezone.now().strftime("%y%m%d%H%M%S")}',status='Released',assigned_to=request.api_user)
+        for oid in data.get('orderIds',[]):
+            order=Order.objects.filter(company=company,pk=oid).first()
+            if order:
+                for item in order.items.select_related('product'):
+                    PickListItem.objects.create(pick_list=p,order=order,product=item.product,requested_qty=item.quantity)
+        return JsonResponse({'id':p.id,'pickNo':p.pick_no,'status':p.status},status=201)
+    if action=='cycle-count':
+        b=WarehouseBin.objects.filter(warehouse=warehouse,pk=data.get('binId')).first(); product=Product.objects.filter(company=company,pk=data.get('productId')).first()
+        if not b or not product: return JsonResponse({'detail':'Bin or product not found.'},status=404)
+        stock=BinStock.objects.filter(bin=b,product=product).first(); expected=stock.quantity if stock else 0
+        c=CycleCount.objects.create(company=company,warehouse=warehouse,bin=b,product=product,expected_qty=expected,counted_qty=data.get('countedQty'),status='Counted',counted_by=request.api_user)
+        return JsonResponse({'id':c.id,'variance':_money(Decimal(str(c.counted_qty or 0))-Decimal(str(expected)))},status=201)
     return JsonResponse({'detail':'Unsupported action.'},status=400)

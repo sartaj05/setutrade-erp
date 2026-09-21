@@ -954,3 +954,47 @@ class CollectionTask(models.Model):
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.OPEN)
     notes = models.CharField(max_length=240, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+# --- Growth v3 / Phase 12: advanced warehouse management ---
+class WarehouseBin(models.Model):
+    warehouse=models.ForeignKey(Warehouse,on_delete=models.CASCADE,related_name='bins')
+    code=models.CharField(max_length=40)
+    zone=models.CharField(max_length=60,blank=True)
+    capacity=models.DecimalField(max_digits=12,decimal_places=2,default=0)
+    is_active=models.BooleanField(default=True)
+    class Meta: constraints=[models.UniqueConstraint(fields=['warehouse','code'],name='unique_warehouse_bin_code')]
+
+class BinStock(models.Model):
+    bin=models.ForeignKey(WarehouseBin,on_delete=models.CASCADE,related_name='stocks')
+    product=models.ForeignKey(Product,on_delete=models.CASCADE,related_name='bin_stocks')
+    quantity=models.DecimalField(max_digits=12,decimal_places=2,default=0)
+    class Meta: constraints=[models.UniqueConstraint(fields=['bin','product'],name='unique_bin_product')]
+
+class PickList(models.Model):
+    class Status(models.TextChoices): DRAFT='Draft','Draft'; RELEASED='Released','Released'; PICKING='Picking','Picking'; COMPLETE='Complete','Complete'
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='pick_lists')
+    warehouse=models.ForeignKey(Warehouse,on_delete=models.PROTECT,related_name='pick_lists')
+    pick_no=models.CharField(max_length=40,unique=True)
+    status=models.CharField(max_length=20,choices=Status.choices,default=Status.DRAFT)
+    assigned_to=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True,related_name='pick_lists')
+    created_at=models.DateTimeField(auto_now_add=True)
+
+class PickListItem(models.Model):
+    pick_list=models.ForeignKey(PickList,on_delete=models.CASCADE,related_name='items')
+    order=models.ForeignKey(Order,on_delete=models.PROTECT,related_name='pick_items')
+    product=models.ForeignKey(Product,on_delete=models.PROTECT,related_name='pick_items')
+    source_bin=models.ForeignKey(WarehouseBin,on_delete=models.SET_NULL,null=True,blank=True,related_name='pick_items')
+    requested_qty=models.DecimalField(max_digits=12,decimal_places=2)
+    picked_qty=models.DecimalField(max_digits=12,decimal_places=2,default=0)
+
+class CycleCount(models.Model):
+    class Status(models.TextChoices): OPEN='Open','Open'; COUNTED='Counted','Counted'; POSTED='Posted','Posted'
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='cycle_counts')
+    warehouse=models.ForeignKey(Warehouse,on_delete=models.PROTECT,related_name='cycle_counts')
+    bin=models.ForeignKey(WarehouseBin,on_delete=models.PROTECT,related_name='cycle_counts')
+    product=models.ForeignKey(Product,on_delete=models.PROTECT,related_name='cycle_counts')
+    expected_qty=models.DecimalField(max_digits=12,decimal_places=2,default=0)
+    counted_qty=models.DecimalField(max_digits=12,decimal_places=2,null=True,blank=True)
+    status=models.CharField(max_length=20,choices=Status.choices,default=Status.OPEN)
+    counted_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)

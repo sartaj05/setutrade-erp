@@ -58,4 +58,5 @@ urlpatterns = [
     path('forecasting/', views.forecasting),
     path('assistant/', views.ai_assistant),
     path('collections/', expansion_views.collections),
+    path('wms/', expansion_views.wms),
 ]
