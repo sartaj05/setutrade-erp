@@ -1139,3 +1139,30 @@ class ReceivableFinanceExport(models.Model):
     payload=models.JSONField(default=list,blank=True)
     created_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
     created_at=models.DateTimeField(auto_now_add=True)
+
+# Growth v3 WMS completion: wave picking and packing
+class PickWave(models.Model):
+    class Status(models.TextChoices):
+        PLANNED='Planned','Planned'; RELEASED='Released','Released'; IN_PROGRESS='In Progress','In Progress'; COMPLETE='Complete','Complete'
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='pick_waves')
+    warehouse=models.ForeignKey(Warehouse,on_delete=models.PROTECT,related_name='pick_waves')
+    wave_no=models.CharField(max_length=40,unique=True)
+    pick_lists=models.ManyToManyField(PickList,related_name='waves',blank=True)
+    status=models.CharField(max_length=20,choices=Status.choices,default=Status.PLANNED)
+    created_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+
+class PackingSlip(models.Model):
+    class Status(models.TextChoices):
+        OPEN='Open','Open'; PACKED='Packed','Packed'; LABELLED='Labelled','Labelled'; DISPATCHED='Dispatched','Dispatched'
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='packing_slips')
+    warehouse=models.ForeignKey(Warehouse,on_delete=models.PROTECT,related_name='packing_slips')
+    order=models.ForeignKey(Order,on_delete=models.PROTECT,related_name='packing_slips')
+    pick_list=models.ForeignKey(PickList,on_delete=models.SET_NULL,null=True,blank=True,related_name='packing_slips')
+    package_no=models.CharField(max_length=50,unique=True)
+    carton_count=models.PositiveIntegerField(default=1)
+    weight_kg=models.DecimalField(max_digits=10,decimal_places=2,default=0)
+    status=models.CharField(max_length=20,choices=Status.choices,default=Status.OPEN)
+    packed_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
+    packed_at=models.DateTimeField(null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)

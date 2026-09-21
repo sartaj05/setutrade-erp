@@ -18,7 +18,7 @@ from .models import (
     Customer, CycleCount, DistributionNetwork, ExternalChannel, ExternalOrder,
     ExternalOrderItem, Invoice, LedgerEntry, NetworkMember, NetworkSnapshot,
     Notification, Order, OrderItem, Payment, PaymentAllocation, PaymentLink,
-    PaymentPromise, PaymentTransaction, PickList, PickListItem, Product,
+    PaymentPromise, PaymentTransaction, PickList, PickListItem, PickWave, PackingSlip, Product,
     PurchaseOrder, ReceivableFinanceExport, SupplierPortalAccess,
     SupplierPortalSubmission, Warehouse, WarehouseBin,
 )
@@ -210,10 +210,14 @@ def wms(request):
         bins = WarehouseBin.objects.filter(warehouse__company=company).select_related('warehouse')[:50]
         picks = PickList.objects.filter(company=company).select_related('warehouse', 'assigned_to').prefetch_related('items').order_by('-id')[:20]
         counts = CycleCount.objects.filter(company=company).select_related('warehouse', 'bin', 'product').order_by('-id')[:20]
+        waves = PickWave.objects.filter(company=company).select_related('warehouse').prefetch_related('pick_lists').order_by('-id')[:20]
+        packs = PackingSlip.objects.filter(company=company).select_related('warehouse', 'order').order_by('-id')[:20]
         return JsonResponse({
             'bins': [{'id': b.id, 'code': b.code, 'zone': b.zone, 'warehouse': b.warehouse.name, 'capacity': _money(b.capacity)} for b in bins],
             'picks': [{'id': p.id, 'pickNo': p.pick_no, 'warehouse': p.warehouse.name, 'status': p.status, 'lines': p.items.count()} for p in picks],
             'counts': [{'id': c.id, 'warehouse': c.warehouse.name, 'bin': c.bin.code, 'product': c.product.name, 'expected': _money(c.expected_qty), 'counted': _money(c.counted_qty), 'status': c.status} for c in counts],
+            'waves': [{'id': w.id, 'waveNo': w.wave_no, 'warehouse': w.warehouse.name, 'status': w.status, 'pickCount': w.pick_lists.count()} for w in waves],
+            'packing': [{'id': x.id, 'packageNo': x.package_no, 'order': x.order.order_no, 'warehouse': x.warehouse.name, 'cartons': x.carton_count, 'weightKg': _money(x.weight_kg), 'status': x.status} for x in packs],
         })
 
     data = _body(request) or {}
@@ -243,6 +247,47 @@ def wms(request):
                 source_bin = WarehouseBin.objects.filter(warehouse=warehouse, stocks__product=item.product, stocks__quantity__gt=0).first()
                 PickListItem.objects.create(pick_list=pick, order=order, product=item.product, source_bin=source_bin, requested_qty=item.quantity)
         return JsonResponse({'id': pick.id, 'pickNo': pick.pick_no, 'status': pick.status}, status=201)
+
+    if action == 'create-wave':
+        wave = PickWave.objects.create(company=company, warehouse=warehouse, wave_no=f'WAVE-{timezone.now().strftime("%y%m%d%H%M%S%f")}', status='Released', created_by=request.api_user)
+        picks = PickList.objects.filter(company=company, warehouse=warehouse, pk__in=data.get('pickIds', []))
+        wave.pick_lists.set(picks)
+        return JsonResponse({'id': wave.id, 'waveNo': wave.wave_no, 'pickCount': wave.pick_lists.count(), 'status': wave.status}, status=201)
+
+    if action == 'pack-order':
+        order = Order.objects.filter(company=company, warehouse=warehouse, pk=data.get('orderId')).first()
+        if not order:
+            return JsonResponse({'detail': 'Order not found.'}, status=404)
+        pick = PickList.objects.filter(company=company, warehouse=warehouse, pk=data.get('pickId')).first() if data.get('pickId') else None
+        slip = PackingSlip.objects.create(company=company, warehouse=warehouse, order=order, pick_list=pick, package_no=f'PKG-{timezone.now().strftime("%y%m%d%H%M%S%f")}', carton_count=data.get('cartons', 1), weight_kg=data.get('weightKg', 0), status='Packed', packed_by=request.api_user, packed_at=timezone.now())
+        if pick and pick.status != 'Complete':
+            pick.status = 'Complete'; pick.save(update_fields=['status'])
+        return JsonResponse({'id': slip.id, 'packageNo': slip.package_no, 'status': slip.status}, status=201)
+
+    if action == 'complete-pick':
+        pick = PickList.objects.filter(company=company, warehouse=warehouse, pk=data.get('pickId')).prefetch_related('items').first()
+        if not pick:
+            return JsonResponse({'detail': 'Pick list not found.'}, status=404)
+        for item in pick.items.all():
+            item.picked_qty = item.requested_qty
+            item.save(update_fields=['picked_qty'])
+        pick.status = 'Complete'; pick.save(update_fields=['status'])
+        return JsonResponse({'id': pick.id, 'status': pick.status})
+
+    if action == 'post-count':
+        count = CycleCount.objects.filter(company=company, warehouse=warehouse, pk=data.get('countId'), status='Counted').select_related('bin', 'product').first()
+        if not count or count.counted_qty is None:
+            return JsonResponse({'detail': 'Counted cycle count not found.'}, status=404)
+        stock, _ = BinStock.objects.get_or_create(bin=count.bin, product=count.product, defaults={'quantity': 0})
+        delta = count.counted_qty - stock.quantity
+        stock.quantity = count.counted_qty; stock.save(update_fields=['quantity'])
+        from .models import StockBalance
+        wh_stock, _ = StockBalance.objects.get_or_create(warehouse=warehouse, product=count.product, defaults={'quantity': 0, 'reserved': 0})
+        wh_stock.quantity = max(Decimal('0'), wh_stock.quantity + delta); wh_stock.save(update_fields=['quantity'])
+        total = StockBalance.objects.filter(product=count.product).aggregate(v=Sum('quantity'))['v'] or Decimal('0')
+        count.product.stock = total; count.product.save(update_fields=['stock'])
+        count.status = 'Posted'; count.save(update_fields=['status'])
+        return JsonResponse({'id': count.id, 'status': count.status, 'variance': _money(delta), 'warehouseStock': _money(wh_stock.quantity)})
 
     if action == 'cycle-count':
         bin_obj = WarehouseBin.objects.filter(warehouse=warehouse, pk=data.get('binId')).first()
@@ -397,6 +442,10 @@ def automations(request):
                             priority='High',
                             notes=f'Automation: {rule.name}',
                         )
+                elif kind == 'schedule_reminder' and payload.get('customerId'):
+                    customer = Customer.objects.filter(company=request.company, pk=payload['customerId']).first()
+                    if customer:
+                        CollectionReminder.objects.create(company=request.company, customer=customer, channel=item.get('channel', 'WhatsApp'), scheduled_for=timezone.now(), message=item.get('message') or f'Payment reminder for {customer.name}: {customer.outstanding} outstanding.')
             AutomationRun.objects.create(
                 company=request.company,
                 rule=rule,
@@ -573,10 +622,10 @@ def distribution_networks(request):
                     } if snapshot else None),
                 })
             payload.append({'id': network.id, 'name': network.name, 'code': network.code, 'members': members})
-        memberships = NetworkMember.objects.filter(company=company, is_active=True).select_related('network', 'network__owner_company')
+        memberships = NetworkMember.objects.filter(company=company).select_related('network', 'network__owner_company')
         return JsonResponse({
             'ownedNetworks': payload,
-            'memberships': [{'id': m.id, 'network': m.network.name, 'owner': m.network.owner_company.name, 'region': m.region, 'territory': m.territory} for m in memberships],
+            'memberships': [{'id': m.id, 'network': m.network.name, 'owner': m.network.owner_company.name, 'region': m.region, 'territory': m.territory, 'status': 'Active' if m.is_active else 'Pending'} for m in memberships],
         })
 
     data = _body(request) or {}
@@ -586,6 +635,14 @@ def distribution_networks(request):
         network = DistributionNetwork.objects.create(owner_company=company, name=data.get('name', 'Distribution Network'), code=code)
         NetworkMember.objects.get_or_create(network=network, company=company, defaults={'region': company.state, 'territory': 'Head Office'})
         return JsonResponse({'id': network.id, 'name': network.name, 'code': network.code}, status=201)
+
+    if action == 'accept-membership':
+        membership = NetworkMember.objects.filter(network_id=data.get('networkId'), company=company, is_active=False).select_related('network').first()
+        if not membership:
+            return JsonResponse({'detail': 'Pending membership invitation not found.'}, status=404)
+        membership.is_active = True
+        membership.save(update_fields=['is_active'])
+        return JsonResponse({'id': membership.id, 'network': membership.network.name, 'status': 'Active'})
 
     network = DistributionNetwork.objects.filter(owner_company=company, pk=data.get('networkId')).first()
     if not network:
@@ -602,14 +659,6 @@ def distribution_networks(request):
             defaults={'region': data.get('region', ''), 'territory': data.get('territory', ''), 'is_active': False},
         )
         return JsonResponse({'id': member.id, 'company': member.company.name, 'status': 'Pending acceptance'}, status=201)
-
-    if action == 'accept-membership':
-        membership = NetworkMember.objects.filter(network=network, company=company).first()
-        if not membership:
-            return JsonResponse({'detail': 'Membership invitation not found.'}, status=404)
-        membership.is_active = True
-        membership.save(update_fields=['is_active'])
-        return JsonResponse({'id': membership.id, 'status': 'Active'})
 
     if action == 'snapshot':
         member = NetworkMember.objects.filter(network=network, pk=data.get('memberId'), is_active=True).select_related('company').first()
