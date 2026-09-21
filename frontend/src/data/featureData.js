@@ -1,14 +1,14 @@
 export const demoPurchases = [
-  { id: 'PO-2026-084', supplier: 'Polycab India Supply', total: 186400, status: 'Partial', date: '20 Sep', expected: '23 Sep', items: 6 },
-  { id: 'PO-2026-083', supplier: 'Havells Channel Partner', total: 124850, status: 'Sent', date: '19 Sep', expected: '24 Sep', items: 4 },
-  { id: 'PO-2026-082', supplier: 'Legrand NCR Distribution', total: 96800, status: 'Received', date: '18 Sep', expected: '20 Sep', items: 3 },
-  { id: 'PO-2026-081', supplier: 'GM Modular Supply Co.', total: 71420, status: 'Draft', date: '17 Sep', expected: '25 Sep', items: 5 },
+  { pk: 1, id: 'PO-2026-084', supplier: 'Polycab India Supply', total: 186400, status: 'Partial', date: '20 Sep', expected: '23 Sep', items: 6 },
+  { pk: 2, id: 'PO-2026-083', supplier: 'Havells Channel Partner', total: 124850, status: 'Sent', date: '19 Sep', expected: '24 Sep', items: 4 },
+  { pk: 3, id: 'PO-2026-082', supplier: 'Legrand NCR Distribution', total: 96800, status: 'Received', date: '18 Sep', expected: '20 Sep', items: 3 },
+  { pk: 4, id: 'PO-2026-081', supplier: 'GM Modular Supply Co.', total: 71420, status: 'Draft', date: '17 Sep', expected: '25 Sep', items: 5 },
 ];
 
 export const demoSuppliers = [
-  { id: 'S-001', name: 'Polycab India Supply', city: 'Delhi', outstanding: 212600 },
-  { id: 'S-002', name: 'Havells Channel Partner', city: 'Noida', outstanding: 124850 },
-  { id: 'S-003', name: 'Legrand NCR Distribution', city: 'Gurugram', outstanding: 0 },
+  { pk: 1, id: 'S-001', name: 'Polycab India Supply', city: 'Delhi', outstanding: 212600 },
+  { pk: 2, id: 'S-002', name: 'Havells Channel Partner', city: 'Noida', outstanding: 124850 },
+  { pk: 3, id: 'S-003', name: 'Legrand NCR Distribution', city: 'Gurugram', outstanding: 0 },
 ];
 
 export const demoLedger = [
@@ -21,14 +21,14 @@ export const demoLedger = [
 
 export const demoWarehouses = {
   warehouses: [
-    { id: 'WH-DEL', name: 'Delhi Central', city: 'Delhi', stock: 580, reserved: 64 },
-    { id: 'WH-NOI', name: 'Noida Hub', city: 'Noida', stock: 220, reserved: 22 },
-    { id: 'WH-GGN', name: 'Gurugram Depot', city: 'Gurugram', stock: 145, reserved: 18 },
+    { pk: 1, id: 'WH-DEL', name: 'Delhi Central', city: 'Delhi', stock: 580, reserved: 64 },
+    { pk: 2, id: 'WH-NOI', name: 'Noida Hub', city: 'Noida', stock: 220, reserved: 22 },
+    { pk: 3, id: 'WH-GGN', name: 'Gurugram Depot', city: 'Gurugram', stock: 145, reserved: 18 },
   ],
   transfers: [
-    { id: 'TR-2026-031', from: 'Delhi Central', to: 'Noida Hub', status: 'In Transit', date: '21 Sep', units: 50 },
-    { id: 'TR-2026-030', from: 'Delhi Central', to: 'Gurugram Depot', status: 'Received', date: '20 Sep', units: 34 },
-    { id: 'TR-2026-029', from: 'Noida Hub', to: 'Delhi Central', status: 'Draft', date: '20 Sep', units: 18 },
+    { pk: 1, id: 'TR-2026-031', from: 'Delhi Central', to: 'Noida Hub', status: 'In Transit', date: '21 Sep', units: 50 },
+    { pk: 2, id: 'TR-2026-030', from: 'Delhi Central', to: 'Gurugram Depot', status: 'Received', date: '20 Sep', units: 34 },
+    { pk: 3, id: 'TR-2026-029', from: 'Noida Hub', to: 'Delhi Central', status: 'Draft', date: '20 Sep', units: 18 },
   ],
 };
 

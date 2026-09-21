@@ -7,11 +7,11 @@ export const demoAccounts = [
 ];
 
 export const permissions = {
-  OWNER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'tax', 'pricing', 'returns', 'field-sales', 'insights', 'quotations', 'payments', 'reports', 'team', 'settings'],
-  MANAGER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'tax', 'pricing', 'returns', 'field-sales', 'insights', 'quotations', 'payments', 'reports'],
+  OWNER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'tax', 'pricing', 'returns', 'field-sales', 'insights', 'quotations', 'payments', 'reports', 'team', 'settings', 'audit'],
+  MANAGER: ['dashboard', 'products', 'inventory', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'warehouses', 'barcode', 'whatsapp', 'tax', 'pricing', 'returns', 'field-sales', 'insights', 'quotations', 'payments', 'reports', 'audit'],
   SALES: ['dashboard', 'customers', 'orders', 'invoices', 'ledger', 'whatsapp', 'tax', 'pricing', 'field-sales', 'quotations', 'payments'],
   WAREHOUSE: ['dashboard', 'products', 'inventory', 'orders', 'purchases', 'warehouses', 'barcode', 'returns', 'insights'],
-  ACCOUNTANT: ['dashboard', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'tax', 'returns', 'insights', 'payments', 'reports'],
+  ACCOUNTANT: ['dashboard', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'tax', 'returns', 'insights', 'payments', 'reports', 'audit'],
 };
 
 export const roleHomeCopy = {
@@ -32,10 +32,10 @@ export const demoDashboard = {
     lowStock: 8,
   },
   recentOrders: [
-    { id: 'SO-1097', customer: 'R.K. Trading Co.', total: 58240, status: 'Ready', payment: 'Credit', date: '21 Sep' },
-    { id: 'SO-1096', customer: 'Metro Electricals', total: 38400, status: 'Processing', payment: 'Overdue', date: '21 Sep' },
-    { id: 'SO-1095', customer: 'Ahuja Enterprises', total: 76120, status: 'Packed', payment: 'Paid', date: '20 Sep' },
-    { id: 'SO-1094', customer: 'NCR Buildmart', total: 29480, status: 'Dispatched', payment: 'Credit', date: '20 Sep' },
+    { pk: 1, id: 'SO-1097', customer: 'R.K. Trading Co.', total: 58240, status: 'Ready', payment: 'Credit', date: '21 Sep' },
+    { pk: 2, id: 'SO-1096', customer: 'Metro Electricals', total: 38400, status: 'Processing', payment: 'Overdue', date: '21 Sep' },
+    { pk: 3, id: 'SO-1095', customer: 'Ahuja Enterprises', total: 76120, status: 'Packed', payment: 'Paid', date: '20 Sep' },
+    { pk: 4, id: 'SO-1094', customer: 'NCR Buildmart', total: 29480, status: 'Dispatched', payment: 'Credit', date: '20 Sep' },
   ],
   activity: [
     { title: 'Payment received', text: '₹24,000 from Ahuja Enterprises', time: '22 min ago', tone: 'success' },
@@ -45,24 +45,24 @@ export const demoDashboard = {
 };
 
 export const demoProducts = [
-  { sku: 'PC-25-RD', name: 'Polycab 2.5mm Wire Red', category: 'Wires & Cables', stock: 7, unit: 'coil', buy: 1820, sell: 2040, reorder: 12, location: 'A-01' },
-  { sku: 'HA-LED-12', name: 'Havells 12W LED Bulb', category: 'Lighting', stock: 86, unit: 'pcs', buy: 118, sell: 145, reorder: 30, location: 'B-07' },
-  { sku: 'AN-MCB-32', name: 'Anchor 32A DP MCB', category: 'Switchgear', stock: 24, unit: 'pcs', buy: 412, sell: 495, reorder: 20, location: 'C-11' },
-  { sku: 'GM-PLT-8', name: 'GM 8 Module Plate', category: 'Switches', stock: 12, unit: 'pcs', buy: 176, sell: 225, reorder: 15, location: 'D-04' },
-  { sku: 'RR-4SQ-BK', name: 'RR Kabel 4 sq mm Black', category: 'Wires & Cables', stock: 18, unit: 'coil', buy: 2960, sell: 3290, reorder: 10, location: 'A-04' },
-  { sku: 'LE-FAN-48', name: 'Legrand Exhaust Fan 48W', category: 'Fans', stock: 9, unit: 'pcs', buy: 1780, sell: 2140, reorder: 8, location: 'E-02' },
+  { id: 1, sku: 'PC-25-RD', name: 'Polycab 2.5mm Wire Red', category: 'Wires & Cables', stock: 7, unit: 'coil', buy: 1820, sell: 2040, reorder: 12, location: 'A-01' },
+  { id: 2, sku: 'HA-LED-12', name: 'Havells 12W LED Bulb', category: 'Lighting', stock: 86, unit: 'pcs', buy: 118, sell: 145, reorder: 30, location: 'B-07' },
+  { id: 3, sku: 'AN-MCB-32', name: 'Anchor 32A DP MCB', category: 'Switchgear', stock: 24, unit: 'pcs', buy: 412, sell: 495, reorder: 20, location: 'C-11' },
+  { id: 4, sku: 'GM-PLT-8', name: 'GM 8 Module Plate', category: 'Switches', stock: 12, unit: 'pcs', buy: 176, sell: 225, reorder: 15, location: 'D-04' },
+  { id: 5, sku: 'RR-4SQ-BK', name: 'RR Kabel 4 sq mm Black', category: 'Wires & Cables', stock: 18, unit: 'coil', buy: 2960, sell: 3290, reorder: 10, location: 'A-04' },
+  { id: 6, sku: 'LE-FAN-48', name: 'Legrand Exhaust Fan 48W', category: 'Fans', stock: 9, unit: 'pcs', buy: 1780, sell: 2140, reorder: 8, location: 'E-02' },
 ];
 
 export const demoCustomers = [
-  { id: 'C-101', name: 'R.K. Trading Co.', city: 'Ghaziabad', phone: '9810012233', outstanding: 58240, limit: 150000, due: '28 Sep', status: 'Current' },
-  { id: 'C-102', name: 'Metro Electricals', city: 'Noida', phone: '9871123456', outstanding: 38400, limit: 100000, due: '09 Sep', status: 'Overdue' },
-  { id: 'C-103', name: 'Ahuja Enterprises', city: 'Delhi', phone: '9899011122', outstanding: 0, limit: 200000, due: '—', status: 'Clear' },
-  { id: 'C-104', name: 'NCR Buildmart', city: 'Gurugram', phone: '9958012211', outstanding: 76750, limit: 250000, due: '25 Sep', status: 'Current' },
-  { id: 'C-105', name: 'Sethi Hardware House', city: 'Faridabad', phone: '9818817717', outstanding: 124600, limit: 180000, due: '18 Sep', status: 'Overdue' },
+  { pk: 1, id: 'C-101', name: 'R.K. Trading Co.', city: 'Ghaziabad', phone: '9810012233', outstanding: 58240, limit: 150000, due: '28 Sep', status: 'Current' },
+  { pk: 2, id: 'C-102', name: 'Metro Electricals', city: 'Noida', phone: '9871123456', outstanding: 38400, limit: 100000, due: '09 Sep', status: 'Overdue' },
+  { pk: 3, id: 'C-103', name: 'Ahuja Enterprises', city: 'Delhi', phone: '9899011122', outstanding: 0, limit: 200000, due: '—', status: 'Clear' },
+  { pk: 4, id: 'C-104', name: 'NCR Buildmart', city: 'Gurugram', phone: '9958012211', outstanding: 76750, limit: 250000, due: '25 Sep', status: 'Current' },
+  { pk: 5, id: 'C-105', name: 'Sethi Hardware House', city: 'Faridabad', phone: '9818817717', outstanding: 124600, limit: 180000, due: '18 Sep', status: 'Overdue' },
 ];
 
 export const demoInvoices = [
-  { id: 'INV-2026-1184', order: 'SO-1097', customer: 'R.K. Trading Co.', gstin: '09AABCR1234A1Z5', taxable: 49356, tax: 8884, total: 58240, status: 'Unpaid', date: '21 Sep' },
-  { id: 'INV-2026-1183', order: 'SO-1095', customer: 'Ahuja Enterprises', gstin: '07AAECA3344M1Z2', taxable: 64508, tax: 11612, total: 76120, status: 'Paid', date: '20 Sep' },
-  { id: 'INV-2026-1182', order: 'SO-1094', customer: 'NCR Buildmart', gstin: '06AAGFN7788B1Z9', taxable: 24983, tax: 4497, total: 29480, status: 'Credit', date: '20 Sep' },
+  { pk: 1, id: 'INV-2026-1184', order: 'SO-1097', customer: 'R.K. Trading Co.', gstin: '09AABCR1234A1Z5', taxable: 49356, tax: 8884, total: 58240, status: 'Unpaid', date: '21 Sep' },
+  { pk: 2, id: 'INV-2026-1183', order: 'SO-1095', customer: 'Ahuja Enterprises', gstin: '07AAECA3344M1Z2', taxable: 64508, tax: 11612, total: 76120, status: 'Paid', date: '20 Sep' },
+  { pk: 3, id: 'INV-2026-1182', order: 'SO-1094', customer: 'NCR Buildmart', gstin: '06AAGFN7788B1Z9', taxable: 24983, tax: 4497, total: 29480, status: 'Credit', date: '20 Sep' },
 ];
