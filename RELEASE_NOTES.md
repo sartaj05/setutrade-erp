@@ -41,3 +41,7 @@ A source ZIP must never contain live vendor secrets. The following integrations 
 Python source compilation, shell-script syntax and Git whitespace/conflict checks were run in the packaging environment. The packaging environment cannot reach PyPI or npm, so a clean dependency installation and runtime test/build could not be executed locally. `.github/workflows/ci.yml` performs Django checks/migrations/tests and the React production build on GitHub runners.
 
 Before using real client data, require a green CI run and complete the UAT checklist in `CLIENT_HANDOFF.md`.
+
+## Growth v2 phases
+
+This release adds the B2B customer portal, delivery/e-POD, approval workflows, purchase invoice OCR review, accounting exports, offline/PWA sync, SaaS subscription billing, advanced demand forecasting, a data-grounded business assistant, and an Expo-based Android/iOS client.
