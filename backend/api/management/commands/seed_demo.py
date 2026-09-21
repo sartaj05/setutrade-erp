@@ -1,8 +1,10 @@
 from datetime import date
+import hashlib
 from decimal import Decimal
 from django.contrib.auth.models import User
 from django.contrib.auth.hashers import make_password
 from django.core.management.base import BaseCommand
+from django.utils import timezone
 from api.models import (
     ApprovalPolicy, Branch, Company, Customer, CustomerPortalAccess, DeliveryRun, DeliveryStop, Invoice, InventoryMovement, LedgerEntry, Notification,
     Order, OrderItem, Payment, PriceList, PriceRule, Product, Profile, PurchaseItem,
@@ -15,6 +17,9 @@ from api.models import (
     PaymentPromise, CollectionTask, PaymentTransaction, PaymentLink, CollectionReminder, ReceivableFinanceExport,
     WarehouseBin, BinStock, PickList, PickListItem, PickWave, PackingSlip, CycleCount, SupplierPortalAccess, SupplierPortalSubmission,
     AutomationRule, AutomationRun, ExternalChannel, ExternalOrder, ExternalOrderItem, DistributionNetwork, NetworkMember, NetworkSnapshot,
+    CRMLead, CRMActivity, ManufacturerScheme, SchemeClaim, GSTReconciliationItem, VendorScorecard, ProcurementRecommendation,
+    FleetVehicle, RoutePlan, RoutePlanStop, CustomerCreditScore, FinanceApplication, UserMFASetting, TrustedDevice, SecurityEvent, PrivacyRequest, ConsentRecord,
+    IntegrationConnector, DeveloperApiKey, WebhookSubscription, IntegrationDelivery, ProfitabilitySnapshot, CopilotActionProposal,
 )
 
 ACCOUNTS = [
@@ -190,5 +195,43 @@ class Command(BaseCommand):
         partner_member,_=NetworkMember.objects.update_or_create(network=network,company=demo_partner,defaults={'region':'Uttar Pradesh','territory':'Noida','share_inventory':True,'share_secondary_sales':True})
         NetworkSnapshot.objects.update_or_create(network=network,member=owner_member,snapshot_date=date(2026,9,21),defaults={'inventory_value':3184500,'stock_units':156,'secondary_sales':4286400,'open_orders':34,'product_summary':[]})
         NetworkSnapshot.objects.update_or_create(network=network,member=partner_member,snapshot_date=date(2026,9,21),defaults={'inventory_value':1684200,'stock_units':98,'secondary_sales':2248000,'open_orders':17,'product_summary':[]})
+
+        # Growth v4 demo data: CRM, schemes, GST reconciliation, procurement, fleet, credit, security, integrations, BI and copilot.
+        lead,_=CRMLead.objects.update_or_create(company=company,lead_no='LEAD-2609-041',defaults={'name':'Sanjay Verma','business_name':'Verma Electrical House','phone':'9810099001','source':'Referral','territory':'West Delhi','status':'Negotiation','estimated_value':185000,'expected_close':date(2026,9,28),'owner':users['SALES']})
+        CRMActivity.objects.get_or_create(company=company,lead=lead,activity_type='Meeting',note='Commercial terms reviewed; revised quotation requested.',defaults={'next_follow_up':timezone.now()+__import__('datetime').timedelta(days=2),'created_by':users['SALES']})
+        lead2,_=CRMLead.objects.update_or_create(company=company,lead_no='LEAD-2609-042',defaults={'name':'Pooja Jain','business_name':'Jain Buildmart','phone':'9810099002','source':'Website','territory':'Noida','status':'Quoted','estimated_value':242000,'expected_close':date(2026,10,3),'owner':users['SALES']})
+
+        scheme,_=ManufacturerScheme.objects.update_or_create(company=company,supplier=suppliers['S-001'],name='Q3 Electrical Growth Rebate',defaults={'scheme_type':'Rebate','start_date':date(2026,7,1),'end_date':date(2026,9,30),'target_value':5000000,'rebate_percent':Decimal('1.50'),'rules':{'basis':'purchase_value'}})
+        SchemeClaim.objects.update_or_create(company=company,scheme=scheme,claim_no='CLM-2609-014',defaults={'period_from':date(2026,7,1),'period_to':date(2026,9,30),'eligible_value':4280000,'claim_amount':64200,'status':'Accrued','evidence':['purchase-register:q3']})
+
+        GSTReconciliationItem.objects.update_or_create(company=company,invoice_no='SUP-8847',source='IMS',defaults={'supplier':suppliers['S-001'],'invoice_date':date(2026,9,20),'gstin':'07AAACP0001A1Z1','books_taxable':134444,'books_tax':24200,'portal_taxable':121111,'portal_tax':21800,'difference':2400,'status':'Mismatch'})
+        GSTReconciliationItem.objects.update_or_create(company=company,invoice_no='SUP-8744',source='IMS',defaults={'supplier':suppliers['S-002'],'invoice_date':date(2026,9,18),'gstin':'07AAACP0001A1Z1','books_taxable':102444,'books_tax':18440,'portal_taxable':102444,'portal_tax':18440,'difference':0,'status':'Matched'})
+
+        score,_=VendorScorecard.objects.update_or_create(company=company,supplier=suppliers['S-001'],defaults={'price_score':90,'fill_rate':96,'on_time_rate':95,'quality_score':98,'payment_term_score':84,'overall_score':94,'avg_lead_days':4})
+        VendorScorecard.objects.update_or_create(company=company,supplier=suppliers['S-002'],defaults={'price_score':88,'fill_rate':91,'on_time_rate':86,'quality_score':97,'payment_term_score':82,'overall_score':88,'avg_lead_days':6})
+        ProcurementRecommendation.objects.update_or_create(company=company,product=products['PC-25-RD'],supplier=suppliers['S-001'],defaults={'recommended_qty':50,'expected_unit_cost':1820,'expected_lead_days':4,'reason':'Low days cover; supplier has strong reliability score.','status':'Open'})
+
+        vehicle,_=FleetVehicle.objects.update_or_create(company=company,vehicle_no='DL1LAB4421',defaults={'vehicle_type':'LCV','capacity_kg':1400,'driver_name':'Vikas Kumar','driver_phone':'9810007788','cost_per_km':18,'is_active':True})
+        route,_=RoutePlan.objects.update_or_create(route_no='ROUTE-260921-07',defaults={'company':company,'vehicle':vehicle,'warehouse':warehouses['WH-DEL'],'route_date':date(2026,9,21),'status':'Released','estimated_km':68,'estimated_cost':1224,'optimization_score':93,'created_by':users['MANAGER']})
+        for seq,no,km in [(1,'SO-1097',16),(2,'SO-1096',14)]: RoutePlanStop.objects.update_or_create(route=route,order=orders[no],defaults={'sequence':seq,'area':orders[no].customer.city,'delivery_window':'10:00-18:00','estimated_km_from_previous':km,'estimated_minutes':35,'priority':2})
+
+        CustomerCreditScore.objects.update_or_create(company=company,customer=customers['C-101'],defaults={'score':82,'risk_band':'Low','avg_payment_delay_days':4,'overdue_90':0,'utilisation_percent':Decimal('38.83'),'suggested_limit':172500,'factors':{'paymentHistory':'stable','creditUtilisation':38.83}})
+        CustomerCreditScore.objects.update_or_create(company=company,customer=customers['C-105'],defaults={'score':43,'risk_band':'High','avg_payment_delay_days':26,'overdue_90':78000,'utilisation_percent':Decimal('69.22'),'suggested_limit':135000,'factors':{'paymentHistory':'late','overdueAmount':78000}})
+        FinanceApplication.objects.update_or_create(company=company,application_no='FIN-260921-03',defaults={'customer':customers['C-105'],'finance_type':'Receivable Finance','requested_amount':220000,'status':'Ready','provider':'TReDS-ready export','payload':{'note':'Provider onboarding required'},'created_by':users['ACCOUNTANT']})
+
+        UserMFASetting.objects.update_or_create(user=users['OWNER'],defaults={'company':company,'method':'TOTP','secret_hash':hashlib.sha256(b'demo-not-a-real-secret').hexdigest(),'is_enabled':True,'enabled_at':timezone.now()})
+        TrustedDevice.objects.update_or_create(company=company,user=users['OWNER'],device_id='office-chrome-demo',defaults={'device_name':'Chrome - Windows Office','fingerprint_hash':hashlib.sha256(b'office-chrome-demo').hexdigest(),'last_ip':'10.0.0.24','trusted':True})
+        SecurityEvent.objects.get_or_create(company=company,user=None,event_type='FAILED_LOGIN_BURST',severity='Critical',defaults={'ip_address':'203.0.113.44','detail':{'attempts':7,'windowMinutes':10}})
+        PrivacyRequest.objects.update_or_create(company=company,request_no='PRIV-2609-004',defaults={'subject_name':'Demo customer contact','subject_email':'privacy@example.com','request_type':'Export','status':'Processing','due_date':date(2026,10,10),'note':'Demo data export workflow'})
+        ConsentRecord.objects.get_or_create(company=company,subject_key='dealer@setustock.demo',purpose='Order and payment notifications',defaults={'granted':True,'source':'Dealer Portal'})
+
+        IntegrationConnector.objects.update_or_create(company=company,provider='WHATSAPP',name='Meta Business Messaging',defaults={'status':'Connected','config':{'credentialMode':'environment'},'last_sync_at':timezone.now()})
+        IntegrationConnector.objects.update_or_create(company=company,provider='TALLY',name='Finance Export Bridge',defaults={'status':'Connected','config':{'mode':'file-export'},'last_sync_at':timezone.now()})
+        raw_demo_key='ssk_demo_public_order_key'; DeveloperApiKey.objects.update_or_create(key_hash=hashlib.sha256(raw_demo_key.encode()).hexdigest(),defaults={'company':company,'name':'Demo website','key_prefix':raw_demo_key[:12],'scopes':['orders:write'],'created_by':users['OWNER']})
+        hook,_=WebhookSubscription.objects.update_or_create(company=company,event='order.created',target_url='https://client.example/webhooks/orders',defaults={'signing_secret_hash':hashlib.sha256(b'demo-webhook-secret').hexdigest(),'is_active':True})
+        IntegrationDelivery.objects.get_or_create(company=company,webhook=hook,event='order.created',defaults={'status':'Delivered','attempt_count':1,'payload':{'externalId':'WEB-44182'}})
+
+        ProfitabilitySnapshot.objects.update_or_create(company=company,dimension='Customer',entity_key=str(customers['C-101'].id),period_from=date(2026,9,1),period_to=date(2026,9,21),defaults={'entity_name':customers['C-101'].name,'revenue':842000,'cogs':694000,'gross_profit':148000,'discounts':21400,'returns':8900,'delivery_cost':18200,'finance_cost':4200,'contribution_profit':95300,'margin_percent':Decimal('11.32')})
+        CopilotActionProposal.objects.update_or_create(company=company,requested_by=users['OWNER'],title='Create collection tasks for outstanding customers',defaults={'action_type':'CREATE_COLLECTION_TASKS','rationale':'Demo proposal; owner or manager must approve before execution.','payload':{'customerIds':[customers['C-101'].id,customers['C-105'].id]},'risk_level':'Medium','requires_approval':True,'status':'Proposed'})
 
         self.stdout.write(self.style.SUCCESS('SetuStock production-style demo data created.'))
