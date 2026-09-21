@@ -1,14 +1,13 @@
 from django.contrib import admin
 from .models import (
-    BarcodeScanLog, Customer, GoodsReceipt, Invoice, LedgerEntry, Order, PriceList, PriceRule,
-    Product, Profile, PurchaseItem, PurchaseOrder, ReorderSuggestion, ReturnItem, ReturnOrder,
-    SalesTarget, SalesVisit, StockAdjustment, StockBalance, StockTransfer, StockTransferItem,
-    Supplier, TaxNote, Warehouse, WhatsAppMessage, WhatsAppOrderDraft,
+    Attachment, AuditLog, Branch, Company, Customer, GoodsReceipt, InventoryMovement,
+    Invoice, Notification, Order, OrderItem, Payment, Product, Profile, PurchaseOrder,
+    Quotation, StockBalance, StockTransfer, Supplier, SupplierPayment, Warehouse,
 )
 
-admin.site.register([
-    Profile, Product, Customer, Order, Invoice, Supplier, PurchaseOrder, PurchaseItem, GoodsReceipt,
-    LedgerEntry, Warehouse, StockBalance, StockTransfer, StockTransferItem, BarcodeScanLog,
-    WhatsAppMessage, WhatsAppOrderDraft, TaxNote, PriceList, PriceRule, StockAdjustment, ReturnOrder,
-    ReturnItem, SalesVisit, SalesTarget, ReorderSuggestion,
-])
+for model in [
+    Company, Branch, Profile, Product, Customer, Supplier, Warehouse, StockBalance,
+    Order, OrderItem, Invoice, Quotation, PurchaseOrder, GoodsReceipt, Payment,
+    SupplierPayment, StockTransfer, InventoryMovement, AuditLog, Notification, Attachment,
+]:
+    admin.site.register(model)
