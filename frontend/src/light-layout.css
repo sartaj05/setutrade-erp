@@ -186,3 +186,58 @@ table td { border-color: #e8edf4; }
   .sidebar-bottom { display: none; }
   .app-content { padding: 24px 16px 44px; }
 }
+
+/* Readability and finishing pass for the light landing experience */
+.landing-v2 {
+  background:
+    linear-gradient(rgba(55,101,210,.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(55,101,210,.025) 1px, transparent 1px),
+    var(--app-paper);
+  background-size: 64px 64px;
+}
+.landing-v2-nav { background: rgba(244,246,251,.9); }
+.landing-v2-nav nav a { color: #50617b; font-weight: 650; }
+.landing-v2-nav nav a:hover { color: var(--app-cobalt); }
+.v2-kicker { color: #52627a; }
+.v2-kicker span { color: #66992e; }
+.v2-kicker b { color: #40516d; }
+.v2-hero-sub { color: #52617a; }
+.v2-text-btn { color: var(--app-blue); border-bottom-color: #8fa4c4; }
+.v2-text-btn span { color: var(--app-cobalt); }
+.v2-proof-row span { color: #52617a; }
+.v2-proof-row b { color: var(--app-blue); }
+.v2-section-intro p, .v2-workflow-copy p, .v2-roles-head p { color: #52617a; }
+.v2-marquee { color: #52617a; background: rgba(255,255,255,.36); }
+.v2-marquee i { color: #79a83b; }
+.v2-stage-heading h2, .v2-stage-metric strong, .v2-chart-head span, .v2-attention span strong { color: #172846; }
+.v2-stage-heading small, .v2-stage-metric small, .v2-stage-metric em, .v2-chart-head b, .v2-attention span small { color: #687991; }
+.v2-chart-labels { color: #687991; }
+.v2-float-card span, .v2-float-card em { color: #687991; }
+.v2-signal-card { transition: transform .22s ease, box-shadow .22s ease, border-color .22s ease; }
+.v2-signal-card:hover { transform: translateY(-6px); border-color: #b9c9e2; box-shadow: 0 20px 38px rgba(40,66,120,.12); }
+.v2-signal-card h3 { color: #172846; }
+.signal-01 h3, .signal-01 p, .signal-01 > span { color: #27405f; }
+.signal-02 h3, .signal-02 p, .signal-02 > span { color: #553f3a; }
+.signal-03 h3, .signal-03 p, .signal-03 > span { color: #27405f; }
+.v2-loop-step strong { color: #172846; }
+.v2-loop-step small { color: #687991; }
+.v2-role-strip > div { transition: background .22s ease, box-shadow .22s ease; }
+.v2-role-strip > div:not(.active):hover { background: #eaf1ff; box-shadow: inset 0 -3px 0 var(--app-cobalt); }
+.v2-role-strip .active { box-shadow: inset 0 -4px 0 #cafa75; }
+.v2-cta .v2-kicker b { color: #6d3228; }
+.v2-cta h2 { color: #40251e; }
+.v2-btn-light { border: 1px solid rgba(64,37,30,.12); }
+
+/* Give content panels a clearer hierarchy across signed-in screens. */
+.module-header { margin-bottom: 28px; }
+.module-header h1 { letter-spacing: -.035em; }
+.stat-card, .module-panel, .panel, .card { border-radius: 16px; }
+.stat-card:hover, .module-panel:hover { border-color: #bfd0ea; box-shadow: 0 14px 34px rgba(40,66,120,.08); }
+.app-topbar { box-shadow: 0 5px 20px rgba(40,66,120,.04); }
+
+@media (max-width: 720px) {
+  .v2-hero-sub { font-size: 15px; line-height: 1.65; }
+  .v2-hero h1 { letter-spacing: -.065em; }
+  .v2-proof-row { padding-top: 15px; }
+  .v2-section-intro h2, .v2-workflow h2, .v2-roles h2 { letter-spacing: -.055em; }
+}
