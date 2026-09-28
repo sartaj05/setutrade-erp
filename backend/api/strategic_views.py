@@ -77,6 +77,69 @@ def schemes(request):
 @csrf_exempt
 @require_http_methods(['GET','POST'])
 @api_auth_required
+def payment_risk(request):
+    denied=_guard(request,['OWNER','MANAGER','ACCOUNTANT'])
+    if denied:return denied
+    company=request.company
+
+    def evaluate(amount, method, customer=None, reference='', payload=None, duplicate=False):
+        amount=Decimal(str(amount or 0)); payload=payload if isinstance(payload,dict) else {}
+        reasons=[]; score=0
+        if amount >= Decimal('100000'):
+            score += 25; reasons.append('High-value payment needs review.')
+        if method.upper() == 'UPI' and amount >= Decimal('50000'):
+            score += 15; reasons.append('Large UPI payment requires confirmation.')
+        if duplicate:
+            score += 45; reasons.append('Similar customer payment was received recently.')
+        if customer and customer.credit_limit and customer.outstanding > customer.credit_limit:
+            score += 20; reasons.append('Customer is already above the configured credit limit.')
+        if payload.get('invoiceId') and payload.get('invoiceAmount') and abs(Decimal(str(payload.get('invoiceAmount'))) - amount) > Decimal('0.01'):
+            score += 35; reasons.append('Gateway amount does not match the invoice amount.')
+        if payload.get('deviceRisk') in ['high','blocked']:
+            score += 40; reasons.append('Gateway marked the device or session as high risk.')
+        return {'score':min(score,100),'level':'critical' if score >= 60 else ('warning' if score >= 25 else 'clear'),'reasons':reasons or ['No risk signal detected.']}
+
+    if request.method=='GET':
+        rows=list(m.PaymentTransaction.objects.filter(company=company).select_related('customer').order_by('-created_at')[:100])
+        keys={}
+        for row in rows:
+            key=(row.customer_id, str(row.amount), row.method.upper(), row.transaction_date.isoformat())
+            keys[key]=keys.get(key,0)+1
+        items=[]
+        for row in rows:
+            payload=row.raw_payload if isinstance(row.raw_payload,dict) else {}
+            key=(row.customer_id, str(row.amount), row.method.upper(), row.transaction_date.isoformat())
+            result=evaluate(row.amount,row.method,row.customer,row.reference,payload,keys[key]>1)
+            state=payload.get('riskState','Open')
+            if state=='Held': result['level']='critical'; result['reasons']=['Payment is held for manual review.']+result['reasons']
+            elif state=='Cleared': result['level']='clear'; result['reasons']=['Risk review cleared this payment.']
+            items.append({'id':row.id,'reference':row.reference,'customer':row.customer.name,'amount':_money(row.amount),'method':row.method,'date':row.transaction_date.isoformat(),'status':row.status,'riskStatus':state,'riskLevel':result['level'],'riskScore':result['score'],'reasons':result['reasons']})
+        return JsonResponse({'summary':{'openRisks':sum(1 for x in items if x['riskLevel']!='clear' and x['riskStatus']!='Cleared'),'held':sum(1 for x in items if x['riskStatus']=='Held'),'unmatched':sum(1 for x in items if x['status']=='Unmatched'),'highValue':sum(1 for x in items if x['amount']>=100000),'duplicatePatterns':sum(1 for x in items if any('Similar customer payment' in reason for reason in x['reasons']))},'transactions':items})
+
+    data=_body(request); action=data.get('action','evaluate')
+    if action in ['evaluate','simulate']:
+        customer=m.Customer.objects.filter(company=company,pk=data.get('customerId')).first() if data.get('customerId') else None
+        try: amount=Decimal(str(data.get('amount') or 0))
+        except (TypeError, ValueError): return JsonResponse({'detail':'Amount must be numeric.'},status=400)
+        if amount<=0:return JsonResponse({'detail':'Amount must be greater than zero.'},status=400)
+        duplicate=m.PaymentTransaction.objects.filter(company=company,customer=customer,amount=amount,method=data.get('method','UPI'),transaction_date=data.get('date') or timezone.localdate()).exists() if customer else False
+        result=evaluate(amount,data.get('method','UPI'),customer,data.get('reference',''),data,duplicate)
+        if action=='evaluate' and result['level']!='clear': notify(company,'Payment risk review required',f"{data.get('reference') or 'Payment'} scored {result['score']}/100.",'critical' if result['level']=='critical' else 'warning','payments',data.get('reference',''))
+        return JsonResponse({'reference':data.get('reference',''),'amount':_money(amount),**result})
+    if action in ['hold','release']:
+        row=m.PaymentTransaction.objects.filter(company=company,pk=data.get('transactionId')).first()
+        if not row:return JsonResponse({'detail':'Payment transaction not found.'},status=404)
+        payload=row.raw_payload if isinstance(row.raw_payload,dict) else {}
+        payload['riskState']='Held' if action=='hold' else 'Cleared'; payload['riskReviewedAt']=timezone.now().isoformat(); payload['riskReviewedBy']=request.api_user.email
+        row.raw_payload=payload; row.save(update_fields=['raw_payload'])
+        audit(request,'UPDATE','PaymentTransaction',row.id,f"{'Held' if action=='hold' else 'Cleared'} payment {row.reference}",{'riskState':payload['riskState']})
+        notify(company,'Payment risk status updated',f"{row.reference} is now {payload['riskState'].lower()}.",'warning' if action=='hold' else 'success','payments',row.id)
+        return JsonResponse({'id':row.id,'riskStatus':payload['riskState']})
+    return JsonResponse({'detail':'Unsupported payment-risk action.'},status=400)
+
+@csrf_exempt
+@require_http_methods(['GET','POST'])
+@api_auth_required
 def gst_cockpit(request):
     denied=_guard(request,['OWNER','MANAGER','ACCOUNTANT'])
     if denied:return denied

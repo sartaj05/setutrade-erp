@@ -78,6 +78,7 @@ urlpatterns = [
     path('distribution-networks/', expansion_views.distribution_networks),
     path('crm/', strategic_views.crm),
     path('schemes/', strategic_views.schemes),
+    path('payment-risk/', strategic_views.payment_risk),
     path('gst-cockpit/', strategic_views.gst_cockpit),
     path('procurement-intelligence/', strategic_views.procurement_intelligence),
     path('fleet-routes/', strategic_views.fleet_routes),
