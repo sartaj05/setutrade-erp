@@ -728,6 +728,51 @@ def payment_webhook(request, provider):
 
 
 @csrf_exempt
+@require_http_methods(['GET', 'POST'])
+@api_auth_required
+def payment_reconciliation(request):
+    """Review gateway receipts and manually allocate unapplied money safely."""
+    company = request.company
+    if request.method == 'POST':
+        body = _json_body(request) or {}
+        if body.get('action') != 'allocate':
+            return JsonResponse({'detail': 'Use action=allocate.'}, status=400)
+        txn = PaymentTransaction.objects.filter(company=company, pk=body.get('transactionId')).select_related('customer').first()
+        invoice = Invoice.objects.filter(company=company, pk=body.get('invoiceId'), order__customer=txn.customer if txn else None).first() if txn else None
+        amount = decimal(body.get('amount'), '0')
+        if not txn or not invoice or amount <= 0:
+            return JsonResponse({'detail': 'A valid transaction, matching customer invoice and positive amount are required.'}, status=400)
+        with transaction.atomic():
+            already = txn.allocations.aggregate(v=Sum('amount'))['v'] or Decimal('0')
+            if already + amount > txn.amount:
+                return JsonResponse({'detail': 'Allocation exceeds the unapplied transaction amount.'}, status=400)
+            due = invoice.total - (invoice.payment_allocations.aggregate(v=Sum('amount'))['v'] or Decimal('0'))
+            if amount > due:
+                return JsonResponse({'detail': 'Allocation exceeds the invoice balance.'}, status=400)
+            PaymentAllocation.objects.create(transaction=txn, invoice=invoice, amount=amount)
+            allocated = txn.allocations.aggregate(v=Sum('amount'))['v'] or Decimal('0')
+            txn.status = PaymentTransaction.Status.MATCHED if allocated >= txn.amount else PaymentTransaction.Status.PARTIAL
+            txn.save(update_fields=['status'])
+            invoice.status = Invoice.Status.PAID if due <= amount else Invoice.Status.PARTIAL
+            invoice.save(update_fields=['status', 'updated_at'])
+            Payment.objects.create(company=company, receipt_no=_next_no('RCPT'), customer=txn.customer, invoice=invoice, amount=amount, method='UPI' if txn.method.upper() == 'UPI' else Payment.Method.OTHER, reference=txn.reference, payment_date=txn.transaction_date, notes='Manual payment reconciliation', recorded_by=request.api_user)
+            txn.customer.outstanding = max(Decimal('0'), txn.customer.outstanding - amount)
+            txn.customer.save(update_fields=['outstanding'])
+        return JsonResponse({'ok': True, 'status': txn.status, 'allocated': float(amount)})
+
+    rows = PaymentTransaction.objects.filter(company=company).select_related('customer').prefetch_related('allocations__invoice').order_by('-created_at')[:100]
+    summary = {
+        'transactions': PaymentTransaction.objects.filter(company=company).count(),
+        'matched': PaymentTransaction.objects.filter(company=company, status='Matched').count(),
+        'partial': PaymentTransaction.objects.filter(company=company, status='Partial').count(),
+        'unmatched': PaymentTransaction.objects.filter(company=company, status='Unmatched').count(),
+        'received': float(PaymentTransaction.objects.filter(company=company).aggregate(v=Sum('amount'))['v'] or 0),
+        'unapplied': float(sum((x.amount - (x.allocations.aggregate(v=Sum('amount'))['v'] or Decimal('0')) for x in rows), Decimal('0'))),
+    }
+    return JsonResponse({'summary': summary, 'transactions': [{'id': x.id, 'reference': x.reference, 'customer': x.customer.name, 'amount': float(x.amount), 'allocated': float(x.allocations.aggregate(v=Sum('amount'))['v'] or 0), 'unapplied': float(x.amount - (x.allocations.aggregate(v=Sum('amount'))['v'] or 0)), 'method': x.method, 'date': x.transaction_date.isoformat(), 'status': x.status, 'invoices': [{'id': a.invoice_id, 'invoice': a.invoice.invoice_no, 'amount': float(a.amount)} for a in x.allocations.all()]} for x in rows]})
+
+
+@csrf_exempt
 @require_http_methods(['GET','POST'])
 @roles_allowed('OWNER','MANAGER','WAREHOUSE','ACCOUNTANT','SALES')
 def warehouses(request):

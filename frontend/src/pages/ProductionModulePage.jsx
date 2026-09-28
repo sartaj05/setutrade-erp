@@ -1,7 +1,7 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { useApiData } from '../services/useApiData';
-import { apiRequest, createApiResource, downloadCsv, importCsv, patchApiResource, postApiAction, uploadAttachment } from '../services/api';
+import { apiRequest, createApiResource, downloadCsv, getApiResource, importCsv, patchApiResource, postApiAction, uploadAttachment } from '../services/api';
 import { demoCustomers, demoDashboard, demoInvoices, demoProducts } from '../data/demoData';
 import { demoPurchases, demoSuppliers, demoWarehouses } from '../data/featureData';
 import { demoAudit, demoPayments, demoQuotations, demoReports, demoSettings, demoTeam } from '../data/productionData';
@@ -149,6 +149,20 @@ function QuotationPage() {
   return <div><Notice text={notice} onClose={()=>setNotice('')}/><Header title="Quotations" subtitle="Price customer enquiries and convert accepted quotes into real sales orders without retyping the lines." action="New quotation" onAction={()=>setOpen(true)}/><ErrorState error={data.error}/><article className="panel module-panel"><div className="table-wrap"><table className="data-table module-table"><thead><tr><th>Quote</th><th>Customer</th><th>Valid until</th><th>Total</th><th>Status</th><th>Conversion</th></tr></thead><tbody>{rows.map(q=><tr key={q.pk||q.id}><td><strong>{q.id}</strong><small>{q.date}</small></td><td>{q.customer}</td><td>{q.validUntil||'—'}</td><td>{money(q.total)}</td><td><Status>{q.status}</Status></td><td>{q.order?<strong>{q.order}</strong>:<button className="table-action" onClick={()=>convert(q)}>Convert to order</button>}</td></tr>)}</tbody></table></div></article>{open&&<Modal title="Create B2B quotation" onClose={()=>setOpen(false)}><form className="smart-form" onSubmit={submit}><label>Customer<select name="customerId" required>{(customers.data||[]).map(c=><option key={c.pk||c.id} value={c.pk}>{c.name}</option>)}</select></label><label>Warehouse<select name="warehouseId">{(warehouses.data?.warehouses||demoWarehouses.warehouses).map(w=><option key={w.pk||w.id} value={w.pk||w.id}>{w.name}</option>)}</select></label><label>Product<select name="productId" required>{(products.data||[]).map(p=><option key={p.id||p.sku} value={p.id}>{p.name}</option>)}</select></label><label>Quantity<input name="quantity" type="number" min="1" required/></label><label>Unit price<input name="unitPrice" type="number" min="0" step="0.01" required/></label><label>Valid until<input name="validUntil" type="date"/></label><FormActions busy={busy} onClose={()=>setOpen(false)} label="Create quotation"/></form></Modal>}</div>;
 }
 
+function ReconciliationPanel({ mode }) {
+  const [data, setData] = useState({ summary: {}, transactions: [] });
+  const [notice, setNotice] = useState('');
+  const load = () => { if (mode === 'api') getApiResource('payments/reconciliation').then(setData).catch((e) => setNotice(e.message)); };
+  useEffect(() => { setData({ summary: {}, transactions: [] }); load(); }, [mode]);
+  const reconcile = async (row) => {
+    const invoiceId = window.prompt('Enter the invoice ID to match this receipt:');
+    if (!invoiceId || mode !== 'api') return;
+    try { await createApiResource('payments/reconciliation', { action: 'allocate', transactionId: row.id, invoiceId: Number(invoiceId), amount: row.unapplied }); setNotice(`Receipt ${row.reference} reconciled.`); load(); } catch (e) { setNotice(e.message); }
+  };
+  const s = data.summary || {};
+  return <article className="panel module-panel reconciliation-panel"><div className="panel-head"><div><span>Gateway control</span><h3>Payment & UPI reconciliation</h3></div><small>{notice || 'Duplicate-safe matching with invoice and customer-ledger updates.'}</small></div><div className="report-grid compact-grid"><article><span>Received</span><strong>{money(s.received)}</strong><small>gateway transactions</small></article><article><span>Matched</span><strong>{s.matched || 0}</strong><small>{s.partial || 0} partial</small></article><article><span>Unmatched</span><strong>{s.unmatched || 0}</strong><small>{money(s.unapplied)} unapplied</small></article></div><div className="table-wrap"><table className="data-table module-table"><thead><tr><th>Reference</th><th>Customer</th><th>Amount</th><th>Allocated</th><th>Status</th><th>Action</th></tr></thead><tbody>{(data.transactions || []).map((row) => <tr key={row.id}><td><strong>{row.reference}</strong><small>{row.method} · {row.date}</small></td><td>{row.customer}</td><td>{money(row.amount)}</td><td>{money(row.allocated)}</td><td><Status>{row.status}</Status></td><td>{row.unapplied > 0 ? <button className="table-action" onClick={() => reconcile(row)}>Match invoice</button> : 'Complete'}</td></tr>)}</tbody></table></div></article>;
+}
+
 function PaymentsPage() {
   const {mode}=useAuth();const data=useApiData('payments',demoPayments,'payments');const customers=useApiData('customers',demoCustomers,'customers');const suppliers=useApiData('suppliers',demoSuppliers,'suppliers');const[open,setOpen]=useState(false);const[notice,setNotice]=useState('');const[busy,setBusy]=useState(false);const[partyType,setPartyType]=useState('customer');
   const submit=async(e)=>{e.preventDefault();setBusy(true);const f=Object.fromEntries(new FormData(e.currentTarget).entries());const payload={partyType,amount:Number(f.amount),method:f.method,reference:f.reference,date:f.date,notes:f.notes,...(partyType==='customer'?{customerId:Number(f.customerId)}:{supplierId:Number(f.supplierId)})};try{if(mode==='api')await createApiResource('payments',payload);setNotice(mode==='api'?'Payment posted to ledger.':'Demo payment simulated.');setOpen(false);data.refresh();}catch(err){setNotice(err.message)}finally{setBusy(false)}};
@@ -178,6 +192,7 @@ function AuditPage() {
 }
 
 export default function ProductionModulePage({ module }) {
+  const { mode: productionMode } = useAuth();
   if (module==='products') return <ProductPage/>;
   if (module==='inventory') return <InventoryPage/>;
   if (module==='customers') return <CustomerPage/>;
@@ -186,7 +201,7 @@ export default function ProductionModulePage({ module }) {
   if (module==='purchases') return <PurchasePage/>;
   if (module==='warehouses') return <WarehousePage/>;
   if (module==='quotations') return <QuotationPage/>;
-  if (module==='payments') return <PaymentsPage/>;
+  if (module==='payments') return <><PaymentsPage/><ReconciliationPanel mode={productionMode}/></>;
   if (module==='reports') return <ReportsPage/>;
   if (module==='team') return <TeamPage/>;
   if (module==='settings') return <SettingsPage/>;

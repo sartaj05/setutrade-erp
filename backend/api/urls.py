@@ -29,6 +29,7 @@ urlpatterns = [
     path('ledger/', views.ledger),
     path('payments/', views.payments),
     path('payments/webhook/<str:provider>/', views.payment_webhook),
+    path('payments/reconciliation/', views.payment_reconciliation),
     path('warehouses/', views.warehouses),
     path('inventory/reconcile/', views.inventory_reconcile),
     path('transfers/<int:pk>/action/', views.transfer_action),
