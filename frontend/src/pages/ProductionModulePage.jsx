@@ -78,10 +78,31 @@ function ProductPage() {
     e.preventDefault(); setBusy(true); const form = new FormData(e.currentTarget); const payload = Object.fromEntries(form.entries());
     try { if (mode === 'api') await createApiResource('products', payload); else setLocal((x) => [{ id: `demo-${Date.now()}`, ...payload, stock: 0, buy: Number(payload.buy), sell: Number(payload.sell), reorder: Number(payload.reorder), unit: payload.unit || 'pcs' }, ...x]); setNotice(mode === 'api' ? 'Product created in Django.' : 'Demo product created locally for this session.'); setOpen(false); refresh(); } catch (err) { setNotice(err.message); } finally { setBusy(false); }
   };
-  return <div><Notice text={notice} onClose={() => setNotice('')} /><Header title="Products & inventory" subtitle="Maintain SKU, GST/HSN, price, barcode and reorder controls from one catalogue." action="Add product" onAction={() => setOpen(true)} search={search} setSearch={setSearch} extra={<div className="row-actions"><CsvImportButton resource="products" mode={mode} onDone={(m)=>{setNotice(m);refresh();}} onError={setNotice}/><button className="secondary-btn" onClick={() => mode === 'api' && downloadCsv('products')}>Export CSV</button></div>} /><ErrorState error={error} />
+  return <div><Notice text={notice} onClose={() => setNotice('')} /><Header title="Product catalogue" subtitle="Maintain SKU, GST/HSN, price, barcode and reorder controls from one catalogue." action="Add product" onAction={() => setOpen(true)} search={search} setSearch={setSearch} extra={<div className="row-actions"><CsvImportButton resource="products" mode={mode} onDone={(m)=>{setNotice(m);refresh();}} onError={setNotice}/><button className="secondary-btn" onClick={() => mode === 'api' && downloadCsv('products')}>Export CSV</button></div>} /><ErrorState error={error} />
     <div className="module-summary"><div><span>Visible SKUs</span><strong>{rows.length}</strong><small>company-scoped catalogue</small></div><div><span>Low stock</span><strong>{rows.filter((p) => Number(p.stock) <= Number(p.reorder)).length}</strong><small>reorder attention</small></div><div><span>Stock value</span><strong>{money(rows.reduce((s,p)=>s+Number(p.stock||0)*Number(p.buy||0),0))}</strong><small>purchase cost</small></div></div>
     <article className="panel module-panel"><div className="table-wrap"><table className="data-table module-table"><thead><tr><th>Product</th><th>GST</th><th>Available</th><th>Buy / Sell</th><th>Barcode</th><th>Status</th></tr></thead><tbody>{rows.map((p)=><tr key={p.id || p.sku}><td><strong>{p.name}</strong><small>{p.sku} · {p.category}</small></td><td>{p.hsn || '—'}<small>{p.gstRate ?? 18}%</small></td><td><strong>{p.stock} {p.unit}</strong><small>reorder {p.reorder}</small></td><td>{money(p.buy)}<small>{money(p.sell)}</small></td><td className="mono-cell">{p.barcode || '—'}</td><td><Status>{Number(p.stock)<=Number(p.reorder)?'Reorder':'Healthy'}</Status></td></tr>)}</tbody></table></div></article>
     {open && <Modal title="Add sellable product" onClose={() => setOpen(false)}><form className="smart-form" onSubmit={submit}><label>SKU<input name="sku" required placeholder="AN-MCB-63" /></label><label>Product name<input name="name" required /></label><label>Category<input name="category" /></label><label>Unit<input name="unit" defaultValue="pcs" /></label><label>Purchase price<input name="buy" type="number" min="0" step="0.01" /></label><label>Sell price<input name="sell" type="number" min="0" step="0.01" /></label><label>Reorder level<input name="reorder" type="number" min="0" /></label><label>Location<input name="location" placeholder="A-01" /></label><label>HSN code<input name="hsn" /></label><label>GST %<input name="gstRate" type="number" defaultValue="18" /></label><label>Barcode<input name="barcode" /></label><FormActions busy={busy} onClose={() => setOpen(false)} label="Create product" /></form></Modal>}
+  </div>;
+}
+
+function InventoryPage() {
+  const { data: productData, error: productError } = useApiData('products', demoProducts, 'products');
+  const { data: warehouseData, error: warehouseError } = useApiData('warehouses', demoWarehouses);
+  const [search, setSearch] = useState('');
+  const [notice, setNotice] = useState('');
+  const products = (productData || []).filter((product) => `${product.name} ${product.sku} ${product.category}`.toLowerCase().includes(search.toLowerCase()));
+  const warehouses = warehouseData?.warehouses || demoWarehouses.warehouses;
+  const totalUnits = products.reduce((sum, product) => sum + Number(product.stock || 0), 0);
+  const reservedUnits = warehouses.reduce((sum, warehouse) => sum + Number(warehouse.reserved || 0), 0);
+  const lowStock = products.filter((product) => Number(product.stock || 0) <= Number(product.reorder || 0)).length;
+
+  return <div className="inventory-page">
+    <Notice text={notice} onClose={() => setNotice('')} />
+    <Header eyebrow="Inventory control" title="Stock by warehouse" subtitle="See available, reserved and reorder quantities across every operating location." action="Start cycle count" onAction={() => setNotice('Cycle count workflow is ready for warehouse selection.')} search={search} setSearch={setSearch} />
+    <ErrorState error={productError || warehouseError} />
+    <div className="inventory-kpis"><div><span>Available units</span><strong>{totalUnits}</strong><small>across visible SKUs</small></div><div><span>Reserved units</span><strong>{reservedUnits}</strong><small>held for open orders</small></div><div><span>Low-stock SKUs</span><strong>{lowStock}</strong><small>need replenishment</small></div><div><span>Warehouses</span><strong>{warehouses.length}</strong><small>active locations</small></div></div>
+    <section className="inventory-warehouse-grid">{warehouses.map((warehouse) => <article className="inventory-warehouse-card" key={warehouse.pk || warehouse.id}><div><span>{warehouse.id}</span><b>{warehouse.city}</b></div><h3>{warehouse.name}</h3><strong>{warehouse.stock} <small>units on hand</small></strong><div className="inventory-progress"><i style={{ width: `${Math.min(100, Math.round((Number(warehouse.reserved || 0) / Math.max(1, Number(warehouse.stock || 0))) * 100))}%` }} /></div><small>{warehouse.reserved} reserved · {Math.max(0, Number(warehouse.stock || 0) - Number(warehouse.reserved || 0))} available</small></article>)}</section>
+    <article className="panel module-panel inventory-table-panel"><div className="panel-head"><div><span>Stock position</span><h3>SKU availability</h3></div><button onClick={() => setNotice('Inventory reconciliation report prepared for review.')}>Review variances</button></div><div className="table-wrap"><table className="data-table module-table"><thead><tr><th>Product</th><th>On hand</th><th>Reserved</th><th>Available</th><th>Reorder level</th><th>Health</th></tr></thead><tbody>{products.map((product) => { const stock = Number(product.stock || 0); const reorder = Number(product.reorder || 0); const reserved = Math.min(stock, Math.max(0, Math.round(stock * .18))); return <tr key={product.id || product.sku}><td><strong>{product.name}</strong><small>{product.sku} · {product.category}</small></td><td>{stock} {product.unit}</td><td>{reserved}</td><td><strong>{stock - reserved}</strong></td><td>{reorder}</td><td><Status>{stock <= reorder ? 'Reorder' : 'Healthy'}</Status></td></tr>; })}</tbody></table></div></article>
   </div>;
 }
 
@@ -157,7 +178,8 @@ function AuditPage() {
 }
 
 export default function ProductionModulePage({ module }) {
-  if (module==='products'||module==='inventory') return <ProductPage/>;
+  if (module==='products') return <ProductPage/>;
+  if (module==='inventory') return <InventoryPage/>;
   if (module==='customers') return <CustomerPage/>;
   if (module==='orders') return <OrderPage/>;
   if (module==='invoices') return <InvoicePage/>;

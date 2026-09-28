@@ -5,6 +5,7 @@ import { permissions } from '../data/demoData';
 import { demoNotifications } from '../data/productionData';
 import { useAuth } from '../context/AuthContext';
 import { getApiResource, healthApi, patchApiResource } from '../services/api';
+import AssistantWidget from './AssistantWidget';
 
 const moduleLabels = {
   dashboard: ['Overview', 'chart'], products: ['Products', 'box'], inventory: ['Inventory', 'box'], customers: ['Customers', 'users'],
@@ -43,6 +44,10 @@ export default function AppShell({ module, onModuleChange, children, navigate })
     return () => clearTimeout(id);
   }, [search, mode]);
 
+  useEffect(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }, [module]);
+
   const unread = useMemo(() => notifications.filter((n) => !n.read).length, [notifications]);
   const signOut = async () => { await logout(); navigate('/login'); };
   const pickSearch = (item) => { if (visibleModules.includes(item.module)) onModuleChange(item.module); setSearch(''); setShowSearch(false); };
@@ -70,6 +75,7 @@ export default function AppShell({ module, onModuleChange, children, navigate })
         </header>
         <main className="app-content">{children}</main>
       </section>
+      <AssistantWidget hidden={module === 'assistant'} />
     </div>
   );
 }
