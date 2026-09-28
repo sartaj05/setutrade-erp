@@ -44,6 +44,7 @@ from .services import (
     apply_stock, audit, calculate_line, create_order_items, decimal, dispatch_order,
     notify, release_order_stock, reserve_order_stock,
 )
+from .gst_provider import GSTProviderError, call_provider
 
 PERMISSIONS = {
     'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','team','settings','audit','delivery','approvals','invoice-ocr','accounting','offline','subscription','forecasting','assistant','collections','wms','supplier-portal-admin','automations','channels','distribution-network','crm','schemes','gst-cockpit','procurement-intelligence','fleet-routes','credit-risk','security-center','integrations','executive-bi','copilot-actions','product-master','traceability','treasury','contracts','quality','supply-planning','service-rma','expenses','report-builder','operations-center'],
@@ -845,7 +846,24 @@ def whatsapp_webhook(request):
 @roles_allowed('OWNER','MANAGER','SALES','ACCOUNTANT')
 def tax_compliance(request):
     if request.method=='POST':
-        body=_json_body(request) or {}; customer=_company_qs(Customer,request).filter(pk=body.get('customerId')).first(); invoice=_company_qs(Invoice,request).filter(pk=body.get('invoiceId')).first() if body.get('invoiceId') else None
+        body=_json_body(request) or {}
+        if body.get('action') in {'generate-einvoice', 'cancel-einvoice', 'generate-eway'}:
+            invoice = _company_qs(Invoice, request).filter(pk=body.get('invoiceId')).select_related('company', 'order__customer').first()
+            if not invoice: return JsonResponse({'detail': 'invoiceId is required.'}, status=400)
+            try:
+                result = call_provider(body['action'], invoice, {'reason': body.get('reason', '')})
+            except GSTProviderError as exc:
+                return JsonResponse({'detail': str(exc)}, status=503)
+            if body['action'] == 'generate-einvoice':
+                invoice.e_invoice_irn = str(result.get('irn') or result.get('data', {}).get('irn') or '')
+                invoice.e_invoice_status = 'Generated' if invoice.e_invoice_irn else 'Submitted'
+                invoice.qr_payload = str(result.get('qrPayload') or result.get('data', {}).get('qrPayload') or '')
+                invoice.save(update_fields=['e_invoice_irn', 'e_invoice_status', 'qr_payload', 'updated_at'])
+            elif body['action'] == 'cancel-einvoice':
+                invoice.e_invoice_status = 'Cancelled'; invoice.save(update_fields=['e_invoice_status', 'updated_at'])
+            audit(request, 'provider', 'Invoice', invoice.id, f"GST provider action {body['action']} for {invoice.invoice_no}", {'provider': result})
+            return JsonResponse({'ok': True, 'action': body['action'], 'invoice': invoice.invoice_no, 'result': result})
+        customer=_company_qs(Customer,request).filter(pk=body.get('customerId')).first(); invoice=_company_qs(Invoice,request).filter(pk=body.get('invoiceId')).first() if body.get('invoiceId') else None
         if not customer: return JsonResponse({'detail':'customer is required.'},status=400)
         note=TaxNote.objects.create(company=request.company,note_no=body.get('noteNo') or _next_no('CN' if body.get('type')=='Credit Note' else 'DN'),note_type=body.get('type','Credit Note'),customer=customer,invoice=invoice,taxable_amount=decimal(body.get('taxable')),gst_amount=decimal(body.get('gst')),total=decimal(body.get('total')),note_date=_date(body.get('date')),reason=body.get('reason',''))
         if note.note_type==TaxNote.NoteType.CREDIT:
