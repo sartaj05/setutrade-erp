@@ -50,11 +50,11 @@ from .services import (
 from .gst_provider import GSTProviderError, call_provider
 
 PERMISSIONS = {
-    'OWNER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','team','settings','audit','delivery','approvals','invoice-ocr','accounting','offline','subscription','forecasting','assistant','collections','wms','supplier-portal-admin','automations','channels','distribution-network','crm','schemes','gst-cockpit','procurement-intelligence','fleet-routes','credit-risk','security-center','integrations','executive-bi','copilot-actions','product-master','traceability','treasury','contracts','quality','supply-planning','service-rma','expenses','report-builder','operations-center'],
-    'MANAGER': ['dashboard','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','audit','delivery','approvals','invoice-ocr','accounting','offline','forecasting','assistant','collections','wms','supplier-portal-admin','automations','channels','distribution-network','crm','schemes','gst-cockpit','procurement-intelligence','fleet-routes','credit-risk','executive-bi','copilot-actions','product-master','traceability','treasury','contracts','quality','supply-planning','service-rma','expenses','report-builder','operations-center'],
-    'SALES': ['dashboard','customers','orders','invoices','ledger','whatsapp','tax','pricing','field-sales','quotations','payments','delivery','approvals','offline','assistant','collections','channels','crm','fleet-routes','product-master','traceability','contracts','service-rma','expenses'],
-    'WAREHOUSE': ['dashboard','products','inventory','orders','purchases','warehouses','barcode','returns','insights','delivery','approvals','invoice-ocr','offline','forecasting','wms','procurement-intelligence','executive-bi','product-master','traceability','quality','supply-planning','service-rma','expenses'],
-    'ACCOUNTANT': ['dashboard','customers','orders','invoices','purchases','ledger','tax','returns','insights','payments','reports','audit','approvals','invoice-ocr','accounting','assistant','collections','gst-cockpit','credit-risk','product-master','treasury','contracts','expenses','report-builder'],
+    'OWNER': ['dashboard','client-workflow','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','team','settings','audit','delivery','approvals','invoice-ocr','accounting','offline','subscription','forecasting','assistant','collections','wms','supplier-portal-admin','automations','channels','distribution-network','crm','schemes','gst-cockpit','procurement-intelligence','fleet-routes','credit-risk','security-center','integrations','executive-bi','copilot-actions','product-master','traceability','treasury','contracts','quality','supply-planning','service-rma','expenses','report-builder','operations-center'],
+    'MANAGER': ['dashboard','client-workflow','products','inventory','customers','orders','invoices','purchases','ledger','warehouses','barcode','whatsapp','tax','pricing','returns','field-sales','insights','quotations','payments','reports','audit','delivery','approvals','invoice-ocr','accounting','offline','forecasting','assistant','collections','wms','supplier-portal-admin','automations','channels','distribution-network','crm','schemes','gst-cockpit','procurement-intelligence','fleet-routes','credit-risk','executive-bi','copilot-actions','product-master','traceability','treasury','contracts','quality','supply-planning','service-rma','expenses','report-builder','operations-center'],
+    'SALES': ['dashboard','client-workflow','customers','orders','invoices','ledger','whatsapp','tax','pricing','field-sales','quotations','payments','delivery','approvals','offline','assistant','collections','channels','crm','fleet-routes','product-master','traceability','contracts','service-rma','expenses'],
+    'WAREHOUSE': ['dashboard','client-workflow','products','inventory','orders','purchases','warehouses','barcode','returns','insights','delivery','approvals','invoice-ocr','offline','forecasting','wms','procurement-intelligence','executive-bi','product-master','traceability','quality','supply-planning','service-rma','expenses'],
+    'ACCOUNTANT': ['dashboard','client-workflow','customers','orders','invoices','purchases','ledger','tax','returns','insights','payments','reports','audit','approvals','invoice-ocr','accounting','assistant','collections','gst-cockpit','credit-risk','product-master','treasury','contracts','expenses','report-builder'],
 }
 
 
@@ -1167,6 +1167,33 @@ def reports(request):
     sales_month=orders.filter(order_date__year=today.year,order_date__month=today.month).aggregate(v=Sum('total'))['v'] or 0; collected=payments_qs.filter(payment_date__year=today.year,payment_date__month=today.month).aggregate(v=Sum('amount'))['v'] or 0; purchases_total=purchases_qs.filter(order_date__year=today.year,order_date__month=today.month).aggregate(v=Sum('total'))['v'] or 0; receivable=customers_qs.aggregate(v=Sum('outstanding'))['v'] or 0; payable=suppliers_qs.aggregate(v=Sum('outstanding'))['v'] or 0; stock_value=sum((p.stock*p.purchase_price for p in _company_qs(Product,request)),Decimal('0'))
     top_customers=orders.values('customer__name').annotate(total=Sum('total')).order_by('-total')[:8]
     return JsonResponse({'reports':{'sales':float(sales_month),'collections':float(collected),'purchases':float(purchases_total),'receivable':float(receivable),'payable':float(payable),'stockValue':float(stock_value),'topCustomers':[{'name':x['customer__name'],'sales':float(x['total'])} for x in top_customers]}})
+
+
+@require_GET
+@roles_allowed('OWNER','MANAGER','SALES','WAREHOUSE','ACCOUNTANT')
+def client_workflow(request):
+    """Return a single, company-scoped order-to-cash storyline for demos and daily control."""
+    quote = _company_qs(Quotation, request).select_related('customer').order_by('-quote_date', '-id').first()
+    order = _company_qs(Order, request).select_related('customer', 'warehouse').order_by('-order_date', '-id').first()
+    invoice = _company_qs(Invoice, request).select_related('order__customer').order_by('-invoice_date', '-id').first()
+    payment = _company_qs(Payment, request).select_related('customer', 'invoice').order_by('-payment_date', '-id').first()
+    stop = DeliveryStop.objects.filter(run__company=request.company).select_related('run', 'order__customer').order_by('-run__delivery_date', '-id').first()
+    ledger = _company_qs(LedgerEntry, request).select_related('customer').order_by('-entry_date', '-id').first()
+    order_status = order.status if order else 'Not started'
+    invoice_status = invoice.status if invoice else 'Not created'
+    payment_status = 'Received' if payment else 'Pending'
+    delivery_status = stop.status if stop else 'Not scheduled'
+    steps = [
+        {'key': 'enquiry', 'label': 'Customer enquiry', 'status': 'Complete' if quote or order else 'Pending', 'detail': quote.customer.name if quote else (order.customer.name if order else 'Start with a customer')},
+        {'key': 'quotation', 'label': 'Quotation', 'status': quote.status if quote else 'Pending', 'detail': quote.quote_no if quote else 'No quotation yet'},
+        {'key': 'order', 'label': 'Sales order', 'status': order_status, 'detail': order.order_no if order else 'No order yet'},
+        {'key': 'reservation', 'label': 'Stock reservation', 'status': 'Reserved' if order and order.stock_reserved else 'Pending', 'detail': order.warehouse.name if order and order.warehouse else 'Select a warehouse'},
+        {'key': 'invoice', 'label': 'GST invoice', 'status': invoice_status, 'detail': invoice.invoice_no if invoice else 'Create after order confirmation'},
+        {'key': 'payment', 'label': 'Payment', 'status': payment_status, 'detail': f'₹{payment.amount:,.0f}' if payment else 'Awaiting receipt'},
+        {'key': 'delivery', 'label': 'Delivery / e-POD', 'status': delivery_status, 'detail': stop.run.run_no if stop else 'Schedule a delivery run'},
+        {'key': 'ledger', 'label': 'Customer ledger', 'status': 'Posted' if ledger else 'Pending', 'detail': ledger.reference if ledger else 'Post invoice and payment entries'},
+    ]
+    return JsonResponse({'steps': steps, 'context': {'customer': (order or quote).customer.name if (order or quote) else None, 'order': order.order_no if order else None, 'invoice': invoice.invoice_no if invoice else None, 'payment': float(payment.amount) if payment else 0, 'delivery': delivery_status}})
 
 
 @require_GET

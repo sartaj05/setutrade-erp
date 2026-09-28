@@ -45,6 +45,7 @@ urlpatterns = [
     path('quotations/', views.quotations),
     path('quotations/<int:pk>/action/', views.quotation_action),
     path('reports/', views.reports),
+    path('client-workflow/', views.client_workflow),
     path('export/<str:resource>/', views.export_csv),
     path('import/<str:resource>/', views.import_csv),
     path('team/', views.team),
