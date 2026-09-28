@@ -1,6 +1,8 @@
 import json
 from datetime import timedelta
 from decimal import Decimal
+import os
+from django.db import connection
 from django.db.models import Sum, Count
 from django.http import JsonResponse
 from django.utils import timezone
@@ -315,6 +317,23 @@ def report_builder(request):
     return JsonResponse({'detail':'Unsupported action.'},status=400)
 
 # Phase 36
+def _operations_snapshot(company):
+    health=m.ServiceHealth.objects.filter(company=company).order_by('category','service_name'); job_q=m.BackgroundJob.objects.filter(company=company); hook_q=m.WebhookReplay.objects.filter(company=company)
+    try:
+        with connection.cursor() as cursor: cursor.execute('SELECT 1'); cursor.fetchone()
+        database={'status':'Healthy','message':'Database query completed'}
+    except Exception as exc:
+        database={'status':'Failed','message':str(exc)[:180]}
+    security=m.SecurityEvent.objects.filter(company=company).order_by('-created_at')[:40]
+    audit_rows=m.AuditLog.objects.filter(company=company).order_by('-created_at')[:40]
+    offline=m.OfflineSyncReceipt.objects.filter(company=company).order_by('-synced_at')[:40]
+    services=[{'id':x.id,'service':x.service_name,'category':x.category,'status':x.status,'latency':x.latency_ms,'message':x.message,'checkedAt':_dt(x.checked_at)} for x in health]
+    if not any(x['service']=='Database' for x in services): services.append({'id':'database','service':'Database','category':'Internal','status':database['status'],'latency':0,'message':database['message'],'checkedAt':_dt(timezone.now())})
+    backup_status=os.getenv('BACKUP_STATUS','Not configured'); services.append({'id':'backup','service':'Backup','category':'Recovery','status':'Healthy' if backup_status.lower() in ['healthy','ok','completed'] else 'Degraded','latency':0,'message':f'{backup_status} · {os.getenv("BACKUP_LAST_RUN","last run not reported")}','checkedAt':_dt(timezone.now())})
+    healthy=sum(1 for x in services if x['status']=='Healthy'); degraded=sum(1 for x in services if x['status']!='Healthy')
+    return {'summary':{'healthy':healthy,'degraded':degraded,'failedJobs':job_q.filter(status='Failed').count(),'failedWebhooks':hook_q.filter(status='Failed').count(),'securityEvents':security.count(),'offlineSyncFailures':0,'avgApiLatency':round(sum(x['latency'] for x in services if isinstance(x['latency'],int))/max(1,len(services)))},'services':services,'jobs':[{'id':x.id,'type':x.job_type,'key':x.job_key,'status':x.status,'attempts':x.attempts,'error':x.last_error,'scheduledAt':_dt(x.scheduled_at)} for x in job_q.order_by('-created_at')[:100]],'webhooks':[{'id':x.id,'source':x.source,'eventId':x.event_id,'status':x.status,'attempts':x.attempts,'error':x.last_error} for x in hook_q.order_by('-created_at')[:100]],'securityEvents':[{'id':x.id,'event':x.event_type,'severity':x.severity,'user':x.user.get_full_name() if x.user else 'System','ip':x.ip_address,'createdAt':_dt(x.created_at)} for x in security],'auditEvents':[{'id':x.id,'action':x.action,'entity':x.entity_type,'summary':x.summary,'createdAt':_dt(x.created_at)} for x in audit_rows],'offlineSync':{'recent':offline.count(),'failed':0},'backup':{'status':os.getenv('BACKUP_STATUS','Not configured'),'lastRun':os.getenv('BACKUP_LAST_RUN','Not reported'),'provider':os.getenv('BACKUP_PROVIDER','Configure backup provider')}}
+
+
 @csrf_exempt
 @require_http_methods(['GET','POST'])
 @api_auth_required
@@ -323,6 +342,7 @@ def operations_center(request):
     if denied:return denied
     company=request.company
     if request.method=='GET':
+        return JsonResponse(_operations_snapshot(company))
         health=m.ServiceHealth.objects.filter(company=company).order_by('category','service_name');job_q=m.BackgroundJob.objects.filter(company=company);hook_q=m.WebhookReplay.objects.filter(company=company);jobs=job_q.order_by('-created_at')[:100];hooks=hook_q.order_by('-created_at')[:100];alerts=m.AlertPolicy.objects.filter(company=company).order_by('name')
         return JsonResponse({'summary':{'healthy':health.filter(status='Healthy').count(),'degraded':health.exclude(status='Healthy').count(),'failedJobs':job_q.filter(status='Failed').count(),'failedWebhooks':hook_q.filter(status='Failed').count()},'services':[{'id':x.id,'service':x.service_name,'category':x.category,'status':x.status,'latency':x.latency_ms,'message':x.message,'checkedAt':_dt(x.checked_at)} for x in health],'jobs':[{'id':x.id,'type':x.job_type,'key':x.job_key,'status':x.status,'attempts':x.attempts,'error':x.last_error,'scheduledAt':_dt(x.scheduled_at)} for x in jobs],'webhooks':[{'id':x.id,'source':x.source,'eventId':x.event_id,'status':x.status,'attempts':x.attempts,'error':x.last_error} for x in hooks],'alerts':[{'id':x.id,'name':x.name,'condition':x.condition,'threshold':_money(x.threshold),'channels':x.channels,'active':x.is_active} for x in alerts]})
     data=_body(request); action=data.get('action','heartbeat')
