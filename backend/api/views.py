@@ -794,6 +794,53 @@ def whatsapp(request):
 
 
 @csrf_exempt
+@require_http_methods(['GET', 'POST'])
+def whatsapp_webhook(request):
+    """Meta WhatsApp webhook verification and inbound order capture."""
+    if request.method == 'GET':
+        verify_token = os.getenv('WHATSAPP_VERIFY_TOKEN', '')
+        if request.GET.get('hub.verify_token') == verify_token and verify_token:
+            return HttpResponse(request.GET.get('hub.challenge', ''), content_type='text/plain')
+        return JsonResponse({'detail': 'Webhook verification failed.'}, status=403)
+    raw = request.body or b''
+    app_secret = os.getenv('WHATSAPP_APP_SECRET', '')
+    signature = request.headers.get('X-Hub-Signature-256', '')
+    expected = 'sha256=' + hmac.new(app_secret.encode(), raw, hashlib.sha256).hexdigest() if app_secret else ''
+    if not settings.DEBUG and (not app_secret or not hmac.compare_digest(signature, expected)):
+        return JsonResponse({'detail': 'Webhook signature is invalid.'}, status=401)
+    try:
+        payload = json.loads(raw.decode() or '{}')
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return JsonResponse({'detail': 'Webhook payload must be valid JSON.'}, status=400)
+    created = []
+    for entry in payload.get('entry', []):
+        for change in entry.get('changes', []):
+            value = change.get('value') or {}
+            metadata = value.get('metadata') or {}
+            phone_id = metadata.get('phone_number_id') or os.getenv('WHATSAPP_PHONE_NUMBER_ID')
+            company = Company.objects.filter(is_active=True, whatsapp_phone_number_id=phone_id).first() if phone_id else None
+            if not company:
+                company = Company.objects.filter(is_active=True).first()
+            if not company: continue
+            for message in value.get('messages', []):
+                wa_id = str(message.get('from', '')).strip()
+                text = str(((message.get('text') or {}).get('body')) or '').strip()
+                if not wa_id or not text: continue
+                customer = None
+                for candidate in Customer.objects.filter(company=company, is_active=True).only('id', 'phone', 'code', 'name'):
+                    normalized = re.sub(r'\D', '', candidate.phone or '')
+                    if normalized and (normalized.endswith(wa_id) or wa_id.endswith(normalized)):
+                        customer = candidate; break
+                if not customer: continue
+                message_row = WhatsAppMessage.objects.create(company=company, customer=customer, direction='Inbound', message=text, provider_message_id=str(message.get('id', '')), status='Received')
+                items = _parse_whatsapp_items(text, company)
+                total = sum(Decimal(str(x['quantity'])) * Decimal(str(x['price'])) for x in items)
+                draft = WhatsAppOrderDraft.objects.create(company=company, draft_no=_next_no('WA'), customer=customer, raw_message=text, parsed_items=items, estimated_total=total)
+                created.append({'messageId': message_row.id, 'draftNo': draft.draft_no, 'phoneNumberId': phone_id})
+    return JsonResponse({'ok': True, 'created': created})
+
+
+@csrf_exempt
 @require_http_methods(['GET','POST'])
 @roles_allowed('OWNER','MANAGER','SALES','ACCOUNTANT')
 def tax_compliance(request):
@@ -1014,7 +1061,7 @@ def team_member(request, pk):
 def settings_view(request):
     c=request.company
     if request.method=='PATCH':
-        body=_json_body(request) or {}; allowed=['name','gstin','pan','state','address','phone','email','bank_name','bank_account','ifsc','upi_id','logo_url','invoice_prefix','financial_year_start']
+        body=_json_body(request) or {}; allowed=['name','gstin','pan','state','address','phone','email','bank_name','bank_account','ifsc','upi_id','whatsapp_phone_number_id','logo_url','invoice_prefix','financial_year_start']
         for key in allowed:
             if key in body: setattr(c,key,body[key])
         c.save();

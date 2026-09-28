@@ -32,6 +32,7 @@ urlpatterns = [
     path('transfers/<int:pk>/action/', views.transfer_action),
     path('barcode/', views.barcode),
     path('whatsapp/', views.whatsapp),
+    path('whatsapp/webhook/', views.whatsapp_webhook),
     path('tax/', views.tax_compliance),
     path('pricing/', views.pricing),
     path('returns/', views.returns_adjustments),

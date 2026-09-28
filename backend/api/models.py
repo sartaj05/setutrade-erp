@@ -15,6 +15,7 @@ class Company(models.Model):
     bank_account = models.CharField(max_length=40, blank=True)
     ifsc = models.CharField(max_length=20, blank=True)
     upi_id = models.CharField(max_length=120, blank=True)
+    whatsapp_phone_number_id = models.CharField(max_length=80, blank=True)
     logo_url = models.URLField(blank=True)
     invoice_prefix = models.CharField(max_length=20, default='INV')
     financial_year_start = models.PositiveSmallIntegerField(default=4)
