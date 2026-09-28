@@ -80,8 +80,9 @@ def traceability(request):
         lots=m.InventoryLot.objects.filter(company=company).select_related('product','warehouse','supplier').order_by('expiry_date','product__name')
         serials=m.SerialUnit.objects.filter(company=company).select_related('product','warehouse','customer').order_by('-id')[:100]
         events=m.TraceabilityEvent.objects.filter(company=company).select_related('product','lot','serial').order_by('-created_at')[:60]
+        counts=m.CycleCount.objects.filter(company=company).select_related('warehouse','bin','product','counted_by').order_by('-created_at')[:60]
         expiring=lots.filter(expiry_date__isnull=False,expiry_date__lte=today+timedelta(days=60)).exclude(status__in=['Closed','Expired']).count()
-        return JsonResponse({'summary':{'lots':lots.count(),'serials':m.SerialUnit.objects.filter(company=company).count(),'expiring':expiring,'recalls':lots.filter(status='Recall').count()},'lots':[{'id':x.id,'product':x.product.name,'sku':x.product.sku,'warehouse':x.warehouse.name,'lot':x.lot_no,'batch':x.batch_no,'expiry':_dt(x.expiry_date),'received':_money(x.received_qty),'available':_money(x.available_qty),'status':x.status} for x in lots[:100]],'serials':[{'id':x.id,'product':x.product.name,'serial':x.serial_no,'warehouse':x.warehouse.name if x.warehouse else '', 'status':x.status,'customer':x.customer.name if x.customer else '', 'warrantyUntil':_dt(x.warranty_until)} for x in serials],'events':[{'id':e.id,'product':e.product.name,'lot':e.lot.lot_no if e.lot else '', 'serial':e.serial.serial_no if e.serial else '', 'type':e.event_type,'reference':e.reference,'quantity':_money(e.quantity),'at':_dt(e.created_at)} for e in events]})
+        return JsonResponse({'summary':{'lots':lots.count(),'serials':m.SerialUnit.objects.filter(company=company).count(),'expiring':expiring,'recalls':lots.filter(status='Recall').count(),'cycleCounts':counts.count(),'pendingCounts':counts.filter(status='Counted').count()},'lots':[{'id':x.id,'product':x.product.name,'sku':x.product.sku,'warehouse':x.warehouse.name,'lot':x.lot_no,'batch':x.batch_no,'expiry':_dt(x.expiry_date),'received':_money(x.received_qty),'available':_money(x.available_qty),'status':x.status} for x in lots[:100]],'serials':[{'id':x.id,'product':x.product.name,'serial':x.serial_no,'warehouse':x.warehouse.name if x.warehouse else '', 'status':x.status,'customer':x.customer.name if x.customer else '', 'warrantyUntil':_dt(x.warranty_until)} for x in serials],'events':[{'id':e.id,'product':e.product.name,'lot':e.lot.lot_no if e.lot else '', 'serial':e.serial.serial_no if e.serial else '', 'type':e.event_type,'reference':e.reference,'quantity':_money(e.quantity),'at':_dt(e.created_at)} for e in events],'counts':[{'id':x.id,'warehouse':x.warehouse.name,'bin':x.bin.code,'product':x.product.name,'expected':_money(x.expected_qty),'counted':_money(x.counted_qty),'variance':_money((x.counted_qty or 0)-x.expected_qty),'status':x.status,'countedBy':x.counted_by.get_full_name() if x.counted_by else ''} for x in counts]})
     data=_body(request); action=data.get('action','receive-lot')
     product=_pick(m.Product.objects.filter(company=company),data.get('productId')); warehouse=_pick(m.Warehouse.objects.filter(company=company),data.get('warehouseId'))
     if action=='receive-lot':
@@ -98,6 +99,24 @@ def traceability(request):
         serial=m.SerialUnit.objects.create(company=company,product=product,warehouse=warehouse,lot=lot,serial_no=data.get('serialNo') or f"SN{timezone.now().strftime('%y%m%d%H%M%S%f')}",warranty_until=data.get('warrantyUntil') or None)
         m.TraceabilityEvent.objects.create(company=company,product=product,lot=lot,serial=serial,event_type='Serialized',reference='PIM traceability',quantity=1,created_by=request.api_user)
         return JsonResponse({'id':serial.id,'serial':serial.serial_no},status=201)
+    if action=='cycle-count':
+        if not product or not warehouse:return JsonResponse({'detail':'Product and warehouse required.'},status=400)
+        bin_obj=_pick(m.WarehouseBin.objects.filter(warehouse=warehouse),data.get('binId'))
+        if not bin_obj:return JsonResponse({'detail':'Create a warehouse bin before starting a cycle count.'},status=400)
+        counted=Decimal(str(data.get('countedQty', '0')))
+        if counted < 0:return JsonResponse({'detail':'Negative counted stock is not allowed.'},status=400)
+        stock=m.BinStock.objects.filter(bin=bin_obj,product=product).first(); expected=stock.quantity if stock else Decimal('0')
+        row=m.CycleCount.objects.create(company=company,warehouse=warehouse,bin=bin_obj,product=product,expected_qty=expected,counted_qty=counted,status='Counted',counted_by=request.api_user)
+        m.TraceabilityEvent.objects.create(company=company,product=product,event_type='Cycle Count',reference=f'COUNT-{row.id}',quantity=counted,metadata={'expected':str(expected),'variance':str(counted-expected)},created_by=request.api_user)
+        return JsonResponse({'id':row.id,'expected':_money(expected),'counted':_money(counted),'variance':_money(counted-expected),'status':'Counted'},status=201)
+    if action=='approve-count':
+        if request.api_user.profile.role not in ['OWNER','MANAGER']:return JsonResponse({'detail':'Only an owner or manager can approve a stock variance.'},status=403)
+        row=m.CycleCount.objects.filter(company=company,pk=data.get('countId'),status='Counted').select_related('bin','product','warehouse').first()
+        if not row:return JsonResponse({'detail':'Counted cycle count not found.'},status=404)
+        stock,_=m.BinStock.objects.get_or_create(bin=row.bin,product=row.product,defaults={'quantity':0}); delta=row.counted_qty-row.expected_qty; stock.quantity=row.counted_qty; stock.save(update_fields=['quantity'])
+        balance,_=m.StockBalance.objects.get_or_create(warehouse=row.warehouse,product=row.product,defaults={'quantity':0,'reserved':0}); balance.quantity=max(Decimal('0'),balance.quantity+delta); balance.save(update_fields=['quantity'])
+        row.product.stock=max(Decimal('0'),m.StockBalance.objects.filter(product=row.product).aggregate(v=Sum('quantity'))['v'] or 0); row.product.save(update_fields=['stock']); row.status='Posted'; row.save(update_fields=['status'])
+        audit(request,'APPROVE','CycleCount',row.id,f'Posted count variance for {row.product.sku}'); return JsonResponse({'id':row.id,'status':row.status,'variance':_money(delta)})
     if action=='recall-lot':
         lot=m.InventoryLot.objects.filter(company=company,pk=data.get('lotId')).first()
         if not lot:return JsonResponse({'detail':'Lot not found.'},status=404)
