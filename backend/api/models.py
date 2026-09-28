@@ -743,6 +743,11 @@ class DeliveryRun(models.Model):
     vehicle_no=models.CharField(max_length=30,blank=True)
     delivery_date=models.DateField()
     status=models.CharField(max_length=30,choices=Status.choices,default=Status.PLANNED)
+    tracking_token=models.CharField(max_length=80,unique=True,null=True,blank=True)
+    last_latitude=models.DecimalField(max_digits=9,decimal_places=6,null=True,blank=True)
+    last_longitude=models.DecimalField(max_digits=9,decimal_places=6,null=True,blank=True)
+    last_location_at=models.DateTimeField(null=True,blank=True)
+    eta_at=models.DateTimeField(null=True,blank=True)
     created_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True)
     created_at=models.DateTimeField(auto_now_add=True)
 
@@ -754,6 +759,8 @@ class DeliveryStop(models.Model):
     sequence=models.PositiveIntegerField(default=1)
     status=models.CharField(max_length=20,choices=Status.choices,default=Status.PENDING)
     cod_amount=models.DecimalField(max_digits=14,decimal_places=2,default=0)
+    delivery_otp=models.CharField(max_length=8,blank=True)
+    eta_at=models.DateTimeField(null=True,blank=True)
     failure_reason=models.CharField(max_length=240,blank=True)
     delivered_at=models.DateTimeField(null=True,blank=True)
 

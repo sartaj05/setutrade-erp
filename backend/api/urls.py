@@ -57,6 +57,7 @@ urlpatterns = [
     path('attention/', views.attention),
     path('attachments/', views.attachments),
     path('delivery/', views.delivery),
+    path('delivery/track/<str:token>/', views.public_delivery_tracking),
     path('approvals/', views.approvals),
     path('invoice-ocr/', views.invoice_ocr),
     path('accounting/', views.accounting),

@@ -6,6 +6,7 @@ import {
   demoDelivery, demoApprovals, demoCaptures, demoAccounting, demoOffline,
   demoSubscription, demoForecasts, demoAssistant,
 } from '../data/growthData';
+import LiveDeliveryPage from './LiveDeliveryPage';
 
 const money = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 const Notice = ({ text }) => text ? <div className="inline-notice">{text}</div> : null;
@@ -109,7 +110,7 @@ function AssistantPage({ mode }) {
 export default function GrowthModulePage({ module }) {
   const { mode } = useAuth();
   const [notice, setNotice] = useState('');
-  if (module === 'delivery') return <DeliveryPage mode={mode} notice={notice} setNotice={setNotice}/>;
+  if (module === 'delivery') return <LiveDeliveryPage/>;
   if (module === 'approvals') return <ApprovalPage mode={mode} notice={notice} setNotice={setNotice}/>;
   if (module === 'invoice-ocr') return <InvoiceOcrPage mode={mode} notice={notice} setNotice={setNotice}/>;
   if (module === 'accounting') return <AccountingPage mode={mode} notice={notice} setNotice={setNotice}/>;

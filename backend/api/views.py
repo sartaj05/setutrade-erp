@@ -1429,21 +1429,45 @@ def delivery(request):
     if request.method=='POST':
         body=_json_body(request) or {}; action=body.get('action','create-run')
         if action=='create-run':
-            run=DeliveryRun.objects.create(company=request.company,run_no=_next_no('RUN'),route_name=str(body.get('routeName','Delhi NCR Route'))[:120],driver_name=str(body.get('driverName',''))[:120],driver_phone=str(body.get('driverPhone',''))[:20],vehicle_no=str(body.get('vehicleNo',''))[:30],delivery_date=_date(body.get('deliveryDate')),created_by=request.api_user)
+            run=DeliveryRun.objects.create(company=request.company,run_no=_next_no('RUN'),route_name=str(body.get('routeName','Delhi NCR Route'))[:120],driver_name=str(body.get('driverName',''))[:120],driver_phone=str(body.get('driverPhone',''))[:20],vehicle_no=str(body.get('vehicleNo',''))[:30],delivery_date=_date(body.get('deliveryDate')),tracking_token=secrets.token_urlsafe(28),created_by=request.api_user)
             for idx,oid in enumerate(body.get('orderIds') or [],1):
                 order=Order.objects.filter(pk=oid,company=request.company).first()
-                if order: DeliveryStop.objects.create(run=run,order=order,sequence=idx,cod_amount=order.total if order.payment_status!=Order.PaymentStatus.PAID else 0)
+                if order: DeliveryStop.objects.create(run=run,order=order,sequence=idx,delivery_otp=str(secrets.randbelow(900000)+100000),cod_amount=order.total if order.payment_status!=Order.PaymentStatus.PAID else 0)
             audit(request,'create','DeliveryRun',run.id,f'Created delivery run {run.run_no}',{'route':run.route_name})
-            return JsonResponse({'ok':True,'id':run.id,'runNo':run.run_no},status=201)
+            return JsonResponse({'ok':True,'id':run.id,'runNo':run.run_no,'trackingToken':run.tracking_token,'trackingUrl':f'/track/{run.tracking_token}'},status=201)
+        if action=='track':
+            run=DeliveryRun.objects.filter(company=request.company,pk=body.get('runId')).first()
+            if not run:return JsonResponse({'detail':'Delivery run not found.'},status=404)
+            try: latitude=Decimal(str(body.get('latitude'))); longitude=Decimal(str(body.get('longitude')))
+            except (TypeError, ValueError):return JsonResponse({'detail':'Valid latitude and longitude are required.'},status=400)
+            run.last_latitude=latitude;run.last_longitude=longitude;run.last_location_at=timezone.now();run.eta_at=body.get('etaAt') or run.eta_at;run.save(update_fields=['last_latitude','last_longitude','last_location_at','eta_at'])
+            stop=DeliveryStop.objects.filter(run=run,pk=body.get('stopId')).first() if body.get('stopId') else None
+            if stop and body.get('etaAt'):stop.eta_at=body.get('etaAt');stop.save(update_fields=['eta_at'])
+            audit(request,'track','DeliveryRun',run.id,f'Updated live location for {run.run_no}',{'latitude':float(latitude),'longitude':float(longitude)})
+            return JsonResponse({'ok':True,'lastLocationAt':run.last_location_at.isoformat(),'etaAt':run.eta_at.isoformat() if run.eta_at else None})
+        if action=='tracking-link':
+            run=DeliveryRun.objects.filter(company=request.company,pk=body.get('runId')).first()
+            if not run:return JsonResponse({'detail':'Delivery run not found.'},status=404)
+            if not run.tracking_token:run.tracking_token=secrets.token_urlsafe(28);run.save(update_fields=['tracking_token'])
+            return JsonResponse({'trackingToken':run.tracking_token,'trackingUrl':f'/track/{run.tracking_token}'})
         stop=DeliveryStop.objects.select_related('run','order').filter(pk=body.get('stopId'),run__company=request.company).first()
         if not stop:return JsonResponse({'detail':'Delivery stop not found.'},status=404)
         if action=='deliver':
+            supplied=str(body.get('otp','')).strip()
+            if supplied and stop.delivery_otp and supplied != stop.delivery_otp:return JsonResponse({'detail':'Delivery OTP is invalid.'},status=400)
+            otp_verified=bool(body.get('otpVerified')) or bool(supplied and supplied == stop.delivery_otp)
             stop.status=DeliveryStop.Status.DELIVERED;stop.delivered_at=timezone.now();stop.save(update_fields=['status','delivered_at'])
-            DeliveryProof.objects.update_or_create(stop=stop,defaults={'otp_verified':bool(body.get('otpVerified',True)),'receiver_name':str(body.get('receiverName',''))[:120],'photo_url':str(body.get('photoUrl',''))[:200],'signature_data':str(body.get('signature',''))[:5000],'note':str(body.get('note',''))[:240]})
+            DeliveryProof.objects.update_or_create(stop=stop,defaults={'otp_verified':otp_verified,'receiver_name':str(body.get('receiverName',''))[:120],'photo_url':str(body.get('photoUrl',''))[:200],'signature_data':str(body.get('signature',''))[:5000],'note':str(body.get('note',''))[:240]})
         elif action=='fail': stop.status=DeliveryStop.Status.FAILED;stop.failure_reason=str(body.get('reason','Unable to deliver'))[:240];stop.save(update_fields=['status','failure_reason'])
         return JsonResponse({'ok':True,'status':stop.status})
     runs=DeliveryRun.objects.filter(company=request.company).prefetch_related('stops__order__customer').order_by('-delivery_date','-id')[:30]
-    return JsonResponse({'runs':[{'id':r.id,'runNo':r.run_no,'route':r.route_name,'driver':r.driver_name,'vehicle':r.vehicle_no,'date':r.delivery_date.isoformat(),'status':r.status,'stops':[{'id':s.id,'order':s.order.order_no,'customer':s.order.customer.name,'status':s.status,'cod':float(s.cod_amount),'sequence':s.sequence} for s in r.stops.all()]} for r in runs]})
+    return JsonResponse({'runs':[{'id':r.id,'runNo':r.run_no,'route':r.route_name,'driver':r.driver_name,'vehicle':r.vehicle_no,'date':r.delivery_date.isoformat(),'status':r.status,'trackingToken':r.tracking_token,'trackingUrl':f'/track/{r.tracking_token}' if r.tracking_token else None,'lastLocation':{'latitude':float(r.last_latitude),'longitude':float(r.last_longitude),'at':r.last_location_at.isoformat()} if r.last_latitude is not None and r.last_longitude is not None else None,'etaAt':r.eta_at.isoformat() if r.eta_at else None,'stops':[{'id':s.id,'order':s.order.order_no,'customer':s.order.customer.name,'status':s.status,'cod':float(s.cod_amount),'sequence':s.sequence,'etaAt':s.eta_at.isoformat() if s.eta_at else None,'otpAvailable':bool(s.delivery_otp)} for s in r.stops.all()]} for r in runs]})
+
+@require_GET
+def public_delivery_tracking(request, token):
+    run=DeliveryRun.objects.filter(tracking_token=token).prefetch_related('stops__order__customer').first()
+    if not run:return JsonResponse({'detail':'Tracking link not found or expired.'},status=404)
+    return JsonResponse({'runNo':run.run_no,'route':run.route_name,'driver':run.driver_name,'vehicle':run.vehicle_no,'status':run.status,'etaAt':run.eta_at.isoformat() if run.eta_at else None,'lastLocation':{'latitude':float(run.last_latitude),'longitude':float(run.last_longitude),'at':run.last_location_at.isoformat()} if run.last_latitude is not None and run.last_longitude is not None else None,'stops':[{'order':s.order.order_no,'customer':s.order.customer.name,'status':s.status,'sequence':s.sequence,'etaAt':s.eta_at.isoformat() if s.eta_at else None} for s in run.stops.all()]})
 
 @csrf_exempt
 @require_http_methods(['GET','POST'])
