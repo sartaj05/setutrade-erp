@@ -31,7 +31,7 @@ from .auth import (
 )
 from .models import (
     AccountingConnection, AccountingExportJob, ApprovalPolicy, AssistantMessage, AssistantThread, CompanySubscription, OfflineSyncReceipt, SubscriptionInvoice, SubscriptionPlan, ApprovalRequest, Attachment, AuditLog, PurchaseInvoiceCapture, BarcodeScanLog, Branch, Company, Customer, CustomerPortalAccess, CustomerPortalOrder, DeliveryProof, DeliveryRun, DeliveryStop, GoodsReceipt,
-    GoodsReceiptItem, InventoryMovement, Invoice, LedgerEntry, Notification, Order,
+    GoodsReceiptItem, InventoryLot, InventoryMovement, Invoice, LedgerEntry, Notification, Order,
     OrderItem, Payment, PriceList, PriceRule, Product, PurchaseItem, PurchaseOrder,
     Quotation, QuotationItem, ReorderSuggestion, ReturnItem, ReturnOrder, SalesTarget,
     SalesVisit, StockAdjustment, StockBalance, StockTransfer, StockTransferItem,
@@ -1415,6 +1415,13 @@ def forecasting(request):
 
 def _assistant_answer(company, question):
     q=question.lower().strip(); today=timezone.localdate()
+    if any(k in q for k in ['shelf','shell','expiry','expire','expiration','shelf life']):
+        lots=InventoryLot.objects.filter(company=company,expiry_date__isnull=False).exclude(status__in=['Closed','Expired']).select_related('product','warehouse').order_by('expiry_date')[:8]
+        if not lots:
+            return 'expiry', 'I cannot calculate shelf life yet because no active lot expiry dates are recorded. Add expiry dates in Product Master / Traceability and I can show days remaining and expiry alerts.', {'lots': [], 'nextStep': 'Record lot or batch expiry dates.'}
+        rows=[{'product':x.product.name,'sku':x.product.sku,'lot':x.lot_no,'warehouse':x.warehouse.name,'expiry':x.expiry_date.isoformat(),'daysRemaining':(x.expiry_date-today).days,'available':float(x.available_qty)} for x in lots]
+        closest=rows[0]
+        return 'expiry', f"The closest recorded expiry is {closest['product']} lot {closest['lot']} in {closest['daysRemaining']} days. I found {len(rows)} active lots with expiry dates.", {'lots': rows}
     if any(k in q for k in ['overdue','outstanding','receivable','credit']):
         rows=Customer.objects.filter(company=company,outstanding__gt=0).order_by('-outstanding')[:5];total=sum((x.outstanding for x in rows),Decimal('0'))
         return 'receivables', f"Top outstanding customers total ₹{float(total):,.0f} across the five largest balances.", {'customers':[{'name':x.name,'outstanding':float(x.outstanding),'limit':float(x.credit_limit)} for x in rows]}
@@ -1439,7 +1446,7 @@ def _assistant_answer(company, question):
 def ai_assistant(request):
     if request.method=='GET':
         threads=AssistantThread.objects.filter(company=request.company,user=request.api_user).order_by('-updated_at')[:10]
-        return JsonResponse({'threads':[{'id':t.id,'title':t.title,'updatedAt':t.updated_at.isoformat()} for t in threads],'capabilities':['sales','collections','receivables','stock risk','forecasting']})
+        return JsonResponse({'threads':[{'id':t.id,'title':t.title,'updatedAt':t.updated_at.isoformat()} for t in threads],'capabilities':['sales','collections','receivables','stock risk','forecasting','expiry tracking']})
     body=_json_body(request) or {}; question=str(body.get('question','')).strip()[:1200]
     if not question:return JsonResponse({'detail':'Ask a business question.'},status=400)
     thread=AssistantThread.objects.filter(pk=body.get('threadId'),company=request.company,user=request.api_user).first() if body.get('threadId') else None
