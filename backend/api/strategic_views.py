@@ -243,6 +243,12 @@ def _copilot_proposal(company,user,prompt):
     q=(prompt or '').lower()
     if any(x in q for x in ['collect','overdue','payment reminder']):
         customers=list(m.Customer.objects.filter(company=company,outstanding__gt=0).order_by('-outstanding')[:20]);return m.CopilotActionProposal.objects.create(company=company,requested_by=user,action_type='CREATE_COLLECTION_TASKS',title='Create collection tasks for outstanding customers',rationale=f'{len(customers)} customers have an outstanding balance. Human approval is required before tasks are created.',payload={'customerIds':[x.id for x in customers]},risk_level='Medium')
+    if any(x in q for x in ['whatsapp','reminder message','send reminder']):
+        customers=list(m.Customer.objects.filter(company=company,outstanding__gt=0).order_by('-outstanding')[:20]);return m.CopilotActionProposal.objects.create(company=company,requested_by=user,action_type='DRAFT_WHATSAPP_REMINDERS',title='Draft WhatsApp payment reminders',rationale=f'{len(customers)} customers have outstanding balances. Messages are drafted for review; no WhatsApp message is sent automatically.',payload={'customerIds':[x.id for x in customers]},risk_level='Medium')
+    if any(x in q for x in ['quotation','quote','customer offer']):
+        customer=m.Customer.objects.filter(company=company,is_active=True).order_by('id').first();products=list(m.Product.objects.filter(company=company,is_active=True).order_by('name')[:5]);return m.CopilotActionProposal.objects.create(company=company,requested_by=user,action_type='CREATE_QUOTATION_DRAFT',title='Prepare a customer quotation draft',rationale='A draft quotation can be reviewed before it is sent to the customer.',payload={'customerId':customer.id if customer else None,'productIds':[x.id for x in products]},risk_level='Low')
+    if any(x in q for x in ['transfer','move stock','stock movement']):
+        warehouses=list(m.Warehouse.objects.filter(company=company,is_active=True).order_by('id')[:2]);product=m.Product.objects.filter(company=company,is_active=True).order_by('name').first();return m.CopilotActionProposal.objects.create(company=company,requested_by=user,action_type='CREATE_STOCK_TRANSFER_DRAFT',title='Prepare an inter-warehouse stock transfer',rationale='The transfer remains a draft until warehouse users approve quantities and destination.',payload={'fromWarehouseId':warehouses[0].id if len(warehouses)>0 else None,'toWarehouseId':warehouses[1].id if len(warehouses)>1 else None,'productId':product.id if product else None,'quantity':1},risk_level='High')
     if any(x in q for x in ['purchase','reorder','stock out','stockout']):
         recs=list(m.ProcurementRecommendation.objects.filter(company=company,status='Open').values_list('id',flat=True)[:30]);return m.CopilotActionProposal.objects.create(company=company,requested_by=user,action_type='APPROVE_PROCUREMENT_RECOMMENDATIONS',title='Approve reviewed procurement recommendations',rationale=f'{len(recs)} open recommendations are available. Approval changes recommendation state but does not send a supplier PO.',payload={'recommendationIds':recs},risk_level='High')
     return m.CopilotActionProposal.objects.create(company=company,requested_by=user,action_type='REVIEW_ONLY',title='Review business question',rationale='No safe transactional action was inferred. The proposal remains review-only.',payload={'prompt':prompt},risk_level='Low')
@@ -255,6 +261,24 @@ def _execute_copilot(request, proposal):
         return {'createdCollectionTasks':created}
     if proposal.action_type=='APPROVE_PROCUREMENT_RECOMMENDATIONS':
         count=m.ProcurementRecommendation.objects.filter(company=request.company,id__in=proposal.payload.get('recommendationIds',[]),status='Open').update(status='Approved');return {'approvedRecommendations':count,'purchaseOrdersSent':0}
+    if proposal.action_type=='DRAFT_WHATSAPP_REMINDERS':
+        created=0
+        for c in m.Customer.objects.filter(company=request.company,id__in=proposal.payload.get('customerIds',[]),outstanding__gt=0):
+            if not c.phone: continue
+            m.WhatsAppMessage.objects.create(company=request.company,customer=c,direction='Outbound',template_name='payment_reminder_draft',message=f'Hello {c.name}, your SetuStock balance is ₹{c.outstanding:,.2f}. Please review your outstanding payment with our team.',status='Draft'); created+=1
+        return {'draftedWhatsAppReminders':created,'sent':0}
+    if proposal.action_type=='CREATE_QUOTATION_DRAFT':
+        customer=m.Customer.objects.filter(company=request.company,pk=proposal.payload.get('customerId'),is_active=True).first(); products=list(m.Product.objects.filter(company=request.company,pk__in=proposal.payload.get('productIds',[]),is_active=True)[:5])
+        if not customer or not products: return {'createdQuotation':False,'note':'A customer and at least one active product are required.'}
+        quote=m.Quotation.objects.create(company=request.company,quote_no=f"AI-Q-{timezone.now().strftime('%y%m%d%H%M%S%f')}",customer=customer,quote_date=timezone.localdate(),valid_until=timezone.localdate()+timedelta(days=15),created_by=request.api_user,notes='Prepared by approved AI action agent; review before sending.')
+        subtotal=Decimal('0'); tax=Decimal('0')
+        for product in products:
+            line=Decimal(str(product.sell_price or 0)); gst=line*Decimal(str(product.gst_rate or 0))/Decimal('100'); m.QuotationItem.objects.create(quotation=quote,product=product,quantity=1,unit_price=line,gst_rate=product.gst_rate,line_total=line+gst); subtotal+=line; tax+=gst
+        quote.subtotal=subtotal; quote.tax=tax; quote.total=subtotal+tax; quote.save(update_fields=['subtotal','tax','total']); return {'createdQuotation':quote.quote_no,'total':float(quote.total)}
+    if proposal.action_type=='CREATE_STOCK_TRANSFER_DRAFT':
+        from_warehouse=m.Warehouse.objects.filter(company=request.company,pk=proposal.payload.get('fromWarehouseId'),is_active=True).first(); to_warehouse=m.Warehouse.objects.filter(company=request.company,pk=proposal.payload.get('toWarehouseId'),is_active=True).first(); product=m.Product.objects.filter(company=request.company,pk=proposal.payload.get('productId'),is_active=True).first()
+        if not from_warehouse or not to_warehouse or not product: return {'createdTransfer':False,'note':'Two active warehouses and a product are required.'}
+        transfer=m.StockTransfer.objects.create(company=request.company,transfer_no=f"AI-ST-{timezone.now().strftime('%y%m%d%H%M%S%f')}",from_warehouse=from_warehouse,to_warehouse=to_warehouse,transfer_date=timezone.localdate(),created_by=request.api_user);m.StockTransferItem.objects.create(transfer=transfer,product=product,quantity=Decimal(str(proposal.payload.get('quantity') or 1)));return {'createdTransfer':transfer.transfer_no,'status':transfer.status}
     return {'executed':False,'note':'Review-only proposal; no transaction performed.'}
 
 @csrf_exempt
