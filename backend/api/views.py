@@ -106,6 +106,8 @@ def user_payload(user):
         permissions.append('onboarding')
     if 'access-review' not in permissions:
         permissions.append('access-review')
+    if profile.role in ('OWNER', 'MANAGER', 'ACCOUNTANT') and 'data-exchange' not in permissions:
+        permissions.append('data-exchange')
     subscription = CompanySubscription.objects.filter(company=company).select_related('plan').first() if company else None
     today = timezone.localdate()
     if subscription:
@@ -1216,6 +1218,15 @@ def export_csv(request, resource):
     elif resource=='orders':
         writer.writerow(['Order','Date','Customer','Status','Payment','Total']);
         for o in _company_qs(Order,request).select_related('customer').order_by('-order_date'): writer.writerow([o.order_no,o.order_date,o.customer.name,o.status,o.payment_status,o.total])
+    elif resource=='suppliers':
+        writer.writerow(['Code','Name','City','State','Phone','Email','GSTIN','Outstanding']);
+        for s in _company_qs(Supplier,request).order_by('name'): writer.writerow([s.code,s.name,s.city,s.state,s.phone,s.email,s.gstin,s.outstanding])
+    elif resource=='opening-stock':
+        writer.writerow(['Warehouse','SKU','Product','Quantity','Reserved']);
+        for b in StockBalance.objects.filter(warehouse__company=request.company).select_related('warehouse','product').order_by('warehouse__name','product__sku'): writer.writerow([b.warehouse.code,b.product.sku,b.product.name,b.quantity,b.reserved])
+    elif resource=='invoices':
+        writer.writerow(['Invoice','Order','Customer','Date','Due','Taxable','Total','Status']);
+        for i in _company_qs(Invoice,request).select_related('order__customer').order_by('-invoice_date'): writer.writerow([i.invoice_no,i.order.order_no,i.order.customer.name,i.invoice_date,i.due_date or '',i.taxable_amount,i.total,i.status])
     else: return JsonResponse({'detail':'Unsupported export resource.'},status=404)
     response=HttpResponse(output.getvalue(),content_type='text/csv'); response['Content-Disposition']=f'attachment; filename="setustock-{resource}-{timezone.localdate()}.csv"'; return response
 
@@ -1240,6 +1251,23 @@ def import_csv(request, resource):
             code=(row.get('Code') or row.get('code') or '').strip(); name=(row.get('Name') or row.get('name') or '').strip()
             if not code or not name: continue
             _,made=Customer.objects.update_or_create(company=request.company,code=code,defaults={'name':name,'city':row.get('City',''),'state':row.get('State',request.company.state),'phone':row.get('Phone',''),'email':row.get('Email',''),'gstin':row.get('GSTIN',''),'credit_limit':decimal(row.get('Credit Limit',0))}); created+=int(made); updated+=int(not made)
+    elif resource=='suppliers':
+        for row in rows:
+            code=(row.get('Code') or row.get('code') or '').strip(); name=(row.get('Name') or row.get('name') or '').strip()
+            if not code or not name: continue
+            _,made=Supplier.objects.update_or_create(company=request.company,code=code,defaults={'name':name,'city':row.get('City',''),'state':row.get('State',request.company.state),'phone':row.get('Phone',''),'email':row.get('Email',''),'gstin':row.get('GSTIN','')}); created+=int(made); updated+=int(not made)
+    elif resource=='opening-stock':
+        for row in rows:
+            sku=(row.get('SKU') or row.get('sku') or '').strip(); code=(row.get('Warehouse') or row.get('warehouse') or '').strip(); product=_company_qs(Product,request).filter(sku=sku).first(); warehouse=_company_qs(Warehouse,request).filter(code=code).first()
+            if not product or not warehouse: continue
+            StockBalance.objects.update_or_create(warehouse=warehouse,product=product,defaults={'quantity':decimal(row.get('Quantity',0)),'reserved':decimal(row.get('Reserved',0))}); product.stock=StockBalance.objects.filter(product=product).aggregate(v=Sum('quantity'))['v'] or 0; product.save(update_fields=['stock','updated_at']); created+=1
+    elif resource=='invoices':
+        for row in rows:
+            number=(row.get('Invoice') or row.get('invoice') or '').strip(); order_no=(row.get('Order') or row.get('order') or '').strip(); order=_company_qs(Order,request).select_related('customer').filter(order_no=order_no).first()
+            if not number or not order or Invoice.objects.filter(invoice_no=number).exists(): continue
+            total=decimal(row.get('Total',0)); taxable=decimal(row.get('Taxable',total)); tax=max(Decimal('0'),total-taxable); due=_date(row.get('Due')) if row.get('Due') else None
+            invoice=Invoice.objects.create(company=request.company,invoice_no=number,order=order,gstin=order.customer.gstin,taxable_amount=taxable,cgst=(tax/2),sgst=tax-(tax/2),total=total,status=row.get('Status') or Invoice.Status.UNPAID,invoice_date=_date(row.get('Date')),due_date=due,place_of_supply=order.customer.state)
+            LedgerEntry.objects.get_or_create(company=request.company,customer=order.customer,entry_type=LedgerEntry.EntryType.INVOICE,reference=invoice.invoice_no,defaults={'amount':invoice.total,'entry_date':invoice.invoice_date,'due_date':due,'note':f'Imported invoice for {order.order_no}'}); Customer.objects.filter(pk=order.customer_id).update(outstanding=F('outstanding')+invoice.total,due_date=due); created+=1
     else: return JsonResponse({'detail':'Unsupported import resource.'},status=404)
     audit(request,'import',resource,'bulk',f'Imported {resource}',{'created':created,'updated':updated})
     return JsonResponse({'created':created,'updated':updated,'rows':len(rows)})

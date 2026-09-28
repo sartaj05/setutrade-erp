@@ -10,6 +10,7 @@ import AfterSalesPage from './AfterSalesPage';
 import ClientWorkflowPage from './ClientWorkflowPage';
 import OnboardingPage from './OnboardingPage';
 import AccessReviewPage from './AccessReviewPage';
+import DataExchangePage from './DataExchangePage';
 
 const productionModules = ['products','inventory','customers','orders','invoices','purchases','warehouses','quotations','payments','reports','team','settings','audit'];
 const growthModules = ['delivery','approvals','invoice-ocr','accounting','offline','subscription','forecasting','assistant'];
@@ -22,6 +23,7 @@ export default function ModulePage({ module }) {
   if (module === 'client-workflow') return <ClientWorkflowPage />;
   if (module === 'onboarding') return <OnboardingPage />;
   if (module === 'access-review') return <AccessReviewPage />;
+  if (module === 'data-exchange') return <DataExchangePage />;
   if (productionModules.includes(module)) return <ProductionModulePage module={module} />;
   if (growthModules.includes(module)) return <GrowthModulePage module={module} />;
   if (module === 'automations') return <CustomerEngagementPage />;
