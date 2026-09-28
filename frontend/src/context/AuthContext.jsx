@@ -82,7 +82,7 @@ export function AuthProvider({ children }) {
     const overrides = readDemoPasswordOverrides();
     const account = [...demoAccounts, ...readRegisteredDemoAccounts()].find((item) => item.email.toLowerCase() === email.trim().toLowerCase() && (overrides[item.email.toLowerCase()] || item.password) === password);
     if (!account) throw new Error('Invalid email or password. Use one of the demo accounts shown below.');
-    const safeUser = { id: account.id, name: account.name, email: account.email, role: account.role, business: account.business, permissions: permissions[account.role] || ['dashboard'], mode: 'demo' };
+    const safeUser = { id: account.id, name: account.name, email: account.email, role: account.role, business: account.business, permissions: permissions[account.role] || ['dashboard'], subscription: { code: account.plan || 'FREE', name: account.plan || 'Free', status: 'Active' }, mode: 'demo' };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(safeUser));
     setUser(safeUser); setMode('demo');
     return safeUser;
@@ -96,7 +96,7 @@ export function AuthProvider({ children }) {
     if ([...demoAccounts, ...accounts].some((item) => item.email.toLowerCase() === email.trim().toLowerCase())) throw new Error('An account with this email already exists.');
     const account = { id: `demo-${Date.now()}`, name: name.trim(), email: email.trim().toLowerCase(), password, role: 'OWNER', business: businessName.trim() || `${name.trim()} Distributors`, phone: phone.trim() };
     localStorage.setItem(REGISTERED_DEMO_KEY, JSON.stringify([...accounts, account]));
-    const safeUser = { id: account.id, name: account.name, email: account.email, role: account.role, business: account.business, permissions: permissions[account.role] || ['dashboard'], mode: 'demo' };
+    const safeUser = { id: account.id, name: account.name, email: account.email, role: account.role, business: account.business, permissions: permissions[account.role] || ['dashboard'], subscription: { code: 'FREE', name: 'Free', status: 'Trial' }, mode: 'demo' };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(safeUser));
     setUser(safeUser); setMode('demo');
     return safeUser;

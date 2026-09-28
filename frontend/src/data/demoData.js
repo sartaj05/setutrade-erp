@@ -1,9 +1,9 @@
 export const demoAccounts = [
-  { id: 1, name: 'Arjun Khanna', email: 'owner@setustock.demo', password: 'demo123', role: 'OWNER', business: 'Khanna Electrical Distributors' },
-  { id: 2, name: 'Meera Sethi', email: 'manager@setustock.demo', password: 'demo123', role: 'MANAGER', business: 'Khanna Electrical Distributors' },
-  { id: 3, name: 'Rohit Bansal', email: 'sales@setustock.demo', password: 'demo123', role: 'SALES', business: 'Khanna Electrical Distributors' },
-  { id: 4, name: 'Imran Ali', email: 'warehouse@setustock.demo', password: 'demo123', role: 'WAREHOUSE', business: 'Khanna Electrical Distributors' },
-  { id: 5, name: 'Nisha Gupta', email: 'accountant@setustock.demo', password: 'demo123', role: 'ACCOUNTANT', business: 'Khanna Electrical Distributors' },
+  { id: 1, name: 'Arjun Khanna', email: 'owner@setustock.demo', password: 'demo123', role: 'OWNER', plan: 'ENTERPRISE', business: 'Khanna Electrical Distributors' },
+  { id: 2, name: 'Meera Sethi', email: 'manager@setustock.demo', password: 'demo123', role: 'MANAGER', plan: 'PREMIUM', business: 'Khanna Electrical Distributors' },
+  { id: 3, name: 'Rohit Bansal', email: 'sales@setustock.demo', password: 'demo123', role: 'SALES', plan: 'PREMIUM', business: 'Khanna Electrical Distributors' },
+  { id: 4, name: 'Imran Ali', email: 'warehouse@setustock.demo', password: 'demo123', role: 'WAREHOUSE', plan: 'PREMIUM', business: 'Khanna Electrical Distributors' },
+  { id: 5, name: 'Nisha Gupta', email: 'accountant@setustock.demo', password: 'demo123', role: 'ACCOUNTANT', plan: 'PREMIUM', business: 'Khanna Electrical Distributors' },
 ];
 
 export const permissions = {

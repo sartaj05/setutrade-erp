@@ -97,6 +97,21 @@ def user_payload(user):
     profile = user.profile
     company = profile.company
     permissions = list(dict.fromkeys(PERMISSIONS.get(profile.role, []) + (profile.extra_permissions or [])))
+    subscription = CompanySubscription.objects.filter(company=company).select_related('plan').first() if company else None
+    today = timezone.localdate()
+    if subscription:
+        plan = subscription.plan
+        plan_payload = {
+            'code': plan.code, 'name': plan.name,
+            'userLimit': plan.user_limit, 'branchLimit': plan.branch_limit, 'warehouseLimit': plan.warehouse_limit,
+            'features': plan.features, 'status': subscription.status,
+            'periodEnd': subscription.current_period_end.isoformat() if subscription.current_period_end else None,
+            'trialEnd': subscription.trial_end.isoformat() if subscription.trial_end else None,
+            'daysRemaining': max(0, (subscription.current_period_end - today).days) if subscription.current_period_end else None,
+            'usage': {'users': company.profiles.count(), 'branches': company.branches.count(), 'warehouses': company.warehouses.count()},
+        }
+    else:
+        plan_payload = {'code': 'FREE', 'name': 'Free', 'userLimit': 3, 'branchLimit': 1, 'warehouseLimit': 1, 'features': ['Core inventory', 'Customers', 'Orders'], 'status': 'Trial', 'periodEnd': None, 'trialEnd': None, 'daysRemaining': None, 'usage': {'users': company.profiles.count(), 'branches': company.branches.count(), 'warehouses': company.warehouses.count()} if company else {}}
     return {
         'id': user.id,
         'name': user.get_full_name() or user.username,
@@ -107,6 +122,7 @@ def user_payload(user):
         'branch': {'id': profile.branch_id, 'name': profile.branch.name} if profile.branch else None,
         'permissions': permissions,
         'branding': {'logo': company.logo_url, 'state': company.state, 'invoicePrefix': company.invoice_prefix} if company else {},
+        'subscription': plan_payload,
     }
 
 

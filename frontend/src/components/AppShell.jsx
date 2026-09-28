@@ -6,6 +6,7 @@ import { demoNotifications } from '../data/productionData';
 import { useAuth } from '../context/AuthContext';
 import { getApiResource, healthApi, patchApiResource } from '../services/api';
 import AssistantWidget from './AssistantWidget';
+import { normalizePlan, PLAN_LABELS, planAllows, requiredPlan } from '../data/plans';
 
 const moduleLabels = {
   dashboard: ['Overview', 'chart'], products: ['Products', 'box'], inventory: ['Inventory', 'box'], customers: ['Customers', 'users'],
@@ -25,11 +26,15 @@ const navigationGroups = [
 
 export default function AppShell({ module, onModuleChange, children, navigate }) {
   const { user, mode, logout } = useAuth();
-  const visibleModules = user.permissions || permissions[user.role] || ['dashboard'];
+  const roleModules = user.permissions || permissions[user.role] || ['dashboard'];
+  const plan = normalizePlan(user.subscription?.code || user.plan);
+  const visibleModules = roleModules.filter((key) => planAllows(plan, key));
+  const lockedModules = roleModules.filter((key) => !planAllows(plan, key));
   const initials = user.name.split(' ').map((x) => x[0]).slice(0, 2).join('');
   const [search, setSearch] = useState(''); const [searchResults, setSearchResults] = useState([]); const [showSearch, setShowSearch] = useState(false);
   const [notifications, setNotifications] = useState(demoNotifications); const [showNotifications, setShowNotifications] = useState(false);
   const [apiHealth, setApiHealth] = useState(mode === 'api' ? 'checking' : 'demo');
+  const [planNotice, setPlanNotice] = useState('');
 
   useEffect(() => {
     if (mode !== 'api') { setNotifications(demoNotifications); setApiHealth('demo'); return; }
@@ -59,9 +64,9 @@ export default function AppShell({ module, onModuleChange, children, navigate })
         <div className="sidebar-brand"><Brand /></div>
         <nav className="side-nav">
           {navigationGroups.map((group) => {
-            const items = group.keys.filter((key) => visibleModules.includes(key) && moduleLabels[key]);
+            const items = group.keys.filter((key) => roleModules.includes(key) && moduleLabels[key]);
             if (!items.length) return null;
-            return <div className="side-nav-group" key={group.label}><span className="side-nav-label">{group.label}</span>{items.map((key) => { const [label, icon] = moduleLabels[key]; return <button className={module === key ? 'side-link active' : 'side-link'} key={key} onClick={() => onModuleChange(key)}><Icon name={icon} size={18} /><span>{label}</span></button>; })}</div>;
+            return <div className="side-nav-group" key={group.label}><span className="side-nav-label">{group.label}</span>{items.map((key) => { const [label, icon] = moduleLabels[key]; const locked = !planAllows(plan, key); return <button className={`${module === key ? 'side-link active' : 'side-link'}${locked ? ' locked' : ''}`} key={key} onClick={() => { if (locked) { setPlanNotice(`${label} requires the ${PLAN_LABELS[requiredPlan(key)]} plan.`); return; } onModuleChange(key); }} title={locked ? `Requires ${PLAN_LABELS[requiredPlan(key)]}` : label}><Icon name={icon} size={18} /><span>{label}</span>{locked && <em>Upgrade</em>}</button>; })}</div>;
           })}
         </nav>
         <div className="sidebar-bottom"><div className="mode-chip"><span className={apiHealth === 'online' ? 'online' : ''} /> {mode !== 'api' ? 'Safe demo mode' : apiHealth === 'checking' ? 'Checking production API…' : apiHealth === 'online' ? 'Production API connected' : apiHealth === 'degraded' ? 'Production API degraded' : 'Production API unavailable'}</div><button className="signout" onClick={signOut}>Sign out</button></div>
@@ -73,7 +78,7 @@ export default function AppShell({ module, onModuleChange, children, navigate })
           <div className="global-search"><input value={search} onFocus={() => setShowSearch(true)} onChange={(e) => { setSearch(e.target.value); setShowSearch(true); }} placeholder="Search SKU, customer, order, invoice…" />{showSearch && search.trim().length >= 2 && <div className="search-popover">{mode !== 'api' && <div className="search-empty">Global search uses the live Django database.</div>}{mode === 'api' && searchResults.length === 0 && <div className="search-empty">No matches yet.</div>}{searchResults.map((r) => <button key={`${r.type}-${r.id}`} onClick={() => pickSearch(r)}><span>{r.type}</span><strong>{r.label}</strong><small>{r.meta}</small></button>)}</div>}</div>
           <div className="top-actions"><button className="notification-btn" onClick={() => setShowNotifications((v) => !v)}>◉{unread > 0 && <b>{unread}</b>}</button>{showNotifications && <div className="notification-popover"><header><strong>Notifications</strong><button onClick={markAllRead}>Mark all read</button></header>{notifications.slice(0, 8).map((n) => <button key={n.id} className={n.read ? 'read' : ''} onClick={() => { if (n.module && visibleModules.includes(n.module)) onModuleChange(n.module); setShowNotifications(false); }}><i className={`notice-dot ${n.level}`} /><span><strong>{n.title}</strong><small>{n.message}</small></span></button>)}</div>}<div className="user-menu"><div className="top-role"><span>{user.role}</span><small>{user.name}</small></div><div className="user-avatar">{initials}</div></div></div>
         </header>
-        <main className="app-content">{children}</main>
+        <main className="app-content">{planNotice && <div className="plan-notice"><strong>{PLAN_LABELS[plan]} plan</strong><span>{planNotice}</span><button onClick={() => { setPlanNotice(''); onModuleChange('subscription'); }}>View plans</button><button className="plan-notice-close" onClick={() => setPlanNotice('')}>×</button></div>}{children}</main>
       </section>
       <AssistantWidget hidden={module === 'assistant'} navigate={navigate} onModuleChange={onModuleChange} visibleModules={visibleModules} />
     </div>

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { createApiResource } from '../services/api';
+import { createApiResource, getApiResource } from '../services/api';
 import { queueOfflineEvent, listOfflineEvents, removeOfflineEvents } from '../services/offlineQueue';
 import {
   demoDelivery, demoApprovals, demoCaptures, demoAccounting, demoOffline,
@@ -77,8 +77,10 @@ function OfflinePage({ mode, notice, setNotice }) {
 }
 
 function SubscriptionPage({ mode, notice, setNotice }) {
+  const [live, setLive] = useState(null);
+  useEffect(() => { setLive(null); if (mode === 'api') getApiResource('subscription').then(setLive).catch(() => {}); }, [mode]);
   const change = async (plan) => { try { if (mode === 'api') await createApiResource('subscription', { action: 'change-plan', planCode: plan.code }); setNotice(`Plan changed to ${plan.name}. Billing invoice created.`); } catch (e) { setNotice(e.message); } };
-  const d = demoSubscription;
+  const d = live || demoSubscription;
   return <div><div className="module-header"><div><span className="eyebrow">SaaS commercial layer</span><h1>Subscription billing</h1><p>Control trials, plan limits, recurring billing state and SaaS invoices per client company.</p></div></div><Notice text={notice}/><div className="report-grid"><article><span>Current plan</span><strong>{d.subscription.planName}</strong><small>{d.subscription.status} · ends {d.subscription.periodEnd}</small></article><article><span>Users</span><strong>{d.usage.users} / 10</strong><small>plan usage</small></article><article><span>Warehouses</span><strong>{d.usage.warehouses} / 5</strong><small>plan usage</small></article></div><div className="plan-grid">{d.plans.map((p) => <article className="panel" key={p.code}><span className="eyebrow">{p.code}</span><h2>{p.name}</h2><strong className="plan-price">{money(p.monthly)}<small>/mo</small></strong><ul>{p.features.map((f) => <li key={f}>{f}</li>)}</ul><button onClick={() => change(p)}>Choose {p.name}</button></article>)}</div></div>;
 }
 

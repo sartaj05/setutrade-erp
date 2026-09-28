@@ -467,6 +467,14 @@ table td { border-color: #e8edf4; }
 .v2-role-detail > div span { display: grid; gap: 3px; color: #8795a8; font-size: 9px; white-space: nowrap; }
 .v2-role-detail > div b { color: var(--app-blue); font-size: 14px; }
 .landing-v2 { background: var(--app-paper) !important; color: var(--app-ink); }
+.side-link.locked { color: #9aa8ba; }
+.side-link.locked em { margin-left: auto; color: var(--app-cobalt); font-size: 8px; font-style: normal; font-weight: 800; }
+.side-link.locked:hover { background: #f2f6fc; color: var(--app-blue); }
+.plan-notice { display: flex; align-items: center; gap: 12px; margin-bottom: 24px; padding: 14px 16px; border: 1px solid #c9d9f1; border-radius: 14px; background: #edf4ff; color: var(--app-blue); font-size: 12px; box-shadow: 0 8px 20px rgba(40,66,120,.06); }
+.plan-notice strong { color: var(--app-cobalt); }
+.plan-notice span { flex: 1; }
+.plan-notice button { border: 0; border-radius: 9px; padding: 8px 12px; background: var(--app-cobalt); color: #fff; font-size: 11px; font-weight: 800; cursor: pointer; }
+.plan-notice .plan-notice-close { padding: 2px 6px; background: transparent; color: var(--app-muted); font-size: 18px; }
 
 @media (max-width: 900px) {
   .app-content { padding: 34px 28px 64px; }
