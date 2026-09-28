@@ -1422,6 +1422,8 @@ def _assistant_answer(company, question):
         rows=[{'product':x.product.name,'sku':x.product.sku,'lot':x.lot_no,'warehouse':x.warehouse.name,'expiry':x.expiry_date.isoformat(),'daysRemaining':(x.expiry_date-today).days,'available':float(x.available_qty)} for x in lots]
         closest=rows[0]
         return 'expiry', f"The closest recorded expiry is {closest['product']} lot {closest['lot']} in {closest['daysRemaining']} days. I found {len(rows)} active lots with expiry dates.", {'lots': rows}
+    if 'customer' in q and any(k in q for k in ['contact','reach','call','message','whatsapp']):
+        return 'customers', 'Open Customers to find the account, review its outstanding balance and recent orders, then use the saved phone or WhatsApp contact to follow up.', {'steps':[{'title':'Open the customer record','detail':'Review phone, credit and order history.'},{'title':'Choose a follow-up channel','detail':'Call or send a WhatsApp message using the saved contact.'},{'title':'Record the outcome','detail':'Add a note or create a field-sales follow-up.'}]}
     if any(k in q for k in ['order','dispatch','pending order','open order']):
         orders=Order.objects.filter(company=company).exclude(status=Order.Status.CANCELLED)
         waiting=orders.filter(status__in=[Order.Status.READY, Order.Status.PACKED]).count()

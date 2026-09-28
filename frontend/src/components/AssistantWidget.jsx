@@ -13,6 +13,7 @@ const rolePrompts = {
 function demoReply(question) {
   const q = question.toLowerCase();
   if (q.includes('shelf') || q.includes('shell') || q.includes('expiry') || q.includes('expire') || q.includes('last 1 day')) return { answer: 'Shelf life is not stored on the current product records. Add lot or batch expiry dates in Product Master / Traceability and Setu can show days remaining and expiry alerts.', intent: 'expiry', data: { lots: [], nextStep: 'Record lot or batch expiry dates.' } };
+  if (q.includes('contact') || q.includes('reach') || q.includes('call customer') || q.includes('message customer') || q.includes('whatsapp customer')) return { answer: 'Open Customers to find the account, review its outstanding balance and recent orders, then use the saved phone or WhatsApp contact to follow up.', intent: 'customers', data: { steps: [{ title: 'Open the customer record', detail: 'Review phone, credit and order history.' }, { title: 'Choose a follow-up channel', detail: 'Call or send a WhatsApp message using the saved contact.' }, { title: 'Record the outcome', detail: 'Add a note or create a field-sales follow-up.' }] } };
   if (q.includes('attention') || q.includes('today') || q.includes('urgent')) return { answer: 'Today\'s demo priorities are overdue customer balances, Polycab 2.5mm Wire low stock and 7 orders waiting for dispatch.', intent: 'dashboard', data: { priorities: ['Overdue customer balances', 'Polycab 2.5mm Wire low stock', '7 orders waiting for dispatch'] } };
   if (q.includes('stock') || q.includes('reorder') || q.includes('run out')) return { answer: 'Polycab 2.5mm Wire and GM 8 Module Plate are the highest stock-risk items right now.', intent: 'stock-risk', data: { products: [{ name: 'Polycab 2.5mm Wire Red', stock: 7, reorderLevel: 12 }, { name: 'GM 8 Module Plate', stock: 12, reorderLevel: 15 }] } };
   if (q.includes('overdue') || q.includes('receivable') || q.includes('collection')) return { answer: 'The largest overdue demo balances are Sethi Hardware House and NCR Buildmart.', intent: 'receivables', data: { customers: [{ name: 'Sethi Hardware House', outstanding: 124600 }, { name: 'NCR Buildmart', outstanding: 76750 }] } };
@@ -25,6 +26,7 @@ function demoReply(question) {
 
 const intentActions = {
   dashboard: ['Open overview', 'dashboard'],
+  customers: ['Open customers', 'customers'],
   sales: ['Open overview', 'dashboard'],
   orders: ['Open orders', 'orders'],
   'stock-risk': ['Open inventory', 'inventory'],
@@ -38,6 +40,7 @@ const intentActions = {
 };
 
 const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN')}`;
+const hasAssistantData = (data) => Boolean(data && Object.values(data).some((value) => Array.isArray(value) ? value.length > 0 : value !== undefined && value !== null && value !== ''));
 
 export default function AssistantWidget({ hidden = false, navigate, onModuleChange, visibleModules = [] }) {
   const { user, mode } = useAuth();
@@ -94,9 +97,10 @@ export default function AssistantWidget({ hidden = false, navigate, onModuleChan
       </header>
       <div className="assistant-widget-messages">
         {!messages.length && <div className="assistant-widget-welcome"><span className="assistant-bot">✦</span><div><p>Hi {user?.name?.split(' ')[0] || 'there'}! I can help with your SetuStock workspace.</p><div className="assistant-prompt-list">{prompts.map((prompt) => <button key={prompt} onClick={() => ask(prompt)}>{prompt}</button>)}</div></div></div>}
-        {messages.map((message, index) => <div className={`assistant-widget-message ${message.role}`} key={`${message.role}-${index}`}><span>{message.role === 'assistant' ? 'Setu' : 'You'}</span><p>{message.content}</p>{message.role === 'assistant' && message.data && <div className="assistant-data-card">
+        {messages.map((message, index) => <div className={`assistant-widget-message ${message.role}`} key={`${message.role}-${index}`}><span>{message.role === 'assistant' ? 'Setu' : 'You'}</span><p>{message.content}</p>{message.role === 'assistant' && hasAssistantData(message.data) && <div className="assistant-data-card">
           {message.data.products?.map((product) => <div key={product.name}><strong>{product.name}</strong><small>{product.stock} available · reorder at {product.reorderLevel}</small></div>)}
           {message.data.customers?.map((customer) => <div key={customer.name}><strong>{customer.name}</strong><small>{money(customer.outstanding)} outstanding</small></div>)}
+          {message.data.steps?.map((step) => <div key={step.title}><strong>{step.title}</strong><small>{step.detail}</small></div>)}
           {message.data.lots?.map((lot) => <div key={lot.lot}><strong>{lot.product} · {lot.lot}</strong><small>{lot.daysRemaining} days remaining</small></div>)}
           {message.data.warehouses?.map((warehouse) => <div key={warehouse.name}><strong>{warehouse.name}</strong><small>{warehouse.city}</small></div>)}
           {message.data.priorities?.map((priority) => <div key={priority}><strong>{priority}</strong><small>Priority for today</small></div>)}
@@ -104,6 +108,8 @@ export default function AssistantWidget({ hidden = false, navigate, onModuleChan
           {message.data.returns && <div><strong>{message.data.returns} returns</strong><small>{message.data.adjustments} stock adjustments to review</small></div>}
           {message.data.pending !== undefined && <div><strong>{message.data.pending} approvals pending</strong><small>Review before execution</small></div>}
           {message.data.sales && <div><strong>{money(message.data.sales)} sales</strong><small>Month to date</small></div>}
+          {message.data.collections !== undefined && <div><strong>{money(message.data.collections)} collected</strong><small>Month to date</small></div>}
+          {message.data.examples?.map((example) => <div key={example}><strong>{example}</strong><small>Try asking Setu</small></div>)}
           {message.data.nextStep && <small className="assistant-next-step">Next step: {message.data.nextStep}</small>}
         </div>}{message.role === 'assistant' && intentActions[message.intent] && visibleModules.includes(intentActions[message.intent][1]) && <button className="assistant-action-link" onClick={() => openModule(intentActions[message.intent][1])}>{intentActions[message.intent][0]} ↗</button>}</div>)}
         {busy && <div className="assistant-widget-message assistant"><span>Setu</span><p>Checking your workspace…</p></div>}
