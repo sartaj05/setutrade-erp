@@ -1210,7 +1210,10 @@ def portal_catalog(request):
         best = PriceRule.objects.filter(price_list__company=request.company, price_list__is_active=True, product=p).filter(Q(price_list__customer=request.customer) | Q(price_list__customer__isnull=True)).order_by('-min_quantity').first()
         rows.append({'id': p.id, 'sku': p.sku, 'name': p.name, 'stock': float(p.stock), 'unit': p.unit, 'price': float(best.price if best else p.sell_price), 'gst': float(p.gst_rate), 'image': p.image_url})
     recent = CustomerPortalOrder.objects.filter(company=request.company, customer=request.customer).order_by('-created_at')[:10]
-    return JsonResponse({'products': rows, 'credit': {'outstanding': float(request.customer.outstanding), 'limit': float(request.customer.credit_limit)}, 'orders': [{'id': x.request_no, 'status': x.status, 'total': float(x.estimated_total), 'createdAt': x.created_at.isoformat()} for x in recent]})
+    invoices = Invoice.objects.filter(company=request.company, order__customer=request.customer).order_by('-invoice_date', '-id')[:20]
+    payments = Payment.objects.filter(company=request.company, customer=request.customer).order_by('-payment_date', '-id')[:20]
+    returns = ReturnOrder.objects.filter(company=request.company, customer=request.customer).order_by('-return_date', '-id')[:20]
+    return JsonResponse({'products': rows, 'credit': {'outstanding': float(request.customer.outstanding), 'limit': float(request.customer.credit_limit)}, 'orders': [{'id': x.request_no, 'status': x.status, 'total': float(x.estimated_total), 'createdAt': x.created_at.isoformat()} for x in recent], 'invoices': [{'id': x.invoice_no, 'total': float(x.total), 'status': x.status, 'date': x.invoice_date.isoformat(), 'dueDate': x.due_date.isoformat() if x.due_date else None} for x in invoices], 'payments': [{'id': x.receipt_no, 'amount': float(x.amount), 'method': x.method, 'date': x.payment_date.isoformat()} for x in payments], 'returns': [{'id': x.return_no, 'status': x.status, 'total': float(x.total), 'date': x.return_date.isoformat()} for x in returns]})
 
 @csrf_exempt
 @require_POST
