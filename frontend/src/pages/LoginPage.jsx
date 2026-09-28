@@ -12,7 +12,7 @@ export default function LoginPage({ navigate }) {
   const query = useMemo(() => new URLSearchParams(window.location.search), []);
   const resetUid = query.get('reset_uid');
   const resetToken = query.get('reset_token');
-  const [view, setView] = useState(resetUid && resetToken ? 'reset' : 'login');
+  const [view, setView] = useState(resetUid && resetToken ? 'reset' : query.get('view') === 'register' ? 'register' : 'login');
   const [email, setEmail] = useState(demoMode ? 'owner@setustock.demo' : '');
   const [password, setPassword] = useState(demoMode ? 'demo123' : '');
   const [name, setName] = useState('');

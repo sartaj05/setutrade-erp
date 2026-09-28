@@ -17,8 +17,9 @@ function useTinyRouter() {
     return () => window.removeEventListener('popstate', onPop);
   }, []);
   const navigate = (to) => {
-    window.history.pushState({}, '', to);
-    setPath(to);
+    const next = new URL(to, window.location.origin);
+    window.history.pushState({}, '', `${next.pathname}${next.search}${next.hash}`);
+    setPath(next.pathname);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
   return { path, navigate };
