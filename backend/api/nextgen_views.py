@@ -157,6 +157,42 @@ def treasury(request):
         amount=Decimal(str(data.get('amount',0))); row=m.BankTransaction.objects.create(company=company,bank_account=account,transaction_date=data.get('date') or timezone.localdate(),amount=amount,transaction_type=data.get('type','Credit'),reference=data.get('reference',''),description=data.get('description','Manual statement row'));account.current_balance+=amount if row.transaction_type=='Credit' else -amount;account.save(update_fields=['current_balance']);return JsonResponse({'id':row.id},status=201)
     return JsonResponse({'detail':'Unsupported action.'},status=400)
 
+@csrf_exempt
+@require_http_methods(['GET','POST'])
+@api_auth_required
+def open_finance(request):
+    denied=_guard(request,['OWNER','MANAGER','ACCOUNTANT'])
+    if denied:return denied
+    company=request.company
+    if request.method=='GET':
+        accounts=m.BankAccount.objects.filter(company=company,is_active=True).order_by('name')
+        txns=m.BankTransaction.objects.filter(company=company).select_related('bank_account').order_by('-transaction_date','-id')[:40]
+        forecasts=list(m.CashFlowForecast.objects.filter(company=company).order_by('forecast_date')[:14])
+        consents=m.ConsentRecord.objects.filter(company=company,purpose='Open Finance bank data').order_by('-captured_at')
+        receivable=m.Customer.objects.filter(company=company).aggregate(v=Sum('outstanding'))['v'] or 0; payable=m.Supplier.objects.filter(company=company).aggregate(v=Sum('outstanding'))['v'] or 0; cash=accounts.aggregate(v=Sum('current_balance'))['v'] or 0
+        projected=forecasts[-1].projected_balance if forecasts else cash
+        return JsonResponse({'summary':{'cashPosition':_money(cash),'receivable':_money(receivable),'payable':_money(payable),'projectedBalance':_money(projected),'consented':consents.filter(granted=True).exists(),'transactions':txns.count()},'accounts':[{'id':a.id,'name':a.name,'bank':a.bank_name,'last4':a.account_last4,'type':a.account_type,'balance':_money(a.current_balance)} for a in accounts],'transactions':[{'id':t.id,'date':_dt(t.transaction_date),'account':t.bank_account.name,'type':t.transaction_type,'amount':_money(t.amount),'reference':t.reference,'description':t.description,'status':t.matching_status} for t in txns],'forecast':[{'date':_dt(x.forecast_date),'inflow':_money(x.expected_inflow),'outflow':_money(x.expected_outflow),'balance':_money(x.projected_balance)} for x in forecasts],'consent':{'active':consents.filter(granted=True).exists(),'source':consents.first().source if consents.exists() else 'Not connected','capturedAt':_dt(consents.first().captured_at) if consents.exists() else None}})
+    data=_body(request); action=data.get('action')
+    if action=='connect':
+        row=m.ConsentRecord.objects.create(company=company,subject_key=f'company:{company.id}',purpose='Open Finance bank data',granted=True,source=data.get('source','Account Aggregator sandbox'));audit(request,'CREATE','ConsentRecord',row.id,'Granted open-finance bank data consent');return JsonResponse({'id':row.id,'active':True,'message':'Consent recorded. Connect an authorised Account Aggregator provider before production use.'},status=201)
+    if action=='revoke':
+        row=m.ConsentRecord.objects.filter(company=company,purpose='Open Finance bank data',granted=True).order_by('-captured_at').first()
+        if not row:return JsonResponse({'detail':'No active open-finance consent found.'},status=404)
+        row.granted=False;row.withdrawn_at=timezone.now();row.save(update_fields=['granted','withdrawn_at']);audit(request,'WITHDRAW','ConsentRecord',row.id,'Revoked open-finance bank data consent');return JsonResponse({'id':row.id,'active':False})
+    if action=='import-statement':
+        account=_pick(m.BankAccount.objects.filter(company=company,is_active=True),data.get('accountId')); rows=data.get('rows',[])
+        if not account:return JsonResponse({'detail':'Active bank account required.'},status=400)
+        imported=0
+        for item in rows[:200]:
+            amount=Decimal(str(item.get('amount',0))); kind=item.get('type','Credit'); m.BankTransaction.objects.create(company=company,bank_account=account,transaction_date=item.get('date') or timezone.localdate(),amount=amount,transaction_type=kind,reference=item.get('reference',''),description=item.get('description','Imported through consented statement'));account.current_balance += amount if kind=='Credit' else -amount;imported+=1
+        account.save(update_fields=['current_balance']);audit(request,'IMPORT','BankTransaction',account.id,f'Imported {imported} consented statement rows');return JsonResponse({'imported':imported},status=201)
+    if action=='generate-forecast':
+        base=m.BankAccount.objects.filter(company=company).aggregate(v=Sum('current_balance'))['v'] or Decimal('0');receivable=m.Customer.objects.filter(company=company).aggregate(v=Sum('outstanding'))['v'] or Decimal('0');payable=m.Supplier.objects.filter(company=company).aggregate(v=Sum('outstanding'))['v'] or Decimal('0');running=base
+        for day in range(1,15):
+            inflow=(receivable/Decimal('14')).quantize(Decimal('0.01'));outflow=(payable/Decimal('14')).quantize(Decimal('0.01'));running+=inflow-outflow;m.CashFlowForecast.objects.update_or_create(company=company,forecast_date=timezone.localdate()+timedelta(days=day),defaults={'expected_inflow':inflow,'expected_outflow':outflow,'projected_balance':running,'source_snapshot':{'source':'Open Finance cockpit','receivable':str(receivable),'payable':str(payable)}})
+        audit(request,'UPDATE','CashFlowForecast','14-day','Generated consent-aware cash-flow forecast');return JsonResponse({'days':14,'projectedBalance':_money(running)})
+    return JsonResponse({'detail':'Unsupported open-finance action.'},status=400)
+
 # Phase 30
 @csrf_exempt
 @require_http_methods(['GET','POST'])

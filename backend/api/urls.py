@@ -91,6 +91,7 @@ urlpatterns = [
     path('product-master/', nextgen_views.product_master),
     path('traceability/', nextgen_views.traceability),
     path('treasury/', nextgen_views.treasury),
+    path('open-finance/', nextgen_views.open_finance),
     path('contracts/', nextgen_views.contracts),
     path('quality/', nextgen_views.quality),
     path('supply-planning/', nextgen_views.supply_planning),

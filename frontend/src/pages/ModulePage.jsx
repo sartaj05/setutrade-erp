@@ -4,6 +4,7 @@ import GrowthModulePage from './GrowthModulePage';
 import ExpansionModulePage from './ExpansionModulePage';
 import StrategicModulePage from './StrategicModulePage';
 import NextgenModulePage from './NextgenModulePage';
+import OpenFinancePage from './OpenFinancePage';
 
 const productionModules = ['products','inventory','customers','orders','invoices','purchases','warehouses','quotations','payments','reports','team','settings','audit'];
 const growthModules = ['delivery','approvals','invoice-ocr','accounting','offline','subscription','forecasting','assistant'];
@@ -17,6 +18,7 @@ export default function ModulePage({ module }) {
   if (growthModules.includes(module)) return <GrowthModulePage module={module} />;
   if (expansionModules.includes(module)) return <ExpansionModulePage module={module} />;
   if (strategicModules.includes(module)) return <StrategicModulePage module={module} />;
+  if (module === 'treasury') return <OpenFinancePage />;
   if (nextgenModules.includes(module)) return <NextgenModulePage module={module} />;
   if (enhancedModules.includes(module)) return <EnhancedModulePage module={module} />;
   return <ProductionModulePage module="reports" />;
