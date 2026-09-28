@@ -1052,11 +1052,13 @@ def team(request):
         while User.objects.filter(username=username).exists(): n+=1; username=f'{base}_{n}'
         parts=name.split(' ',1); user=User.objects.create_user(username=username,email=email,password=body.get('temporaryPassword') or 'ChangeMe123!',first_name=parts[0] if parts else '',last_name=parts[1] if len(parts)>1 else '')
         from .models import Profile
-        Profile.objects.create(user=user,role=role,business_name=request.company.name,company=request.company,branch=request.branch,phone=body.get('phone',''))
+        allowed = set(sum(PERMISSIONS.values(), []))
+        extra = sorted({str(x) for x in (body.get('extraPermissions') or []) if str(x) in allowed})
+        Profile.objects.create(user=user,role=role,business_name=request.company.name,company=request.company,branch=request.branch,phone=body.get('phone',''),extra_permissions=extra)
         audit(request,'invite','User',user.id,f'Created team account {email}',{'role':role})
         return JsonResponse({'user':user_payload(user),'temporaryPassword':body.get('temporaryPassword') or 'ChangeMe123!'},status=201)
     users=User.objects.filter(profile__company=request.company).select_related('profile__branch').order_by('first_name','username')
-    return JsonResponse({'team':[{'id':u.id,'name':u.get_full_name() or u.username,'email':u.email,'role':u.profile.role,'branch':u.profile.branch.name if u.profile.branch else 'All branches','active':u.is_active,'lastLogin':u.last_login.isoformat() if u.last_login else None} for u in users]})
+    return JsonResponse({'team':[{'id':u.id,'name':u.get_full_name() or u.username,'email':u.email,'role':u.profile.role,'branch':u.profile.branch.name if u.profile.branch else 'All branches','active':u.is_active,'lastLogin':u.last_login.isoformat() if u.last_login else None,'extraPermissions':u.profile.extra_permissions or []} for u in users]})
 
 
 @csrf_exempt
@@ -1068,6 +1070,10 @@ def team_member(request, pk):
     if user==request.api_user and (_json_body(request) or {}).get('active') is False: return JsonResponse({'detail':'You cannot deactivate your own account.'},status=400)
     body=_json_body(request) or {}
     if 'role' in body and body['role'] in PERMISSIONS: user.profile.role=body['role']; user.profile.save(update_fields=['role'])
+    if 'extraPermissions' in body:
+        allowed = set(sum(PERMISSIONS.values(), []))
+        user.profile.extra_permissions = sorted({str(x) for x in (body.get('extraPermissions') or []) if str(x) in allowed})
+        user.profile.save(update_fields=['extra_permissions'])
     if 'active' in body: user.is_active=bool(body['active']); user.save(update_fields=['is_active'])
     audit(request,'update','User',user.id,f'Updated team member {user.email}',body)
     return JsonResponse({'user':user_payload(user)})
@@ -1224,6 +1230,13 @@ def delivery(request):
 def approvals(request):
     if request.method=='POST':
         body=_json_body(request) or {}; action=body.get('action','request')
+        if action=='policy':
+            if request.api_user.profile.role!='OWNER': return JsonResponse({'detail':'Only the owner can manage approval policies.'},status=403)
+            key=str(body.get('key','')).strip()
+            if not key: return JsonResponse({'detail':'Policy key is required.'},status=400)
+            policy,_=ApprovalPolicy.objects.update_or_create(company=request.company,key=key,defaults={'label':body.get('label',key.replace('-',' ').title()),'threshold':decimal(body.get('threshold')),'approver_role':body.get('approverRole','MANAGER'),'is_active':bool(body.get('active',True))})
+            audit(request,'policy','ApprovalPolicy',policy.id,f'Updated approval policy {policy.key}')
+            return JsonResponse({'id':policy.id,'key':policy.key,'status':'saved'},status=201)
         if action=='request':
             policy=ApprovalPolicy.objects.filter(company=request.company,key=body.get('policyKey'),is_active=True).first()
             row=ApprovalRequest.objects.create(company=request.company,policy=policy,request_no=_next_no('APR'),entity_type=str(body.get('entityType','Manual'))[:60],entity_id=str(body.get('entityId',''))[:80],title=str(body.get('title','Approval required'))[:180],amount=decimal(body.get('amount')),payload=body.get('payload') if isinstance(body.get('payload'),dict) else {},requested_by=request.api_user)
