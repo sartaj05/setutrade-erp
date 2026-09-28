@@ -1,0 +1,20 @@
+import { useEffect, useState } from 'react';
+import { useAuth } from '../context/AuthContext';
+import { createApiResource, getApiResource } from '../services/api';
+import { demoNextgen } from '../data/nextgenData';
+
+const money = (value) => `₹${Number(value || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
+
+export default function AfterSalesPage() {
+  const { mode } = useAuth(); const [data, setData] = useState(demoNextgen['service-rma']); const [notice, setNotice] = useState(''); const [busy, setBusy] = useState(false);
+  const load = async () => { if (mode !== 'api') { setData(demoNextgen['service-rma']); return; } try { setData(await getApiResource('service-rma')); } catch (error) { setNotice(error.message); } };
+  useEffect(() => { load(); }, [mode]);
+  const act = async (action, payload) => { setBusy(true); try { if (mode === 'api') await createApiResource('service-rma', { action, ...payload }); setNotice(action === 'pickup' ? 'Reverse pickup scheduled.' : action === 'inspect' ? 'Inspection recorded and service ticket assigned.' : action === 'credit-note' ? 'Manufacturer credit-note review started.' : 'Demo service ticket created.'); await load(); } catch (error) { setNotice(error.message); } finally { setBusy(false); } };
+  const first = data.tickets?.[0]; const firstRma = data.rmas?.[0]; const summary = data.summary || {};
+  return <div className="after-sales-page">
+    {notice && <div className="inline-notice">{notice}<button onClick={() => setNotice('')}>×</button></div>}
+    <div className="module-header"><div><span className="eyebrow">After-sales operations</span><h1>Warranty, RMA & reverse logistics</h1><p>Move every complaint from warranty validation to pickup, inspection, resolution and manufacturer recovery.</p></div>{first && <div className="after-sales-actions"><button onClick={() => act('pickup', { ticketId: first.id })} disabled={busy}>Schedule pickup</button><button className="secondary-btn" onClick={() => act('inspect', { ticketId: first.id, diagnosis: 'Customer-reported issue inspected by service team.' })} disabled={busy}>Record inspection</button></div>}</div>
+    <div className="after-sales-summary"><article><span>Open tickets</span><strong>{summary.open}</strong><small>service queue</small></article><article><span>Under warranty</span><strong>{summary.warranty}</strong><small>eligible claims</small></article><article><span>Active RMAs</span><strong>{summary.rmas}</strong><small>reverse logistics</small></article><article><span>SLA breaches</span><strong>{summary.slaBreaches || 0}</strong><small>older than seven days</small></article></div>
+    <div className="after-sales-grid"><article className="panel module-panel"><div className="panel-head"><div><span>Service queue</span><h3>Customer complaints</h3></div></div><div className="table-wrap"><table className="data-table module-table"><thead><tr><th>Ticket</th><th>Customer / product</th><th>Serial</th><th>Warranty</th><th>Status</th><th>Action</th></tr></thead><tbody>{(data.tickets || []).map(row => <tr key={row.id}><td><strong>{row.ticketNo}</strong><small>{row.slaBreach ? 'SLA breach' : 'Within SLA'}</small></td><td><strong>{row.customer}</strong><small>{row.product}</small></td><td>{row.serial || 'Not recorded'}</td><td>{row.warranty ? `Valid${row.warrantyUntil ? ` until ${row.warrantyUntil}` : ''}` : 'Not covered'}</td><td>{row.status}</td><td><button className="table-action" onClick={() => act('pickup', { ticketId: row.id })}>Pickup</button></td></tr>)}</tbody></table></div></article><article className="panel module-panel"><div className="panel-head"><div><span>Recovery queue</span><h3>RMA claims</h3></div></div><div className="rma-list">{(data.rmas || []).map(row => <div key={row.id}><section><strong>{row.rmaNo}</strong><small>{row.ticket} · {row.action}</small></section><b>{money(row.claimAmount)}</b><span className="rma-status">{row.status}</span><button className="table-action" onClick={() => act('credit-note', { rmaId: row.id })}>Credit note</button></div>)}</div>{!data.rmas?.length && <p className="empty-state">No RMAs are waiting for recovery.</p>}</article></div>
+  </div>;
+}

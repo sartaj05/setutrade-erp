@@ -289,7 +289,8 @@ def service_rma(request):
         ticket_q=m.ServiceTicket.objects.filter(company=company); rma_q=m.RMA.objects.filter(company=company)
         tickets=ticket_q.select_related('customer','product','serial','technician').order_by('-created_at')[:100]
         rmas=rma_q.select_related('ticket','replacement_product').order_by('-created_at')[:100]
-        return JsonResponse({'summary':{'open':ticket_q.exclude(status__in=['Closed','Cancelled']).count(),'warranty':ticket_q.filter(warranty_valid=True).count(),'rmas':rma_q.count(),'claimValue':_money(rma_q.aggregate(v=Sum('manufacturer_claim_amount'))['v'] or 0)},'tickets':[{'id':x.id,'ticketNo':x.ticket_no,'customer':x.customer.name,'product':x.product.name,'serial':x.serial.serial_no if x.serial else '', 'complaint':x.complaint,'status':x.status,'warranty':x.warranty_valid,'technician':x.technician.get_full_name() if x.technician else '', 'diagnosis':x.diagnosis} for x in tickets],'rmas':[{'id':x.id,'rmaNo':x.rma_no,'ticket':x.ticket.ticket_no,'action':x.action,'status':x.status,'cost':_money(x.cost),'claimAmount':_money(x.manufacturer_claim_amount),'claimStatus':x.manufacturer_claim_status} for x in rmas]})
+        overdue=ticket_q.filter(created_at__lt=timezone.now()-timedelta(days=7)).exclude(status__in=['Closed','Cancelled']).count()
+        return JsonResponse({'summary':{'open':ticket_q.exclude(status__in=['Closed','Cancelled']).count(),'warranty':ticket_q.filter(warranty_valid=True).count(),'rmas':rma_q.count(),'claimValue':_money(rma_q.aggregate(v=Sum('manufacturer_claim_amount'))['v'] or 0),'slaBreaches':overdue},'tickets':[{'id':x.id,'ticketNo':x.ticket_no,'customer':x.customer.name,'product':x.product.name,'serial':x.serial.serial_no if x.serial else '', 'complaint':x.complaint,'status':x.status,'warranty':x.warranty_valid,'warrantyUntil':_dt(x.warranty_until),'technician':x.technician.get_full_name() if x.technician else '', 'diagnosis':x.diagnosis,'createdAt':_dt(x.created_at),'slaBreach':x.created_at<timezone.now()-timedelta(days=7) and x.status not in ['Closed','Cancelled']} for x in tickets],'rmas':[{'id':x.id,'rmaNo':x.rma_no,'ticket':x.ticket.ticket_no,'action':x.action,'status':x.status,'cost':_money(x.cost),'claimAmount':_money(x.manufacturer_claim_amount),'claimStatus':x.manufacturer_claim_status,'updatedAt':_dt(x.updated_at)} for x in rmas]})
     data=_body(request); action=data.get('action','ticket')
     if action=='ticket':
         c=_pick(m.Customer.objects.filter(company=company),data.get('customerId'));p=_pick(m.Product.objects.filter(company=company),data.get('productId'));serial=_pick(m.SerialUnit.objects.filter(company=company),data.get('serialId'))
@@ -302,6 +303,19 @@ def service_rma(request):
     if action=='rma':
         row=m.RMA.objects.create(company=company,rma_no=data.get('rmaNo') or f"RMA-{timezone.now().strftime('%y%m%d%H%M%S')}",ticket=ticket,action=data.get('rmaAction','Repair'),status='Created',cost=data.get('cost',0),manufacturer_claim_amount=data.get('claimAmount',0),manufacturer_claim_status='Pending' if Decimal(str(data.get('claimAmount',0)))>0 else '')
         return JsonResponse({'id':row.id,'rmaNo':row.rma_no},status=201)
+    if action=='pickup':
+        row=m.RMA.objects.filter(company=company,ticket=ticket).order_by('-id').first()
+        if not row: row=m.RMA.objects.create(company=company,rma_no=f"RMA-{timezone.now().strftime('%y%m%d%H%M%S')}",ticket=ticket,action='Inspection',status='Pickup scheduled')
+        else: row.status='Pickup scheduled';row.save(update_fields=['status','updated_at'])
+        return JsonResponse({'id':row.id,'rmaNo':row.rma_no,'status':row.status})
+    if action=='inspect':
+        ticket.diagnosis=data.get('diagnosis','Inspection completed');ticket.status='In Service';ticket.technician=request.api_user;ticket.save(update_fields=['diagnosis','status','technician']);row=m.RMA.objects.filter(company=company,ticket=ticket).order_by('-id').first()
+        if row:row.status='Inspected';row.save(update_fields=['status','updated_at'])
+        return JsonResponse({'id':ticket.id,'status':ticket.status})
+    if action=='credit-note':
+        row=m.RMA.objects.filter(company=company,pk=data.get('rmaId')).first()
+        if not row:return JsonResponse({'detail':'RMA not found.'},status=404)
+        row.status='Credit note pending';row.manufacturer_claim_status='Pending';row.save(update_fields=['status','manufacturer_claim_status','updated_at']);return JsonResponse({'id':row.id,'status':row.status})
     if action=='close':ticket.status='Closed';ticket.resolution=data.get('resolution','Resolved');ticket.closed_at=timezone.now();ticket.save(update_fields=['status','resolution','closed_at']);return JsonResponse({'id':ticket.id,'status':ticket.status})
     return JsonResponse({'detail':'Unsupported action.'},status=400)
 
