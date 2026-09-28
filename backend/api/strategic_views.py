@@ -103,7 +103,7 @@ def procurement_intelligence(request):
         rec=m.ProcurementRecommendation.objects.filter(company=company,pk=data.get('id')).first()
         if not rec:return JsonResponse({'detail':'Recommendation not found.'},status=404)
         rec.status='Approved';rec.save(update_fields=['status']);audit(request,'APPROVE','ProcurementRecommendation',rec.id,'Approved procurement recommendation');return JsonResponse({'id':rec.id,'status':rec.status})
-    suppliers=list(m.Supplier.objects.filter(company=company,is_active=True)); products=m.Product.objects.filter(company=company,is_active=True,stock__lte=F('reorder_level'))
+    suppliers=list(m.Supplier.objects.filter(company=company)); products=m.Product.objects.filter(company=company,is_active=True,stock__lte=F('reorder_level'))
     if not suppliers:return JsonResponse({'detail':'Add a supplier before recalculating.'},status=400)
     created=0
     for i,p in enumerate(products):

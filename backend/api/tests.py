@@ -121,7 +121,8 @@ class ProductionApiTests(TestCase):
         self.assertEqual(len(ledger), 2)
 
     def test_password_reset_and_session_revocation(self):
-        reset_request = self.post('/api/auth/password-reset/request/', {'email': self.owner.email}, auth=False)
+        with self.settings(DEBUG=True):
+            reset_request = self.post('/api/auth/password-reset/request/', {'email': self.owner.email}, auth=False)
         self.assertEqual(reset_request.status_code, 200)
         reset = reset_request.json()['demoReset']
         confirm = self.post('/api/auth/password-reset/confirm/', {

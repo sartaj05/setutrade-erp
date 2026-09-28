@@ -33,6 +33,7 @@ from .models import (
     OrderItem, Payment, PriceList, PriceRule, Product, PurchaseItem, PurchaseOrder,
     Quotation, QuotationItem, ReorderSuggestion, ReturnItem, ReturnOrder, SalesTarget,
     SalesVisit, StockAdjustment, StockBalance, StockTransfer, StockTransferItem,
+    DemandForecast,
     Supplier, SupplierLedgerEntry, SupplierPayment, TaxNote, Warehouse, WhatsAppMessage,
     WhatsAppOrderDraft,
 )
@@ -551,7 +552,10 @@ def purchase_action(request, pk):
             item.received_quantity += qty; item.save(update_fields=['received_quantity'])
             apply_stock(request.company,po.warehouse,item.product,qty,InventoryMovement.MovementType.PURCHASE,receipt.grn_no,request.api_user,'Goods receipt')
             receipt_value += qty*item.unit_price
-        complete=all(x.received_quantity>=x.quantity for x in po.items.all())
+        # The purchase queryset is prefetched before this transaction. Query the
+        # updated rows again so completion is based on the quantities just saved,
+        # not on stale prefetched objects.
+        complete=not PurchaseItem.objects.filter(purchase_id=po.id, received_quantity__lt=F('quantity')).exists()
         po.status=PurchaseOrder.Status.RECEIVED if complete else PurchaseOrder.Status.PARTIAL; po.save(update_fields=['status'])
         po.supplier.outstanding += receipt_value; po.supplier.save(update_fields=['outstanding'])
         SupplierLedgerEntry.objects.create(company=request.company,supplier=po.supplier,entry_type='Purchase',reference=receipt.grn_no,amount=receipt_value,entry_date=receipt.received_date,note=f'Receipt against {po.po_no}')
@@ -1066,7 +1070,7 @@ def portal_place_order(request):
         clean.append({'productId': product.id, 'sku': product.sku, 'name': product.name, 'quantity': float(qty), 'unit': product.unit, 'price': float(price), 'lineTotal': float(line)})
     if not clean: return JsonResponse({'detail': 'No valid cart items were supplied.'}, status=400)
     req=CustomerPortalOrder.objects.create(company=request.company, customer=request.customer, request_no=_next_no('WEB'), items=clean, estimated_total=total, notes=str(body.get('notes',''))[:1000])
-    audit(request, 'create', req, f'Customer portal order {req.request_no} submitted', {'total': float(total)})
+    audit(request, 'create', 'CustomerPortalOrder', req.id, f'Customer portal order {req.request_no} submitted', {'total': float(total)})
     return JsonResponse({'ok': True, 'requestNo': req.request_no, 'status': req.status, 'total': float(total)}, status=201)
 
 @csrf_exempt
@@ -1080,7 +1084,7 @@ def delivery(request):
             for idx,oid in enumerate(body.get('orderIds') or [],1):
                 order=Order.objects.filter(pk=oid,company=request.company).first()
                 if order: DeliveryStop.objects.create(run=run,order=order,sequence=idx,cod_amount=order.total if order.payment_status!=Order.PaymentStatus.PAID else 0)
-            audit(request,'create',run,f'Created delivery run {run.run_no}',{'route':run.route_name})
+            audit(request,'create','DeliveryRun',run.id,f'Created delivery run {run.run_no}',{'route':run.route_name})
             return JsonResponse({'ok':True,'id':run.id,'runNo':run.run_no},status=201)
         stop=DeliveryStop.objects.select_related('run','order').filter(pk=body.get('stopId'),run__company=request.company).first()
         if not stop:return JsonResponse({'detail':'Delivery stop not found.'},status=404)
@@ -1107,7 +1111,7 @@ def approvals(request):
         role=request.api_user.profile.role; expected=row.policy.approver_role if row.policy else 'MANAGER'
         if role not in ('OWNER',expected):return JsonResponse({'detail':f'{expected} approval required.'},status=403)
         row.status=ApprovalRequest.Status.APPROVED if action=='approve' else ApprovalRequest.Status.REJECTED;row.decided_by=request.api_user;row.decision_note=str(body.get('note',''))[:240];row.decided_at=timezone.now();row.save(update_fields=['status','decided_by','decision_note','decided_at'])
-        audit(request,action,row,f'{action.title()}d {row.request_no}',{'entity':row.entity_type})
+        audit(request,action,'ApprovalRequest',row.id,f'{action.title()}d {row.request_no}',{'entity':row.entity_type})
         return JsonResponse({'ok':True,'status':row.status})
     policies=ApprovalPolicy.objects.filter(company=request.company).order_by('label'); rows=ApprovalRequest.objects.filter(company=request.company).select_related('requested_by','decided_by','policy').order_by('-created_at')[:100]
     return JsonResponse({'policies':[{'key':p.key,'label':p.label,'threshold':float(p.threshold),'approverRole':p.approver_role,'active':p.is_active} for p in policies],'requests':[{'id':r.id,'requestNo':r.request_no,'title':r.title,'entity':r.entity_type,'amount':float(r.amount),'status':r.status,'requestedBy':r.requested_by.get_full_name() or r.requested_by.username if r.requested_by else 'System','approverRole':r.policy.approver_role if r.policy else 'MANAGER','createdAt':r.created_at.isoformat()} for r in rows]})
