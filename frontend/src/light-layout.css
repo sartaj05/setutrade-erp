@@ -348,3 +348,21 @@ table td { border-color: #e8edf4; }
   .assistant-widget { right: 14px; bottom: 14px; }
   .assistant-widget-panel { height: min(470px, calc(100vh - 100px)); }
 }
+
+/* Assistant response cards, prompt rail and workspace actions */
+.assistant-widget-header-actions { display: flex; align-items: center; gap: 10px; }
+.assistant-widget-header-actions > button { width: 26px; height: 26px; border: 1px solid rgba(255,255,255,.3); border-radius: 8px; background: rgba(255,255,255,.12); color: #fff; cursor: pointer; }
+.assistant-widget-welcome > div { min-width: 0; }
+.assistant-prompt-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.assistant-prompt-list button, .assistant-widget-suggestions button { border: 1px solid #cbd9ef; border-radius: 99px; padding: 7px 9px; background: #fff; color: var(--app-blue); font-size: 10px; line-height: 1.25; text-align: left; cursor: pointer; }
+.assistant-prompt-list button:hover, .assistant-widget-suggestions button:hover { background: #eaf1ff; border-color: #9db6df; }
+.assistant-data-card { display: grid; gap: 8px; margin-top: 8px; padding: 10px; border: 1px solid #d7e3f3; border-radius: 11px; background: #fff; }
+.assistant-data-card > div { display: grid; gap: 2px; padding-bottom: 7px; border-bottom: 1px solid #edf1f7; }
+.assistant-data-card > div:last-of-type { padding-bottom: 0; border-bottom: 0; }
+.assistant-data-card strong { color: var(--app-blue); font-size: 11px; }
+.assistant-data-card small { color: var(--app-muted); font-size: 10px; line-height: 1.35; }
+.assistant-next-step { display: block; color: #6c7b92; font-size: 10px; line-height: 1.4; }
+.assistant-action-link { margin-top: 8px; border: 0; padding: 0; background: transparent; color: var(--app-cobalt); font-size: 11px; font-weight: 800; cursor: pointer; }
+.assistant-action-link:hover { text-decoration: underline; }
+.assistant-widget-suggestions { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 10px; background: #f7f9fe; }
+.assistant-widget-suggestions:empty { display: none; }

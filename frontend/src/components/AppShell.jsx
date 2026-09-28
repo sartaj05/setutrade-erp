@@ -75,7 +75,7 @@ export default function AppShell({ module, onModuleChange, children, navigate })
         </header>
         <main className="app-content">{children}</main>
       </section>
-      <AssistantWidget hidden={module === 'assistant'} />
+      <AssistantWidget hidden={module === 'assistant'} navigate={navigate} onModuleChange={onModuleChange} visibleModules={visibleModules} />
     </div>
   );
 }

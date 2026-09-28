@@ -1422,6 +1422,19 @@ def _assistant_answer(company, question):
         rows=[{'product':x.product.name,'sku':x.product.sku,'lot':x.lot_no,'warehouse':x.warehouse.name,'expiry':x.expiry_date.isoformat(),'daysRemaining':(x.expiry_date-today).days,'available':float(x.available_qty)} for x in lots]
         closest=rows[0]
         return 'expiry', f"The closest recorded expiry is {closest['product']} lot {closest['lot']} in {closest['daysRemaining']} days. I found {len(rows)} active lots with expiry dates.", {'lots': rows}
+    if any(k in q for k in ['order','dispatch','pending order','open order']):
+        orders=Order.objects.filter(company=company).exclude(status=Order.Status.CANCELLED)
+        waiting=orders.filter(status__in=[Order.Status.READY, Order.Status.PACKED]).count()
+        return 'orders', f'{orders.count()} active orders are in the workflow, with {waiting} ready or waiting for dispatch.', {'openOrders': orders.count(), 'waitingDispatch': waiting}
+    if any(k in q for k in ['return','damage','damaged','adjustment']):
+        returns=ReturnOrder.objects.filter(company=company).count(); adjustments=StockAdjustment.objects.filter(company=company).count()
+        return 'returns', f'I found {returns} return records and {adjustments} stock adjustments in this company workspace.', {'returns': returns, 'adjustments': adjustments}
+    if any(k in q for k in ['warehouse','warehouses','location']):
+        rows=Warehouse.objects.filter(company=company,is_active=True).order_by('name')
+        return 'warehouses', f'There are {rows.count()} active warehouses in this company workspace.', {'warehouses':[{'name':x.name,'city':x.city} for x in rows[:10]]}
+    if any(k in q for k in ['approval','approvals','awaiting review']):
+        count=ApprovalRequest.objects.filter(company=company,status='Pending').count()
+        return 'approvals', f'{count} approval requests are waiting for review.', {'pending': count}
     if any(k in q for k in ['overdue','outstanding','receivable','credit']):
         rows=Customer.objects.filter(company=company,outstanding__gt=0).order_by('-outstanding')[:5];total=sum((x.outstanding for x in rows),Decimal('0'))
         return 'receivables', f"Top outstanding customers total ₹{float(total):,.0f} across the five largest balances.", {'customers':[{'name':x.name,'outstanding':float(x.outstanding),'limit':float(x.credit_limit)} for x in rows]}
@@ -1438,7 +1451,7 @@ def _assistant_answer(company, question):
     if any(k in q for k in ['collection','payment']):
         start=today.replace(day=1); amount=Payment.objects.filter(company=company,payment_date__gte=start).aggregate(v=Sum('amount'))['v'] or 0
         return 'collections', f'Month-to-date customer collections are ₹{float(amount):,.0f}.', {'collections':float(amount),'from':start.isoformat()}
-    return 'help', 'I can answer questions about sales, collections, overdue customers, low stock and forecast purchase recommendations using your SetuStock data.', {'examples':['Which products may run out?','Show overdue customers','What are month-to-date sales?','What should I reorder?']}
+    return 'help', 'I can answer questions about sales, orders, stock, collections, returns, warehouses, expiry dates and purchase recommendations using your SetuStock data.', {'examples':['Which products may run out?','Show overdue customers','What orders are waiting?','Which lots expire soon?']}
 
 @csrf_exempt
 @require_http_methods(['GET','POST'])
@@ -1446,7 +1459,7 @@ def _assistant_answer(company, question):
 def ai_assistant(request):
     if request.method=='GET':
         threads=AssistantThread.objects.filter(company=request.company,user=request.api_user).order_by('-updated_at')[:10]
-        return JsonResponse({'threads':[{'id':t.id,'title':t.title,'updatedAt':t.updated_at.isoformat()} for t in threads],'capabilities':['sales','collections','receivables','stock risk','forecasting','expiry tracking']})
+        return JsonResponse({'threads':[{'id':t.id,'title':t.title,'updatedAt':t.updated_at.isoformat()} for t in threads],'capabilities':['sales','orders','stock risk','collections','receivables','returns','warehouses','approvals','forecasting','expiry tracking']})
     body=_json_body(request) or {}; question=str(body.get('question','')).strip()[:1200]
     if not question:return JsonResponse({'detail':'Ask a business question.'},status=400)
     thread=AssistantThread.objects.filter(pk=body.get('threadId'),company=request.company,user=request.api_user).first() if body.get('threadId') else None
