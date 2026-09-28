@@ -704,6 +704,37 @@ def _serialize_transfer(t):
 
 
 @csrf_exempt
+@require_http_methods(['GET', 'POST'])
+@roles_allowed('OWNER', 'MANAGER', 'WAREHOUSE')
+def inventory_reconcile(request):
+    if request.method == 'POST':
+        body = _json_body(request) or {}
+        warehouse = _company_qs(Warehouse, request).filter(pk=body.get('warehouseId')).first()
+        product = _company_qs(Product, request).filter(pk=body.get('productId'), is_active=True).first()
+        if not warehouse or not product:
+            return JsonResponse({'detail': 'warehouseId and productId are required.'}, status=400)
+        if body.get('action') != 'adjust':
+            return JsonResponse({'detail': 'Use action=adjust to post a counted variance.'}, status=400)
+        quantity = decimal(body.get('quantity'))
+        if quantity == 0:
+            return JsonResponse({'detail': 'Adjustment quantity cannot be zero.'}, status=400)
+        try:
+            balance = apply_stock(request.company, warehouse, product, quantity, InventoryMovement.MovementType.ADJUSTMENT, body.get('reference') or _next_no('ADJ'), request.api_user, body.get('reason', 'Cycle count adjustment'))
+        except ValueError as exc:
+            return JsonResponse({'detail': str(exc)}, status=400)
+        adjustment = StockAdjustment.objects.create(company=request.company, adjustment_no=body.get('adjustmentNo') or _next_no('ADJ'), product=product, warehouse=warehouse, adjustment_type=body.get('type', StockAdjustment.AdjustmentType.COUNT), quantity=quantity, reason=body.get('reason', 'Cycle count adjustment'), adjustment_date=_date(body.get('date')), created_by=request.api_user)
+        audit(request, 'adjust', 'StockAdjustment', adjustment.id, f'Adjusted {product.sku} by {quantity}', {'warehouse': warehouse.code, 'balance': float(balance.quantity)})
+        return JsonResponse({'id': adjustment.id, 'sku': product.sku, 'quantity': float(balance.quantity), 'reserved': float(balance.reserved)}, status=201)
+    rows = []
+    products = _company_qs(Product, request).filter(is_active=True)
+    for product in products:
+        warehouse_total = StockBalance.objects.filter(product=product, warehouse__company=request.company).aggregate(v=Sum('quantity'))['v'] or Decimal('0')
+        if warehouse_total != product.stock:
+            rows.append({'productId': product.id, 'sku': product.sku, 'product': product.name, 'productStock': float(product.stock), 'warehouseStock': float(warehouse_total), 'difference': float(warehouse_total - product.stock)})
+    return JsonResponse({'ok': not rows, 'discrepancies': rows, 'checkedProducts': products.count()})
+
+
+@csrf_exempt
 @require_POST
 @roles_allowed('OWNER','MANAGER','WAREHOUSE')
 def transfer_action(request, pk):
