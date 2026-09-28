@@ -6,7 +6,7 @@ from django.test import Client, TestCase
 from django.utils import timezone
 from .models import (
     Branch, Company, Customer, InventoryMovement, Order, Product, Profile,
-    PurchaseOrder, StockBalance, Supplier, Warehouse, SupplierPortalAccess, AutomationRule, ExternalChannel, DistributionNetwork, WarehouseBin,
+    PurchaseOrder, StockBalance, Supplier, Warehouse, SupplierPortalAccess, AutomationRule, ExternalChannel, DistributionNetwork, WarehouseBin, DeliveryStop,
 )
 
 
@@ -299,3 +299,70 @@ class ProductionApiTests(TestCase):
         heartbeat = self.post('/api/operations-center/', {'action':'heartbeat'})
         self.assertEqual(heartbeat.status_code, 200, heartbeat.content)
         self.assertGreaterEqual(heartbeat.json()['checked'], 5)
+
+    def test_order_to_cash_acceptance_workflow(self):
+        """Golden client-demo path: quote through delivery proof and ledger."""
+        quote = self.post('/api/quotations/', {
+            'customerId': self.customer.id, 'warehouseId': self.warehouse.id,
+            'items': [{'productId': self.product.id, 'quantity': 3, 'unitPrice': 100}],
+        })
+        self.assertEqual(quote.status_code, 201, quote.content)
+        quote_id = quote.json()['quotation']['pk']
+        accepted = self.post(f'/api/quotations/{quote_id}/action/', {'action': 'accepted'})
+        self.assertEqual(accepted.status_code, 200, accepted.content)
+        converted = self.post(f'/api/quotations/{quote_id}/action/', {'action': 'convert'})
+        self.assertEqual(converted.status_code, 200, converted.content)
+        order = converted.json()['order']
+
+        confirmed = self.post(f"/api/orders/{order['pk']}/action/", {'action': 'confirm'})
+        self.assertEqual(confirmed.status_code, 200, confirmed.content)
+        for action in ('packed', 'ready', 'dispatch'):
+            response = self.post(f"/api/orders/{order['pk']}/action/", {'action': action})
+            self.assertEqual(response.status_code, 200, response.content)
+
+        invoice_response = self.post('/api/invoices/', {'orderId': order['pk'], 'invoiceDate': timezone.localdate().isoformat()})
+        self.assertEqual(invoice_response.status_code, 201, invoice_response.content)
+        invoice = invoice_response.json()['invoice']
+        payment = self.post('/api/payments/', {'partyType': 'customer', 'customerId': self.customer.id, 'invoiceId': invoice['pk'], 'amount': invoice['total'], 'method': 'UPI'})
+        self.assertEqual(payment.status_code, 201, payment.content)
+
+        run = self.post('/api/delivery/', {'action': 'create-run', 'routeName': 'Client demo route', 'driverName': 'Demo Driver', 'orderIds': [order['pk']]})
+        self.assertEqual(run.status_code, 201, run.content)
+        stop = DeliveryStop.objects.get(run_id=run.json()['id'])
+        delivered = self.post('/api/delivery/', {'action': 'deliver', 'stopId': stop.id, 'otp': stop.delivery_otp, 'otpVerified': True, 'receiverName': 'Demo Receiver', 'signature': 'demo-signature'})
+        self.assertEqual(delivered.status_code, 200, delivered.content)
+
+        workflow = self.client.get('/api/client-workflow/', HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        self.assertEqual(workflow.status_code, 200, workflow.content)
+        statuses = {step['key']: step['status'] for step in workflow.json()['steps']}
+        self.assertEqual(statuses['quotation'], 'Converted')
+        self.assertEqual(statuses['order'], 'Dispatched')
+        self.assertEqual(statuses['reservation'], 'Reserved')
+        self.assertEqual(statuses['payment'], 'Received')
+        self.assertEqual(statuses['delivery'], 'Delivered')
+        self.assertEqual(statuses['ledger'], 'Posted')
+
+    def test_sidebar_api_regression_smoke(self):
+        """Every important staff workspace endpoint must load for an Owner."""
+        paths = [
+            '/api/dashboard/', '/api/products/', '/api/customers/', '/api/orders/', '/api/invoices/',
+            '/api/purchases/', '/api/suppliers/', '/api/ledger/', '/api/payments/', '/api/warehouses/',
+            '/api/barcode/', '/api/whatsapp/', '/api/tax/', '/api/pricing/', '/api/returns/',
+            '/api/field-sales/', '/api/insights/', '/api/quotations/', '/api/reports/', '/api/team/',
+            '/api/settings/', '/api/audit/', '/api/delivery/', '/api/approvals/', '/api/invoice-ocr/',
+            '/api/accounting/', '/api/sync/offline/', '/api/subscription/', '/api/forecasting/',
+            '/api/assistant/', '/api/collections/', '/api/wms/', '/api/supplier-portal-admin/',
+            '/api/automations/', '/api/channels/', '/api/distribution-networks/', '/api/crm/',
+            '/api/schemes/', '/api/gst-cockpit/', '/api/procurement-intelligence/', '/api/fleet-routes/',
+            '/api/credit-risk/', '/api/security-center/', '/api/integrations/', '/api/executive-bi/',
+            '/api/copilot-actions/', '/api/product-master/', '/api/traceability/', '/api/treasury/',
+            '/api/open-finance/', '/api/contracts/', '/api/quality/', '/api/supply-planning/',
+            '/api/service-rma/', '/api/expenses/', '/api/report-builder/', '/api/operations-center/',
+            '/api/client-workflow/', '/api/onboarding/', '/api/access-review/', '/api/support-center/',
+        ]
+        failures = []
+        for path in paths:
+            response = self.client.get(path, HTTP_AUTHORIZATION=f'Bearer {self.token}')
+            if response.status_code != 200:
+                failures.append(f'{path} -> {response.status_code}: {response.content[:180].decode("utf-8", "replace")}')
+        self.assertEqual(failures, [], '\n'.join(failures))

@@ -1193,11 +1193,12 @@ def client_workflow(request):
     invoice_status = invoice.status if invoice else 'Not created'
     payment_status = 'Received' if payment else 'Pending'
     delivery_status = stop.status if stop else 'Not scheduled'
+    reservation_status = 'Reserved' if order and (order.stock_reserved or order.status in [Order.Status.CONFIRMED, Order.Status.PROCESSING, Order.Status.PACKED, Order.Status.READY, Order.Status.DISPATCHED]) else 'Pending'
     steps = [
         {'key': 'enquiry', 'label': 'Customer enquiry', 'status': 'Complete' if quote or order else 'Pending', 'detail': quote.customer.name if quote else (order.customer.name if order else 'Start with a customer')},
         {'key': 'quotation', 'label': 'Quotation', 'status': quote.status if quote else 'Pending', 'detail': quote.quote_no if quote else 'No quotation yet'},
         {'key': 'order', 'label': 'Sales order', 'status': order_status, 'detail': order.order_no if order else 'No order yet'},
-        {'key': 'reservation', 'label': 'Stock reservation', 'status': 'Reserved' if order and order.stock_reserved else 'Pending', 'detail': order.warehouse.name if order and order.warehouse else 'Select a warehouse'},
+        {'key': 'reservation', 'label': 'Stock reservation', 'status': reservation_status, 'detail': order.warehouse.name if order and order.warehouse else 'Select a warehouse'},
         {'key': 'invoice', 'label': 'GST invoice', 'status': invoice_status, 'detail': invoice.invoice_no if invoice else 'Create after order confirmation'},
         {'key': 'payment', 'label': 'Payment', 'status': payment_status, 'detail': f'₹{payment.amount:,.0f}' if payment else 'Awaiting receipt'},
         {'key': 'delivery', 'label': 'Delivery / e-POD', 'status': delivery_status, 'detail': stop.run.run_no if stop else 'Schedule a delivery run'},
