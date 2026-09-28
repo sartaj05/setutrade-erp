@@ -108,6 +108,8 @@ def user_payload(user):
         permissions.append('access-review')
     if profile.role in ('OWNER', 'MANAGER', 'ACCOUNTANT') and 'data-exchange' not in permissions:
         permissions.append('data-exchange')
+    if profile.role in ('OWNER', 'MANAGER') and 'support-center' not in permissions:
+        permissions.append('support-center')
     subscription = CompanySubscription.objects.filter(company=company).select_related('plan').first() if company else None
     today = timezone.localdate()
     if subscription:
@@ -1371,6 +1373,28 @@ def access_review(request):
         module = str(body.get('module', '')).strip()
         return JsonResponse({'allowed': module in allowed, 'module': module, 'role': role, 'action': body.get('action', 'view')})
     return JsonResponse({'role': role, 'allowedModules': allowed, 'restrictedModules': sorted(set(sum(PERMISSIONS.values(), [])) - set(allowed)), 'policy': {'OWNER': 'full tenant visibility and configuration', 'MANAGER': 'daily operations and approvals', 'SALES': 'customers, quotations, orders and collections', 'WAREHOUSE': 'stock, purchasing, picking and delivery', 'ACCOUNTANT': 'invoices, ledger, payments and compliance'}})
+
+
+@csrf_exempt
+@require_http_methods(['GET', 'POST'])
+@roles_allowed('OWNER', 'MANAGER')
+def support_center(request):
+    if request.method == 'POST':
+        body = _json_body(request) or {}
+        if body.get('action') == 'retry-job':
+            row = BackgroundJob.objects.filter(company=request.company, pk=body.get('id')).first()
+            if not row: return JsonResponse({'detail': 'Background job not found.'}, status=404)
+            row.status = 'Queued'; row.attempts += 1; row.last_error = ''; row.save(update_fields=['status', 'attempts', 'last_error'])
+            audit(request, 'retry', 'BackgroundJob', row.id, f'Requeued {row.job_type}')
+        elif body.get('action') == 'replay-webhook':
+            row = WebhookReplay.objects.filter(company=request.company, pk=body.get('id')).first()
+            if not row: return JsonResponse({'detail': 'Webhook event not found.'}, status=404)
+            row.status = 'Queued'; row.attempts += 1; row.last_error = ''; row.save(update_fields=['status', 'attempts', 'last_error'])
+            audit(request, 'replay', 'WebhookReplay', row.id, f'Requeued {row.source} event {row.event_id}')
+        else:
+            return JsonResponse({'detail': 'Unsupported support action.'}, status=400)
+    from .nextgen_views import _operations_snapshot
+    return JsonResponse(_operations_snapshot(request.company))
 
 
 @require_GET
