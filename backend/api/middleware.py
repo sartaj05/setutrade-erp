@@ -1,6 +1,10 @@
 import uuid
+import logging
+import time
 from django.conf import settings
 from django.http import HttpResponse
+
+logger = logging.getLogger('setustock.request')
 
 
 class RequestIdMiddleware:
@@ -8,11 +12,21 @@ class RequestIdMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
+        started = time.perf_counter()
         request.request_id = request.headers.get('X-Request-ID') or uuid.uuid4().hex
-        response = self.get_response(request)
+        try:
+            response = self.get_response(request)
+        except Exception:
+            elapsed = round((time.perf_counter() - started) * 1000, 2)
+            logger.exception('request_failed request_id=%s method=%s path=%s duration_ms=%s', request.request_id, request.method, request.path, elapsed)
+            raise
+        elapsed = round((time.perf_counter() - started) * 1000, 2)
         response['X-Request-ID'] = request.request_id
+        response['X-Response-Time-ms'] = str(elapsed)
         response['Referrer-Policy'] = 'strict-origin-when-cross-origin'
         response['Permissions-Policy'] = 'camera=(self), microphone=(), geolocation=()'
+        if response.status_code >= 500:
+            logger.error('request_5xx request_id=%s method=%s path=%s status=%s duration_ms=%s', request.request_id, request.method, request.path, response.status_code, elapsed)
         return response
 
 

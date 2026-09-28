@@ -114,11 +114,13 @@ def health(request):
         with connection.cursor() as cursor:
             cursor.execute('SELECT 1')
             cursor.fetchone()
+            cursor.execute('SELECT COUNT(*) FROM django_migrations')
+            migrations = cursor.fetchone()[0]
         database = 'ok'
     except Exception:
         database = 'error'
     status = 200 if database == 'ok' else 503
-    return JsonResponse({'ok': database == 'ok', 'service': 'setustock-api', 'database': database, 'time': timezone.now().isoformat()}, status=status)
+    return JsonResponse({'ok': database == 'ok', 'service': 'setustock-api', 'version': os.getenv('RELEASE_VERSION', 'dev'), 'database': database, 'migrations': migrations if database == 'ok' else None, 'time': timezone.now().isoformat()}, status=status)
 
 
 @csrf_exempt
