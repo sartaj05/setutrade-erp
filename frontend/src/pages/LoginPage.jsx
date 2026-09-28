@@ -6,7 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { confirmPasswordReset, requestPasswordReset } from '../services/api';
 
 export default function LoginPage({ navigate }) {
-  const { login } = useAuth();
+  const { login, user, logout } = useAuth();
   const appMode = String(import.meta.env.VITE_APP_MODE || 'demo').toLowerCase();
   const demoMode = appMode === 'demo';
   const query = useMemo(() => new URLSearchParams(window.location.search), []);
@@ -72,7 +72,14 @@ export default function LoginPage({ navigate }) {
             <p>{demoMode ? 'Demo accounts use browser-safe sample data when the Django API is unavailable.' : 'This deployment requires the live Django API. Real business data never falls back to demo records.'}</p>
           </div>
 
-          {view === 'login' && <form onSubmit={submit} className="login-form">
+          {user && view === 'login' && <div className="session-card">
+            <span className="session-card-icon">✓</span>
+            <div><strong>You are already signed in</strong><p>{user.name} · {user.role} · {user.business}</p></div>
+            <button className="btn btn-primary" onClick={() => navigate('/app')}>Continue to workspace <Icon name="arrow" size={17} /></button>
+            <button className="link-button session-signout" onClick={async () => { await logout(); }}>Sign out and use another account</button>
+          </div>}
+
+          {!user && view === 'login' && <form onSubmit={submit} className="login-form">
             <label>Email address<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required /></label>
             <label>Password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required /></label>
             {error && <div className="form-error">{error}</div>}{message && <div className="form-success">{message}</div>}
@@ -93,7 +100,7 @@ export default function LoginPage({ navigate }) {
             <button className="btn btn-primary login-submit" disabled={loading}>{loading ? 'Updating…' : 'Update password'}</button>
           </form>}
 
-          {view === 'login' && demoMode && <div className="demo-selector">
+          {!user && view === 'login' && demoMode && <div className="demo-selector">
             <div className="selector-head"><span>Quick role switch</span><small>Password: demo123</small></div>
             <div className="demo-account-grid">{demoAccounts.map((account) => <button type="button" className={email === account.email ? 'demo-account active' : 'demo-account'} key={account.role} onClick={() => useAccount(account)}><span className="role-avatar">{account.role[0]}</span><span><strong>{account.role.charAt(0) + account.role.slice(1).toLowerCase()}</strong><small>{account.name}</small></span></button>)}</div>
           </div>}

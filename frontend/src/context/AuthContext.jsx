@@ -1,6 +1,6 @@
-import { createContext, useContext, useMemo, useState } from 'react';
+import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { demoAccounts, permissions } from '../data/demoData';
-import { loginApi, logoutApi } from '../services/api';
+import { getApiResource, loginApi, logoutApi } from '../services/api';
 
 const AuthContext = createContext(null);
 const STORAGE_KEY = 'setustock_auth';
@@ -13,6 +13,55 @@ function readStoredUser() {
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(readStoredUser);
   const [mode, setMode] = useState(user?.mode || 'demo');
+  const [sessionReady, setSessionReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    const stored = readStoredUser();
+
+    const finish = (nextUser, nextMode = nextUser?.mode || 'demo') => {
+      if (cancelled) return;
+      setUser(nextUser);
+      setMode(nextMode);
+      setSessionReady(true);
+    };
+
+    if (!stored) {
+      finish(null, 'demo');
+      return () => { cancelled = true; };
+    }
+
+    if (stored.mode !== 'api') {
+      finish(stored, 'demo');
+      return () => { cancelled = true; };
+    }
+
+    const token = localStorage.getItem('setustock_token');
+    if (!token) {
+      localStorage.removeItem(STORAGE_KEY);
+      finish(null, 'demo');
+      return () => { cancelled = true; };
+    }
+
+    getApiResource('auth/me').then((payload) => {
+      const nextUser = { ...payload.user, mode: 'api' };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextUser));
+      finish(nextUser, 'api');
+    }).catch((error) => {
+      // Keep a cached session during a temporary network outage, but remove
+      // it when Django explicitly says that the session is no longer valid.
+      if (error.status === 401 || error.status === 403) {
+        localStorage.removeItem(STORAGE_KEY);
+        localStorage.removeItem('setustock_token');
+        localStorage.removeItem('setustock_refresh_token');
+        finish(null, 'demo');
+      } else {
+        finish(stored, 'api');
+      }
+    });
+
+    return () => { cancelled = true; };
+  }, []);
 
   const loginDemo = async (email, password) => {
     const demoEnabled = String(import.meta.env.VITE_APP_MODE || 'demo').toLowerCase() === 'demo';
@@ -20,7 +69,7 @@ export function AuthProvider({ children }) {
     await new Promise((resolve) => setTimeout(resolve, 120));
     const account = demoAccounts.find((item) => item.email.toLowerCase() === email.trim().toLowerCase() && item.password === password);
     if (!account) throw new Error('Invalid email or password. Use one of the demo accounts shown below.');
-    const safeUser = { id: account.id, name: account.name, email: account.email, role: account.role, business: account.business, mode: 'demo' };
+    const safeUser = { id: account.id, name: account.name, email: account.email, role: account.role, business: account.business, permissions: permissions[account.role] || ['dashboard'], mode: 'demo' };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(safeUser));
     setUser(safeUser); setMode('demo');
     return safeUser;
@@ -50,7 +99,7 @@ export function AuthProvider({ children }) {
   };
 
   const can = (module) => Boolean(user && (user.permissions || permissions[user.role] || []).includes(module));
-  const value = useMemo(() => ({ user, mode, login, loginDemo, logout, can, setUser }), [user, mode]);
+  const value = useMemo(() => ({ user, mode, sessionReady, login, loginDemo, logout, can, setUser }), [user, mode, sessionReady]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

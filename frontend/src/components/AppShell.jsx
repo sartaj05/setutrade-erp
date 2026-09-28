@@ -14,6 +14,14 @@ const moduleLabels = {
   quotations: ['Quotations', 'receipt'], payments: ['Payments', 'receipt'], reports: ['Reports', 'chart'], team: ['Team', 'users'], settings: ['Settings', 'shield'], audit: ['Audit Log', 'shield'], delivery: ['Delivery', 'box'], approvals: ['Approvals', 'shield'], 'invoice-ocr': ['Invoice OCR', 'receipt'], accounting: ['Accounting Sync', 'receipt'], offline: ['Offline Sync', 'shield'], subscription: ['Subscription', 'receipt'], forecasting: ['Forecasting', 'chart'], assistant: ['AI Assistant', 'chart'], collections: ['Collections', 'receipt'], wms: ['Advanced WMS', 'box'], 'supplier-portal-admin': ['Supplier Portal', 'users'], automations: ['Automation', 'shield'], channels: ['Sales Channels', 'receipt'], 'distribution-network': ['Distributor Network', 'chart'], crm: ['CRM Pipeline', 'users'], schemes: ['Schemes & Claims', 'receipt'], 'gst-cockpit': ['GST Cockpit', 'shield'], 'procurement-intelligence': ['Smart Procurement', 'box'], 'fleet-routes': ['Fleet & Routes', 'box'], 'credit-risk': ['Credit Risk', 'shield'], 'security-center': ['Security Center', 'shield'], integrations: ['Integration Hub', 'shield'], 'executive-bi': ['Executive BI', 'chart'], 'copilot-actions': ['AI Action Copilot', 'shield'], 'product-master': ['Product Master', 'box'], traceability: ['Traceability', 'box'], treasury: ['Treasury', 'receipt'], contracts: ['Contracts', 'receipt'], quality: ['Quality Control', 'shield'], 'supply-planning': ['Supply Planning', 'chart'], 'service-rma': ['Warranty & RMA', 'users'], expenses: ['Expenses', 'receipt'], 'report-builder': ['Report Builder', 'chart'], 'operations-center': ['Ops Control', 'shield'],
 };
 
+const navigationGroups = [
+  { label: 'Overview', keys: ['dashboard'] },
+  { label: 'Sales & customers', keys: ['customers', 'orders', 'quotations', 'whatsapp', 'pricing', 'crm', 'field-sales', 'channels', 'collections', 'delivery', 'service-rma', 'contracts', 'schemes'] },
+  { label: 'Inventory & fulfilment', keys: ['products', 'inventory', 'purchases', 'warehouses', 'barcode', 'returns', 'wms', 'invoice-ocr', 'procurement-intelligence', 'fleet-routes', 'traceability', 'quality', 'supply-planning', 'product-master'] },
+  { label: 'Finance & compliance', keys: ['invoices', 'ledger', 'payments', 'tax', 'gst-cockpit', 'accounting', 'treasury', 'expenses', 'credit-risk', 'reports', 'report-builder', 'audit'] },
+  { label: 'Intelligence & admin', keys: ['insights', 'forecasting', 'assistant', 'automations', 'distribution-network', 'supplier-portal-admin', 'approvals', 'team', 'settings', 'subscription', 'offline', 'operations-center', 'security-center', 'integrations', 'executive-bi', 'copilot-actions'] },
+];
+
 export default function AppShell({ module, onModuleChange, children, navigate }) {
   const { user, mode, logout } = useAuth();
   const visibleModules = user.permissions || permissions[user.role] || ['dashboard'];
@@ -45,7 +53,11 @@ export default function AppShell({ module, onModuleChange, children, navigate })
       <aside className="sidebar">
         <div className="sidebar-brand"><Brand /></div>
         <nav className="side-nav">
-          {visibleModules.filter((key) => moduleLabels[key]).map((key) => { const [label, icon] = moduleLabels[key]; return <button className={module === key ? 'side-link active' : 'side-link'} key={key} onClick={() => onModuleChange(key)}><Icon name={icon} size={18} /><span>{label}</span></button>; })}
+          {navigationGroups.map((group) => {
+            const items = group.keys.filter((key) => visibleModules.includes(key) && moduleLabels[key]);
+            if (!items.length) return null;
+            return <div className="side-nav-group" key={group.label}><span className="side-nav-label">{group.label}</span>{items.map((key) => { const [label, icon] = moduleLabels[key]; return <button className={module === key ? 'side-link active' : 'side-link'} key={key} onClick={() => onModuleChange(key)}><Icon name={icon} size={18} /><span>{label}</span></button>; })}</div>;
+          })}
         </nav>
         <div className="sidebar-bottom"><div className="mode-chip"><span className={apiHealth === 'online' ? 'online' : ''} /> {mode !== 'api' ? 'Safe demo mode' : apiHealth === 'checking' ? 'Checking production API…' : apiHealth === 'online' ? 'Production API connected' : apiHealth === 'degraded' ? 'Production API degraded' : 'Production API unavailable'}</div><button className="signout" onClick={signOut}>Sign out</button></div>
       </aside>

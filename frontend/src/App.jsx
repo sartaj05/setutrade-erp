@@ -26,25 +26,27 @@ function useTinyRouter() {
 
 function Routes() {
   const { path, navigate } = useTinyRouter();
-  const { user, can } = useAuth();
+  const { user, can, sessionReady } = useAuth();
   const [module, setModule] = useState('dashboard');
 
   useEffect(() => {
-    if (user && !can(module)) setModule('dashboard');
+    if (!user || !can(module)) setModule('dashboard');
   }, [user, module]);
+
+  if (!sessionReady) return <div className="session-loading"><div className="session-loading-mark">SS</div><strong>Restoring your workspace…</strong><small>Checking your secure session and role access.</small></div>;
 
   if (path === '/portal') return <CustomerPortalPage navigate={navigate} />;
   if (path === '/supplier-portal') return <SupplierPortalPage navigate={navigate} />;
   if (path.startsWith('/pay/')) return <PaymentLinkPage token={path.slice(5)} navigate={navigate} />;
 
   if (path === '/login') {
-    if (user) return <AppShell module={module} onModuleChange={setModule} navigate={navigate}>{module === 'dashboard' ? <DashboardPage /> : <ModulePage module={module} />}</AppShell>;
     return <LoginPage navigate={navigate} />;
   }
 
   if (path.startsWith('/app')) {
     if (!user) return <LoginPage navigate={navigate} />;
-    return <AppShell module={module} onModuleChange={setModule} navigate={navigate}>{module === 'dashboard' ? <DashboardPage /> : <ModulePage module={module} />}</AppShell>;
+    const activeModule = can(module) ? module : 'dashboard';
+    return <AppShell module={activeModule} onModuleChange={setModule} navigate={navigate}>{activeModule === 'dashboard' ? <DashboardPage /> : <ModulePage module={activeModule} />}</AppShell>;
   }
 
   return <LandingPage navigate={navigate} path={path} />;
