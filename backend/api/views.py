@@ -5,6 +5,8 @@ import os
 import re
 import urllib.error
 import urllib.request
+import hmac
+import hashlib
 from datetime import timedelta
 from decimal import Decimal
 from django.conf import settings
@@ -34,6 +36,7 @@ from .models import (
     Quotation, QuotationItem, ReorderSuggestion, ReturnItem, ReturnOrder, SalesTarget,
     SalesVisit, StockAdjustment, StockBalance, StockTransfer, StockTransferItem,
     DemandForecast,
+    PaymentAllocation, PaymentTransaction,
     Supplier, SupplierLedgerEntry, SupplierPayment, TaxNote, Warehouse, WhatsAppMessage,
     WhatsAppOrderDraft,
 )
@@ -609,6 +612,60 @@ def payments(request):
     rows=[{'id':p.receipt_no,'party':p.customer.name,'amount':float(p.amount),'method':p.method,'date':p.payment_date.strftime('%d %b'),'partyType':'customer'} for p in customer_rows]+[{'id':p.payment_no,'party':p.supplier.name,'amount':float(p.amount),'method':p.method,'date':p.payment_date.strftime('%d %b'),'partyType':'supplier'} for p in supplier_rows]
     rows.sort(key=lambda x:x['date'],reverse=True)
     return JsonResponse({'payments':rows})
+
+
+@csrf_exempt
+@require_POST
+def payment_webhook(request, provider):
+    """Receive a normalized paid event from a gateway or bank aggregator.
+
+    The browser never calls this endpoint. Providers call it server-to-server;
+    the optional shared secret is verified before the event can post money.
+    """
+    raw = request.body or b''
+    secret = os.getenv('PAYMENT_WEBHOOK_SECRET', '')
+    signature = request.headers.get('X-SetuStock-Signature', '')
+    expected = hmac.new(secret.encode(), raw, hashlib.sha256).hexdigest() if secret else ''
+    if not settings.DEBUG and (not secret or not hmac.compare_digest(signature, expected)):
+        return JsonResponse({'detail': 'Webhook signature is invalid.'}, status=401)
+    try:
+        body = json.loads(raw.decode() or '{}')
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return JsonResponse({'detail': 'Webhook payload must be valid JSON.'}, status=400)
+    if str(body.get('status', 'paid')).lower() not in {'paid', 'success', 'captured', 'completed'}:
+        return JsonResponse({'ok': True, 'status': 'ignored'})
+    company = Company.objects.filter(pk=body.get('companyId')).first()
+    customer = Customer.objects.filter(company=company, pk=body.get('customerId')).first() if company else None
+    reference = str(body.get('reference') or body.get('transactionId') or '').strip()
+    amount = decimal(body.get('amount'), '0')
+    if not company or not customer or not reference or amount <= 0:
+        return JsonResponse({'detail': 'companyId, customerId, reference and positive amount are required.'}, status=400)
+    if PaymentTransaction.objects.filter(company=company, reference=reference).exists():
+        return JsonResponse({'ok': True, 'status': 'duplicate', 'reference': reference})
+    invoice = Invoice.objects.filter(company=company, pk=body.get('invoiceId'), order__customer=customer).first() if body.get('invoiceId') else None
+    with transaction.atomic():
+        txn = PaymentTransaction.objects.create(company=company, customer=customer, reference=reference, method=body.get('method', provider.upper()), amount=amount, transaction_date=body.get('date') or timezone.localdate(), raw_payload=body)
+        remaining = amount
+        invoices = ([invoice] if invoice else list(Invoice.objects.filter(company=company, order__customer=customer).exclude(status='Paid').order_by('invoice_date', 'id')))
+        for row in invoices:
+            due = row.total - (row.payment_allocations.aggregate(v=Sum('amount'))['v'] or Decimal('0'))
+            use = min(remaining, max(Decimal('0'), due))
+            if use <= 0: continue
+            PaymentAllocation.objects.create(transaction=txn, invoice=row, amount=use)
+            remaining -= use
+            allocated = row.payment_allocations.aggregate(v=Sum('amount'))['v'] or Decimal('0')
+            row.status = Invoice.Status.PAID if allocated >= row.total else Invoice.Status.PARTIAL
+            row.save(update_fields=['status', 'updated_at'])
+            if remaining <= 0: break
+        used = amount - remaining
+        txn.status = PaymentTransaction.Status.MATCHED if remaining <= 0 else (PaymentTransaction.Status.PARTIAL if used else PaymentTransaction.Status.UNMATCHED)
+        txn.save(update_fields=['status'])
+        if used:
+            customer.outstanding = max(Decimal('0'), customer.outstanding - used)
+            customer.save(update_fields=['outstanding'])
+            receipt = Payment.objects.create(company=company, receipt_no=_next_no('RCPT'), customer=customer, invoice=invoice, amount=used, method='UPI' if str(body.get('method', '')).upper() == 'UPI' else Payment.Method.OTHER, reference=reference, payment_date=body.get('date') or timezone.localdate(), notes=f'Gateway webhook: {provider}')
+            LedgerEntry.objects.create(company=company, customer=customer, entry_type=LedgerEntry.EntryType.PAYMENT, reference=receipt.receipt_no, amount=-used, entry_date=receipt.payment_date, note='Gateway payment reconciled')
+    return JsonResponse({'ok': True, 'status': txn.status, 'reference': reference, 'allocated': float(used), 'unapplied': float(remaining)})
 
 
 @csrf_exempt
