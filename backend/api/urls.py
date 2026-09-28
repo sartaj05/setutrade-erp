@@ -6,6 +6,7 @@ urlpatterns = [
     path('portal/login/', views.portal_login),
     path('portal/catalog/', views.portal_catalog),
     path('portal/orders/', views.portal_place_order),
+    path('portal/payment-link/', views.portal_payment_link),
     path('auth/login/', views.login_view),
     path('auth/register/', views.register_view),
     path('auth/password-reset/request/', views.password_reset_request),

@@ -7,6 +7,7 @@ import urllib.error
 import urllib.request
 import hmac
 import hashlib
+import secrets
 from datetime import timedelta
 from decimal import Decimal
 from django.conf import settings
@@ -37,7 +38,7 @@ from .models import (
     Quotation, QuotationItem, ReorderSuggestion, ReturnItem, ReturnOrder, SalesTarget,
     SalesVisit, StockAdjustment, StockBalance, StockTransfer, StockTransferItem,
     DemandForecast, BackgroundJob, WebhookReplay,
-    PaymentAllocation, PaymentTransaction,
+    PaymentAllocation, PaymentTransaction, PaymentLink,
     Supplier, SupplierLedgerEntry, SupplierPayment, TaxNote, Warehouse, WhatsAppMessage,
     WhatsAppOrderDraft,
     Profile,
@@ -1347,7 +1348,7 @@ def portal_catalog(request):
     invoices = Invoice.objects.filter(company=request.company, order__customer=request.customer).order_by('-invoice_date', '-id')[:20]
     payments = Payment.objects.filter(company=request.company, customer=request.customer).order_by('-payment_date', '-id')[:20]
     returns = ReturnOrder.objects.filter(company=request.company, customer=request.customer).order_by('-return_date', '-id')[:20]
-    return JsonResponse({'products': rows, 'credit': {'outstanding': float(request.customer.outstanding), 'limit': float(request.customer.credit_limit)}, 'orders': [{'id': x.request_no, 'status': x.status, 'total': float(x.estimated_total), 'createdAt': x.created_at.isoformat()} for x in recent], 'invoices': [{'id': x.invoice_no, 'total': float(x.total), 'status': x.status, 'date': x.invoice_date.isoformat(), 'dueDate': x.due_date.isoformat() if x.due_date else None} for x in invoices], 'payments': [{'id': x.receipt_no, 'amount': float(x.amount), 'method': x.method, 'date': x.payment_date.isoformat()} for x in payments], 'returns': [{'id': x.return_no, 'status': x.status, 'total': float(x.total), 'date': x.return_date.isoformat()} for x in returns]})
+    return JsonResponse({'products': rows, 'credit': {'outstanding': float(request.customer.outstanding), 'limit': float(request.customer.credit_limit)}, 'orders': [{'id': x.request_no, 'status': x.status, 'total': float(x.estimated_total), 'createdAt': x.created_at.isoformat(), 'items': x.items} for x in recent], 'invoices': [{'id': x.invoice_no, 'pk': x.id, 'total': float(x.total), 'status': x.status, 'date': x.invoice_date.isoformat(), 'dueDate': x.due_date.isoformat() if x.due_date else None} for x in invoices], 'payments': [{'id': x.receipt_no, 'amount': float(x.amount), 'method': x.method, 'date': x.payment_date.isoformat()} for x in payments], 'returns': [{'id': x.return_no, 'status': x.status, 'total': float(x.total), 'date': x.return_date.isoformat()} for x in returns], 'paymentLinks': [{'id': x.id, 'token': x.token, 'invoiceId': x.invoice_id, 'amount': float(x.amount), 'status': x.status, 'expiresAt': x.expires_at.isoformat() if x.expires_at else None} for x in PaymentLink.objects.filter(company=request.company, customer=request.customer, status='Active').order_by('-created_at')[:10]]})
 
 @csrf_exempt
 @require_POST
@@ -1368,6 +1369,19 @@ def portal_place_order(request):
     req=CustomerPortalOrder.objects.create(company=request.company, customer=request.customer, request_no=_next_no('WEB'), items=clean, estimated_total=total, notes=str(body.get('notes',''))[:1000])
     audit(request, 'create', 'CustomerPortalOrder', req.id, f'Customer portal order {req.request_no} submitted', {'total': float(total)})
     return JsonResponse({'ok': True, 'requestNo': req.request_no, 'status': req.status, 'total': float(total)}, status=201)
+
+@csrf_exempt
+@require_POST
+@portal_auth_required
+def portal_payment_link(request):
+    body = _json_body(request) or {}
+    invoice = Invoice.objects.filter(company=request.company, customer=request.customer, pk=body.get('invoiceId')).first() if body.get('invoiceId') else None
+    if body.get('invoiceId') and not invoice: return JsonResponse({'detail': 'Invoice not found for this customer.'}, status=404)
+    amount = invoice.total if invoice else request.customer.outstanding
+    if amount <= 0: return JsonResponse({'detail': 'There is no outstanding balance for a payment link.'}, status=400)
+    link = PaymentLink.objects.create(company=request.company, customer=request.customer, invoice=invoice, token=secrets.token_urlsafe(32), amount=amount, expires_at=timezone.now()+timedelta(days=7))
+    audit(request, 'create', 'PaymentLink', link.id, f'Portal payment link created for {request.customer.name}', {'amount': float(amount)})
+    return JsonResponse({'token': link.token, 'amount': float(link.amount), 'status': link.status}, status=201)
 
 @csrf_exempt
 @require_http_methods(['GET','POST'])
