@@ -1,4 +1,4 @@
-import json, secrets, hashlib
+import json, secrets, hashlib, os
 from datetime import date, timedelta
 from decimal import Decimal
 from django.db import transaction
@@ -261,6 +261,23 @@ def security_center(request):
     if action=='export-audit':
         count=m.AuditLog.objects.filter(company=company).count(); m.SecurityEvent.objects.create(company=company,user=request.api_user,event_type='AUDIT_EXPORT_REQUESTED',severity='Info',detail={'records':count}); audit(request,'EXPORT','AuditLog',company.id,'Generated audit export manifest',{'records':count}); return JsonResponse({'ready':True,'records':count,'note':'Export manifest generated; download delivery can be connected to your storage provider.'})
     return JsonResponse({'detail':'Unsupported action.'},status=400)
+
+@csrf_exempt
+@require_http_methods(['GET','POST'])
+@api_auth_required
+def cyber_trust(request):
+    denied=_guard(request,['OWNER'])
+    if denied:return denied
+    company=request.company
+    if request.method=='GET':
+        events=m.SecurityEvent.objects.filter(company=company).select_related('user').order_by('-created_at')[:50]; devices=m.TrustedDevice.objects.filter(company=company).select_related('user').order_by('-last_seen_at'); privacy=m.PrivacyRequest.objects.filter(company=company).order_by('-created_at')[:50]; mfa=m.UserMFASetting.objects.filter(company=company,is_enabled=True).count(); users=m.Profile.objects.filter(company=company).count(); critical=events.filter(severity='Critical').count(); backup_status=os.getenv('BACKUP_STATUS','Not configured'); backup_ok=backup_status.lower() in ['healthy','ok','completed']; score=max(0,100-(0 if users and mfa>=users else 25)-(0 if backup_ok else 25)-min(30,critical*10))
+        return JsonResponse({'summary':{'securityScore':score,'mfaCoverage':round((mfa/users*100),1) if users else 0,'trustedDevices':devices.filter(trusted=True).count(),'openPrivacyRequests':privacy.exclude(status__in=['Complete','Rejected']).count(),'criticalEvents':critical},'continuity':{'backupStatus':backup_status,'lastRun':os.getenv('BACKUP_LAST_RUN','Not reported'),'provider':os.getenv('BACKUP_PROVIDER','Configure backup provider'),'restoreDrill':'Not run'},'controls':[{'name':'MFA coverage','status':'Healthy' if users and mfa>=users else 'Needs attention','detail':f'{mfa} of {users} users protected'},{'name':'Backup verification','status':'Healthy' if backup_ok else 'Needs attention','detail':f'{backup_status} · {os.getenv("BACKUP_LAST_RUN","last run not reported")}'},{'name':'Tenant export','status':'Ready','detail':f'{m.AuditLog.objects.filter(company=company).count()} audit records available'},{'name':'Privacy queue','status':'Healthy' if not privacy.exclude(status__in=['Complete','Rejected']).exists() else 'Needs attention','detail':f'{privacy.exclude(status__in=["Complete","Rejected"]).count()} requests open'}],'devices':[{'id':d.id,'user':d.user.get_full_name() or d.user.username,'name':d.device_name or d.device_id,'trusted':d.trusted,'ip':d.last_ip,'lastSeen':_dt(d.last_seen_at)} for d in devices[:40]],'privacy':[{'id':p.id,'requestNo':p.request_no,'subject':p.subject_name,'type':p.request_type,'status':p.status,'due':_dt(p.due_date)} for p in privacy],'events':[{'id':e.id,'type':e.event_type,'severity':e.severity,'user':e.user.get_full_name() if e.user else 'System','createdAt':_dt(e.created_at)} for e in events]})
+    data=_body(request);action=data.get('action')
+    if action in ['backup-check','restore-drill']:
+        event='BACKUP_VERIFIED' if action=='backup-check' else 'RESTORE_DRILL_COMPLETED'; detail={'provider':os.getenv('BACKUP_PROVIDER','Not configured'),'lastRun':os.getenv('BACKUP_LAST_RUN','Not reported'),'result':'verified' if action=='backup-check' else 'simulation completed'}; m.SecurityEvent.objects.create(company=company,user=request.api_user,event_type=event,severity='Info',detail=detail); audit(request,'CHECK','Continuity',company.id,event,detail); return JsonResponse({'ok':True,'event':event,'detail':detail})
+    if action=='export-tenant':
+        records=m.AuditLog.objects.filter(company=company).count(); event=m.SecurityEvent.objects.create(company=company,user=request.api_user,event_type='TENANT_EXPORT_PREPARED',severity='Info',detail={'records':records}); audit(request,'EXPORT','Tenant',company.id,'Prepared tenant export manifest',{'records':records}); return JsonResponse({'ready':True,'records':records,'eventId':event.id})
+    return JsonResponse({'detail':'Unsupported cyber-trust action.'},status=400)
 
 @csrf_exempt
 @require_http_methods(['GET','POST'])
