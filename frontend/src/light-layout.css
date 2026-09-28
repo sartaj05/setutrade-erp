@@ -492,6 +492,8 @@ table td { border-color: #e8edf4; }
 .row-actions { display: flex; gap: 6px; }
 .row-actions button { padding: 6px 8px; border: 1px solid #c7d5eb; border-radius: 7px; background: #f5f8fe; color: var(--app-blue); font-size: 10px; font-weight: 800; cursor: pointer; }
 .row-actions button:first-child { border-color: #b8ddc4; background: #effaf2; color: #277047; }
+.table-action { padding: 7px 9px; border: 1px solid #c4d5f2; border-radius: 8px; background: #eef4ff; color: var(--app-blue); font-size: 10px; font-weight: 800; cursor: pointer; white-space: nowrap; }
+.table-action:hover { background: #dfeaff; }
 
 @media (max-width: 900px) {
   .app-content { padding: 34px 28px 64px; }
