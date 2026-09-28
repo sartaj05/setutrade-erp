@@ -7,6 +7,7 @@ import {
   demoSubscription, demoForecasts, demoAssistant,
 } from '../data/growthData';
 import LiveDeliveryPage from './LiveDeliveryPage';
+import AIForecastingPage from './AIForecastingPage';
 
 const money = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
 const Notice = ({ text }) => text ? <div className="inline-notice">{text}</div> : null;
@@ -116,7 +117,7 @@ export default function GrowthModulePage({ module }) {
   if (module === 'accounting') return <AccountingPage mode={mode} notice={notice} setNotice={setNotice}/>;
   if (module === 'offline') return <OfflinePage mode={mode} notice={notice} setNotice={setNotice}/>;
   if (module === 'subscription') return <SubscriptionPage mode={mode} notice={notice} setNotice={setNotice}/>;
-  if (module === 'forecasting') return <ForecastingPage mode={mode} notice={notice} setNotice={setNotice}/>;
+  if (module === 'forecasting') return <AIForecastingPage/>;
   if (module === 'assistant') return <AssistantPage mode={mode}/>;
   return null;
 }

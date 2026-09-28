@@ -561,6 +561,7 @@ table td { border-color: #e8edf4; }
 .risk-form label { display: grid; gap: 6px; color: var(--app-muted); font-size: 11px; font-weight: 800; }.risk-form input, .risk-form select { min-height: 38px; padding: 0 10px; border: 1px solid #cad7e8; border-radius: 9px; background: #fff; color: var(--app-ink); }.risk-form button { grid-column: 1 / -1; min-height: 39px; border: 1px solid var(--app-blue); border-radius: 9px; background: var(--app-blue); color: #fff; font-size: 11px; font-weight: 800; cursor: pointer; }.risk-form button:disabled { opacity: .6; cursor: wait; }
 .risk-guidance ul { display: grid; gap: 0; margin: 0; padding: 0 20px 20px; list-style: none; }.risk-guidance li { display: grid; gap: 5px; padding: 13px 0; border-top: 1px solid #e6edf5; }.risk-guidance li:first-child { border-top: 0; }.risk-guidance strong { color: var(--app-blue); font-size: 11px; }.risk-guidance span { color: var(--app-muted); font-size: 10px; line-height: 1.4; }
 .risk-table-panel { margin-bottom: 18px; }.risk-table-panel td { vertical-align: top; }.risk-table-panel td small { display: block; margin-top: 5px; color: var(--app-muted); font-size: 10px; }.risk-badge { display: inline-block; padding: 5px 8px; border-radius: 999px; font-size: 10px; font-weight: 800; }.risk-critical { background: #fde8e4; color: #aa4d3d; }.risk-warning { background: #fff1d7; color: #996514; }.risk-clear { background: #eaf6ed; color: #3d7950; }.danger-action { color: #a64d43; }
+.forecast-actions { display: flex; align-items: end; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }.forecast-actions label { display: grid; gap: 5px; color: var(--app-muted); font-size: 10px; font-weight: 800; }.forecast-actions select { min-height: 38px; padding: 0 10px; border: 1px solid #cad7e8; border-radius: 9px; background: #fff; color: var(--app-ink); }.forecast-actions button { min-height: 38px; padding: 0 13px; border: 1px solid var(--app-blue); border-radius: 9px; background: var(--app-blue); color: #fff; font-size: 11px; font-weight: 800; cursor: pointer; }.forecast-actions button:disabled { opacity: .6; cursor: wait; }.forecast-actions .secondary-btn { background: #eef4ff; color: var(--app-blue); border-color: #c7d5eb; }.forecast-summary { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 18px; }.forecast-summary article { display: grid; gap: 6px; padding: 17px; border: 1px solid #d6e1ef; border-radius: 12px; background: #fff; }.forecast-summary span, .forecast-summary small { color: var(--app-muted); font-size: 10px; }.forecast-summary strong { color: var(--app-ink); font-size: 22px; }.forecast-table-panel { overflow: hidden; }.forecast-table-panel td small { display: block; margin-top: 5px; color: var(--app-muted); font-size: 10px; }.trend-up { color: #3d8056; font-weight: 800; }.trend-down { color: #b85b50; font-weight: 800; }.confidence-meter { position: relative; display: grid; grid-template-columns: 70px auto; align-items: center; gap: 7px; color: var(--app-blue); font-size: 10px; }.confidence-meter::before, .confidence-meter i { grid-column: 1; grid-row: 1; display: block; width: 70px; height: 5px; border-radius: 99px; }.confidence-meter::before { content: ''; background: #e1e9f5; }.confidence-meter i { position: relative; background: var(--app-blue); z-index: 1; }
 
 @media (max-width: 900px) {
   .app-content { padding: 34px 28px 64px; }
@@ -579,6 +580,8 @@ table td { border-color: #e8edf4; }
   .promotion-layout { grid-template-columns: 1fr; }
   .risk-summary { grid-template-columns: repeat(2, 1fr); }
   .risk-workspace { grid-template-columns: 1fr; }
+  .forecast-summary { grid-template-columns: repeat(2, 1fr); }
+  .forecast-actions { justify-content: flex-start; }
 }
 
 @media (max-width: 600px) {
@@ -607,4 +610,7 @@ table td { border-color: #e8edf4; }
   .risk-summary { grid-template-columns: 1fr; }
   .risk-form { grid-template-columns: 1fr; }
   .risk-form button { grid-column: auto; }
+  .forecast-summary { grid-template-columns: 1fr; }
+  .forecast-actions { align-items: stretch; flex-direction: column; }
+  .forecast-actions button, .forecast-actions select { width: 100%; }
 }
