@@ -16,6 +16,7 @@ export const permissions = {
 
 permissions.OWNER = [...permissions.OWNER, 'onboarding'];
 permissions.MANAGER = [...permissions.MANAGER, 'onboarding'];
+Object.keys(permissions).forEach((role) => { if (!permissions[role].includes('access-review')) permissions[role] = [...permissions[role], 'access-review']; });
 
 export const roleHomeCopy = {
   OWNER: 'Full business visibility across sales, stock and receivables.',

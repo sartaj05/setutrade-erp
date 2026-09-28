@@ -4,6 +4,7 @@ import './styles.css';
 import './light-layout.css';
 import './production.css';
 import './onboarding.css';
+import './access-review.css';
 import App from './App';
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {

@@ -104,6 +104,8 @@ def user_payload(user):
     permissions = list(dict.fromkeys(PERMISSIONS.get(profile.role, []) + (profile.extra_permissions or [])))
     if profile.role in ('OWNER', 'MANAGER') and 'onboarding' not in permissions:
         permissions.append('onboarding')
+    if 'access-review' not in permissions:
+        permissions.append('access-review')
     subscription = CompanySubscription.objects.filter(company=company).select_related('plan').first() if company else None
     today = timezone.localdate()
     if subscription:
@@ -1328,6 +1330,19 @@ def onboarding(request):
             Customer.objects.get_or_create(company=company, code=code, defaults={'name': name, 'city': city, 'state': company.state or 'Delhi', 'credit_limit': Decimal('100000')})
         audit(request, 'seed_demo', 'Company', company.id, 'Seeded client demo workspace', {'branch': branch.code, 'warehouse': warehouse.code})
     return JsonResponse({'company': {'name': company.name, 'gstin': company.gstin, 'state': company.state, 'address': company.address, 'phone': company.phone, 'email': company.email}, 'checklist': {'companyProfile': bool(company.name and company.state), 'gstin': bool(company.gstin), 'branches': company.branches.filter(is_active=True).count(), 'warehouses': company.warehouses.filter(is_active=True).count(), 'products': company.products.filter(is_active=True).count(), 'customers': company.customers.filter(is_active=True).count(), 'openingBalances': company.ledger_entries.exists()}})
+
+
+@csrf_exempt
+@require_http_methods(['GET', 'POST'])
+@api_auth_required
+def access_review(request):
+    role = request.api_user.profile.role
+    allowed = list(dict.fromkeys(PERMISSIONS.get(role, []) + (request.api_user.profile.extra_permissions or [])))
+    if request.method == 'POST':
+        body = _json_body(request) or {}
+        module = str(body.get('module', '')).strip()
+        return JsonResponse({'allowed': module in allowed, 'module': module, 'role': role, 'action': body.get('action', 'view')})
+    return JsonResponse({'role': role, 'allowedModules': allowed, 'restrictedModules': sorted(set(sum(PERMISSIONS.values(), [])) - set(allowed)), 'policy': {'OWNER': 'full tenant visibility and configuration', 'MANAGER': 'daily operations and approvals', 'SALES': 'customers, quotations, orders and collections', 'WAREHOUSE': 'stock, purchasing, picking and delivery', 'ACCOUNTANT': 'invoices, ledger, payments and compliance'}})
 
 
 @require_GET

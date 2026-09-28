@@ -53,6 +53,7 @@ urlpatterns = [
     path('settings/', views.settings_view),
     path('branches/', views.branches),
     path('onboarding/', views.onboarding),
+    path('access-review/', views.access_review),
     path('search/', views.global_search),
     path('audit/', views.audit_logs),
     path('notifications/', views.notifications),
