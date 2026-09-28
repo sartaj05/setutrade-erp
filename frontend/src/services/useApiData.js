@@ -24,6 +24,7 @@ export function useApiData(resource, fallback, key) {
       })
       .catch((err) => {
         if (!active) return;
+        setData(null);
         setSource('error');
         setError(err.message || 'Could not load live data.');
       });

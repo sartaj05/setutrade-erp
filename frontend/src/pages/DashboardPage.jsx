@@ -24,11 +24,13 @@ const meta = {
 };
 
 export default function DashboardPage() {
-  const { user } = useAuth();
-  const { data: apiData } = useApiData('dashboard', demoDashboard);
-  const { data: attentionData } = useApiData('attention', demoAttention);
-  const activity = (attentionData.items || []).slice(0, 5).map((item) => ({ title: item.title, text: item.message, time: item.time || item.createdAt || 'Recently', tone: item.level === 'critical' ? 'critical' : item.level === 'warning' ? 'warning' : 'info' }));
-  const data = { ...demoDashboard, ...apiData, metrics: { ...demoDashboard.metrics, ...(apiData.metrics || {}) }, recentOrders: apiData.recentOrders || demoDashboard.recentOrders, activity: activity.length ? activity : demoDashboard.activity };
+  const { user, mode } = useAuth();
+  const { data: apiData, error: dashboardError } = useApiData('dashboard', demoDashboard);
+  const { data: attentionData, error: attentionError } = useApiData('attention', demoAttention);
+  const live = mode === 'api';
+  if (live && (dashboardError || attentionError) && !apiData) return <div className="live-unavailable"><span className="section-kicker">Production workspace</span><h1>Live data is unavailable</h1><p>Django did not return the dashboard data. Check the API connection and retry when the service is healthy.</p><button onClick={() => window.location.reload()}>Retry connection</button></div>;
+  const activity = (attentionData?.items || []).slice(0, 5).map((item) => ({ title: item.title, text: item.message, time: item.time || item.createdAt || 'Recently', tone: item.level === 'critical' ? 'critical' : item.level === 'warning' ? 'warning' : 'info' }));
+  const data = live ? { ...apiData, metrics: apiData?.metrics || {}, recentOrders: apiData?.recentOrders || [], activity } : { ...demoDashboard, ...apiData, metrics: { ...demoDashboard.metrics, ...(apiData?.metrics || {}) }, recentOrders: apiData?.recentOrders || demoDashboard.recentOrders, activity: activity.length ? activity : demoDashboard.activity };
   const keys = roleMetrics[user.role] || roleMetrics.OWNER;
 
   return (
