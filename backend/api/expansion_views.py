@@ -21,8 +21,9 @@ from .models import (
     Notification, Order, OrderItem, Payment, PaymentAllocation, PaymentLink,
     PaymentPromise, PaymentTransaction, PickList, PickListItem, PickWave, PackingSlip, Product,
     PurchaseOrder, ReceivableFinanceExport, SupplierPortalAccess,
-    SupplierPortalSubmission, Warehouse, WarehouseBin,
+    SupplierPortalSubmission, Warehouse, WarehouseBin, ConsentRecord,
 )
+from .services import audit
 
 
 def _body(request):
@@ -476,6 +477,37 @@ def automations(request):
         return JsonResponse({'matched': len(executed), 'executed': executed})
 
     return JsonResponse({'detail': 'Unsupported action.'}, status=400)
+
+
+@csrf_exempt
+@require_http_methods(['GET', 'POST'])
+@api_auth_required
+def customer_engagement(request):
+    company=request.company
+    if request.method=='GET':
+        customers=Customer.objects.filter(company=company,is_active=True).order_by('-outstanding','name')[:100]
+        reminders=CollectionReminder.objects.filter(company=company).select_related('customer').order_by('-created_at')[:60]
+        rules=AutomationRule.objects.filter(company=company,event__in=['customer.reorder_due','invoice.overdue','customer.segment']).order_by('-id')
+        consents=ConsentRecord.objects.filter(company=company,purpose='Customer communications')
+        customer_rows=[]
+        for customer in customers:
+            segment='Overdue' if customer.outstanding>0 else 'Active'
+            if customer.outstanding==0 and customer.due_date and customer.due_date < timezone.localdate(): segment='At risk'
+            customer_rows.append({'id':customer.id,'name':customer.name,'phone':customer.phone,'segment':segment,'outstanding':_money(customer.outstanding),'creditLimit':_money(customer.credit_limit),'consented':consents.filter(subject_key=f'customer:{customer.id}',granted=True).exists()})
+        return JsonResponse({'summary':{'customers':Customer.objects.filter(company=company,is_active=True).count(),'overdue':Customer.objects.filter(company=company,outstanding__gt=0).count(),'scheduled':reminders.filter(status='Scheduled').count(),'activeCampaigns':rules.filter(is_active=True).count(),'consented':consents.filter(granted=True).count()},'customers':customer_rows,'campaigns':[{'id':x.id,'name':x.name,'event':x.event,'conditions':x.conditions,'actions':x.actions,'active':x.is_active,'lastRun':x.last_run_at.isoformat() if x.last_run_at else None} for x in rules],'reminders':[{'id':x.id,'customer':x.customer.name,'channel':x.channel,'scheduledFor':x.scheduled_for.isoformat(),'status':x.status,'message':x.message} for x in reminders]})
+    data=_body(request) or {}; action=data.get('action','create-campaign')
+    if action=='create-campaign':
+        row=AutomationRule.objects.create(company=company,name=data.get('name','Dealer reorder reminder'),event=data.get('event','customer.reorder_due'),conditions=data.get('conditions') or {'daysSinceOrder':30},actions=data.get('actions') or [{'type':'schedule_reminder','channel':data.get('channel','WhatsApp'),'message':data.get('message','Your usual products may need replenishment. Reply to reorder.')}],created_by=request.api_user);audit(request,'CREATE','AutomationRule',row.id,f'Created customer campaign {row.name}');return JsonResponse({'id':row.id,'name':row.name},status=201)
+    if action=='schedule-reminder':
+        customer=Customer.objects.filter(company=company,pk=data.get('customerId'),is_active=True).first()
+        if not customer:return JsonResponse({'detail':'Active customer required.'},status=400)
+        row=CollectionReminder.objects.create(company=company,customer=customer,channel=data.get('channel','WhatsApp'),scheduled_for=data.get('scheduledFor') or timezone.now(),message=data.get('message') or f'Payment reminder for {customer.name}: {customer.outstanding} outstanding.')
+        return JsonResponse({'id':row.id,'status':row.status},status=201)
+    if action=='consent':
+        customer=Customer.objects.filter(company=company,pk=data.get('customerId'),is_active=True).first()
+        if not customer:return JsonResponse({'detail':'Active customer required.'},status=400)
+        row=ConsentRecord.objects.create(company=company,subject_key=f'customer:{customer.id}',purpose='Customer communications',granted=bool(data.get('granted',True)),source=data.get('source','Customer portal'));return JsonResponse({'id':row.id,'granted':row.granted},status=201)
+    return JsonResponse({'detail':'Unsupported customer-engagement action.'},status=400)
 
 
 def _ingest_external_order(company, channel, data):
