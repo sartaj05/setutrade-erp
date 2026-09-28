@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import './styles.css';
 import './light-layout.css';
 import './production.css';
+import './onboarding.css';
 import App from './App';
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {

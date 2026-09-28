@@ -8,6 +8,7 @@ import OpenFinancePage from './OpenFinancePage';
 import CustomerEngagementPage from './CustomerEngagementPage';
 import AfterSalesPage from './AfterSalesPage';
 import ClientWorkflowPage from './ClientWorkflowPage';
+import OnboardingPage from './OnboardingPage';
 
 const productionModules = ['products','inventory','customers','orders','invoices','purchases','warehouses','quotations','payments','reports','team','settings','audit'];
 const growthModules = ['delivery','approvals','invoice-ocr','accounting','offline','subscription','forecasting','assistant'];
@@ -18,6 +19,7 @@ const enhancedModules = ['ledger','barcode','whatsapp','tax','pricing','returns'
 
 export default function ModulePage({ module }) {
   if (module === 'client-workflow') return <ClientWorkflowPage />;
+  if (module === 'onboarding') return <OnboardingPage />;
   if (productionModules.includes(module)) return <ProductionModulePage module={module} />;
   if (growthModules.includes(module)) return <GrowthModulePage module={module} />;
   if (module === 'automations') return <CustomerEngagementPage />;

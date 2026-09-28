@@ -102,6 +102,8 @@ def user_payload(user):
     profile = user.profile
     company = profile.company
     permissions = list(dict.fromkeys(PERMISSIONS.get(profile.role, []) + (profile.extra_permissions or [])))
+    if profile.role in ('OWNER', 'MANAGER') and 'onboarding' not in permissions:
+        permissions.append('onboarding')
     subscription = CompanySubscription.objects.filter(company=company).select_related('plan').first() if company else None
     today = timezone.localdate()
     if subscription:
@@ -1306,6 +1308,26 @@ def branches(request):
     branch=Branch.objects.create(company=request.company,code=body['code'],name=body['name'],city=body.get('city',''),address=body.get('address',''),gstin=body.get('gstin',''),phone=body.get('phone',''))
     audit(request,'create','Branch',branch.id,f'Created branch {branch.code}')
     return JsonResponse({'branch':{'id':branch.id,'code':branch.code,'name':branch.name}},status=201)
+
+
+@csrf_exempt
+@require_http_methods(['GET', 'POST'])
+@roles_allowed('OWNER', 'MANAGER')
+def onboarding(request):
+    company = request.company
+    if request.method == 'POST':
+        body = _json_body(request) or {}
+        if body.get('action') != 'seed-demo':
+            return JsonResponse({'detail': 'Only the explicit seed-demo action is supported.'}, status=400)
+        branch, _ = Branch.objects.get_or_create(company=company, code='HQ', defaults={'name': 'Delhi Central', 'city': company.state or 'Delhi', 'gstin': company.gstin})
+        warehouse, _ = Warehouse.objects.get_or_create(company=company, code='MAIN', defaults={'name': 'Main Warehouse', 'city': branch.city, 'branch': branch})
+        for sku, name, category, unit, stock, reorder in [('DEMO-WIRE-25', 'Demo 2.5mm Copper Wire', 'Wires & Cables', 'coil', 18, 20), ('DEMO-MCB-32', 'Demo 32A DP MCB', 'Switchgear', 'pcs', 36, 24), ('DEMO-LED-12', 'Demo 12W LED Bulb', 'Lighting', 'pcs', 72, 30)]:
+            product, _ = Product.objects.get_or_create(company=company, sku=sku, defaults={'name': name, 'category': category, 'unit': unit, 'stock': stock, 'purchase_price': Decimal('100'), 'sell_price': Decimal('125'), 'reorder_level': reorder, 'gst_rate': Decimal('18')})
+            StockBalance.objects.get_or_create(warehouse=warehouse, product=product, defaults={'quantity': product.stock})
+        for code, name, city in [('DEMO-C-001', 'Demo Retailer Noida', 'Noida'), ('DEMO-C-002', 'Demo Retailer Gurugram', 'Gurugram')]:
+            Customer.objects.get_or_create(company=company, code=code, defaults={'name': name, 'city': city, 'state': company.state or 'Delhi', 'credit_limit': Decimal('100000')})
+        audit(request, 'seed_demo', 'Company', company.id, 'Seeded client demo workspace', {'branch': branch.code, 'warehouse': warehouse.code})
+    return JsonResponse({'company': {'name': company.name, 'gstin': company.gstin, 'state': company.state, 'address': company.address, 'phone': company.phone, 'email': company.email}, 'checklist': {'companyProfile': bool(company.name and company.state), 'gstin': bool(company.gstin), 'branches': company.branches.filter(is_active=True).count(), 'warehouses': company.warehouses.filter(is_active=True).count(), 'products': company.products.filter(is_active=True).count(), 'customers': company.customers.filter(is_active=True).count(), 'openingBalances': company.ledger_entries.exists()}})
 
 
 @require_GET

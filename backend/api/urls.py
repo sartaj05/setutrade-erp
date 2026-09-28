@@ -52,6 +52,7 @@ urlpatterns = [
     path('team/<int:pk>/', views.team_member),
     path('settings/', views.settings_view),
     path('branches/', views.branches),
+    path('onboarding/', views.onboarding),
     path('search/', views.global_search),
     path('audit/', views.audit_logs),
     path('notifications/', views.notifications),

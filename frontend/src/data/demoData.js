@@ -14,6 +14,9 @@ export const permissions = {
   ACCOUNTANT: ['dashboard', 'client-workflow', 'customers', 'orders', 'invoices', 'purchases', 'ledger', 'tax', 'returns', 'insights', 'payments', 'reports', 'audit', 'approvals', 'invoice-ocr', 'accounting', 'assistant', 'collections', 'gst-cockpit', 'credit-risk', 'product-master', 'treasury', 'contracts', 'expenses', 'report-builder'],
 };
 
+permissions.OWNER = [...permissions.OWNER, 'onboarding'];
+permissions.MANAGER = [...permissions.MANAGER, 'onboarding'];
+
 export const roleHomeCopy = {
   OWNER: 'Full business visibility across sales, stock and receivables.',
   MANAGER: 'Keep daily operations moving and exceptions under control.',

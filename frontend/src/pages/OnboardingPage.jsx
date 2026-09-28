@@ -1,0 +1,16 @@
+import { useEffect, useMemo, useState } from 'react';
+import { createApiResource, getApiResource } from '../services/api';
+import { useAuth } from '../context/AuthContext';
+
+const demo = { company: { name: 'Khanna Electrical Distributors', gstin: '09AABCK1234A1Z5', state: 'Delhi' }, checklist: { companyProfile: true, gstin: true, branches: 2, warehouses: 3, products: 6, customers: 5, openingBalances: true } };
+const labels = { companyProfile: 'Company profile', gstin: 'GSTIN and tax identity', branches: 'Operating branches', warehouses: 'Warehouses', products: 'Product catalogue', customers: 'Customer accounts', openingBalances: 'Opening balances' };
+
+export default function OnboardingPage() {
+  const { mode } = useAuth(); const [data, setData] = useState(demo); const [busy, setBusy] = useState(false); const [notice, setNotice] = useState('');
+  const load = () => { if (mode === 'api') getApiResource('onboarding').then(setData).catch((err) => setNotice(err.message)); };
+  useEffect(load, [mode]);
+  const checks = useMemo(() => Object.entries(data.checklist || {}).map(([key, value]) => ({ key, label: labels[key] || key, value, complete: typeof value === 'number' ? value > 0 : Boolean(value) })), [data]);
+  const seed = async () => { setBusy(true); try { if (mode === 'api') { await createApiResource('onboarding', { action: 'seed-demo' }); load(); setNotice('Demo workspace records are ready for review.'); } else setNotice('Demo workspace is already populated for this presentation.'); } catch (err) { setNotice(err.message); } finally { setBusy(false); } };
+  const complete = checks.filter((x) => x.complete).length;
+  return <div className="onboarding-page"><div className="module-header"><div><span className="section-kicker">Client readiness</span><h1>Set up the workspace</h1><p>Prepare company identity, operating locations and master data before handing the product to a client.</p></div><button onClick={seed} disabled={busy}>{busy ? 'Preparing…' : 'Seed demo workspace'}</button></div>{notice && <div className="inline-notice">{notice}</div>}<section className="onboarding-hero"><div><span>Workspace</span><strong>{data.company?.name}</strong><small>{data.company?.state} · {data.company?.gstin || 'GSTIN not added'}</small></div><div><span>Readiness</span><strong>{complete}/{checks.length}</strong><small>setup checkpoints complete</small></div></section><article className="panel module-panel"><div className="panel-head"><div><span>Implementation checklist</span><h3>Everything a client needs before go-live</h3></div></div><div className="onboarding-checklist">{checks.map((item) => <div key={item.key} className={item.complete ? 'onboarding-check complete' : 'onboarding-check'}><span>{item.complete ? '✓' : '!'}</span><div><strong>{item.label}</strong><small>{typeof item.value === 'number' ? `${item.value} records configured` : item.complete ? 'Configured and ready' : 'Required before go-live'}</small></div><em>{item.complete ? 'Ready' : 'Needs setup'}</em></div>)}</div></article><div className="onboarding-note"><strong>Implementation tip</strong><p>Use the seed action only for a sandbox presentation. For a real client, import approved master data and opening balances, then verify the audit log.</p></div></div>;
+}
