@@ -476,9 +476,20 @@ table td { border-color: #e8edf4; }
 .plan-notice button { border: 0; border-radius: 9px; padding: 8px 12px; background: var(--app-cobalt); color: #fff; font-size: 11px; font-weight: 800; cursor: pointer; }
 .plan-notice .plan-notice-close { padding: 2px 6px; background: transparent; color: var(--app-muted); font-size: 18px; }
 
+.ondc-card { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin: 0 0 18px; padding: 22px 24px; border-color: #cbd9f1; background: linear-gradient(135deg, #f7fbff, #eef4ff); }
+.ondc-card h2 { margin: 7px 0 6px; color: var(--app-ink); font-size: 21px; letter-spacing: -.03em; }
+.ondc-card p { max-width: 640px; margin: 0; color: var(--app-muted); font-size: 12px; line-height: 1.55; }
+.ondc-card .module-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 8px; }
+.ondc-card button { min-height: 38px; padding: 0 13px; border: 1px solid var(--app-blue); border-radius: 9px; background: var(--app-blue); color: #fff; font-size: 11px; font-weight: 800; cursor: pointer; }
+.ondc-card button.secondary-action { border-color: #c7d5eb; background: #fff; color: var(--app-blue); }
+.ondc-card button:disabled { cursor: not-allowed; opacity: .45; }
+.channel-grid article small { display: block; margin-top: 14px; color: var(--app-muted); font-size: 10px; }
+
 @media (max-width: 900px) {
   .app-content { padding: 34px 28px 64px; }
   .login-box { padding: 28px; }
+  .ondc-card { align-items: flex-start; flex-direction: column; }
+  .ondc-card .module-actions { justify-content: flex-start; }
 }
 
 @media (max-width: 600px) {

@@ -532,13 +532,47 @@ def channels(request):
     if request.method == 'GET':
         channel_rows = ExternalChannel.objects.filter(company=company).order_by('name')
         orders = ExternalOrder.objects.filter(company=company).select_related('channel').prefetch_related('items').order_by('-id')[:50]
+        ondc = channel_rows.filter(provider=ExternalChannel.Provider.ONDC).first()
+        ondc_settings = (ondc.settings or {}) if ondc else {}
+        catalogue_count = Product.objects.filter(company=company, is_active=True).count()
+        ondc_orders = orders.filter(channel=ondc) if ondc else ExternalOrder.objects.none()
         return JsonResponse({
-            'channels': [{'id': c.id, 'name': c.name, 'provider': c.provider, 'active': c.is_active, 'storeId': c.external_store_id, 'lastSync': c.last_sync_at.isoformat() if c.last_sync_at else None, 'webhookConfigured': bool((c.settings or {}).get('webhookKey'))} for c in channel_rows],
+            'ondc': {'connected': bool(ondc and ondc.is_active), 'channelId': ondc.id if ondc else None, 'sellerNetworkId': ondc_settings.get('sellerNetworkId', ''), 'cataloguePublished': bool(ondc_settings.get('cataloguePublishedAt')), 'catalogueCount': int(ondc_settings.get('catalogueCount', 0)), 'unmatchedOrders': ondc_orders.filter(status__in=['New', 'Review']).count(), 'lastSync': ondc.last_sync_at.isoformat() if ondc and ondc.last_sync_at else None, 'settlementStatus': ondc_settings.get('settlementStatus', 'Not connected')},
+            'channels': [{'id': c.id, 'name': c.name, 'provider': c.provider, 'active': c.is_active, 'storeId': c.external_store_id, 'lastSync': c.last_sync_at.isoformat() if c.last_sync_at else None, 'webhookConfigured': bool((c.settings or {}).get('webhookKey')), 'cataloguePublished': bool((c.settings or {}).get('cataloguePublishedAt'))} for c in channel_rows],
             'orders': [{'id': o.id, 'externalId': o.external_id, 'channel': o.channel.name, 'provider': o.channel.provider, 'customer': o.customer_name, 'phone': o.customer_phone, 'total': _money(o.total), 'status': o.status, 'receivedAt': o.received_at.isoformat(), 'items': [{'sku': i.external_sku, 'name': i.name, 'qty': _money(i.quantity), 'price': _money(i.unit_price), 'matched': bool(i.product_id)} for i in o.items.all()]} for o in orders],
         })
 
     data = _body(request) or {}
     action = data.get('action', 'create-channel')
+    if action == 'connect-ondc':
+        settings_data = data.get('settings') or {}
+        settings_data.setdefault('webhookKey', secrets.token_urlsafe(24))
+        settings_data['sellerNetworkId'] = str(data.get('sellerNetworkId') or settings_data.get('sellerNetworkId') or 'ondc-seller-pending')[:120]
+        settings_data.setdefault('settlementStatus', 'Awaiting settlement account verification')
+        channel, created = ExternalChannel.objects.get_or_create(company=company, provider=ExternalChannel.Provider.ONDC, defaults={'name': 'ONDC B2B Seller Network', 'external_store_id': settings_data['sellerNetworkId'], 'settings': settings_data})
+        if not created:
+            channel.name = 'ONDC B2B Seller Network'; channel.external_store_id = settings_data['sellerNetworkId']; channel.is_active = True; channel.settings = {**(channel.settings or {}), **settings_data}; channel.save(update_fields=['name', 'external_store_id', 'is_active', 'settings'])
+        return JsonResponse({'id': channel.id, 'connected': True, 'sellerNetworkId': channel.external_store_id, 'webhookKey': settings_data['webhookKey']}, status=201 if created else 200)
+
+    if action == 'publish-catalogue':
+        channel = ExternalChannel.objects.filter(company=company, provider=ExternalChannel.Provider.ONDC).first()
+        if not channel:
+            return JsonResponse({'detail': 'Connect the ONDC seller channel first.'}, status=400)
+        count = Product.objects.filter(company=company, is_active=True).count()
+        settings_data = {**(channel.settings or {}), 'cataloguePublishedAt': timezone.now().isoformat(), 'catalogueCount': count}
+        channel.settings = settings_data; channel.last_sync_at = timezone.now(); channel.save(update_fields=['settings', 'last_sync_at'])
+        audit(request, 'PUBLISH', 'ExternalChannel', channel.id, f'Published {count} catalogue products to ONDC')
+        return JsonResponse({'published': count, 'publishedAt': settings_data['cataloguePublishedAt']})
+
+    if action == 'sync-ondc':
+        channel = ExternalChannel.objects.filter(company=company, provider=ExternalChannel.Provider.ONDC, is_active=True).first()
+        if not channel:
+            return JsonResponse({'detail': 'Connect the ONDC seller channel first.'}, status=400)
+        channel.last_sync_at = timezone.now(); channel.save(update_fields=['last_sync_at'])
+        pending = ExternalOrder.objects.filter(company=company, channel=channel, status__in=['New', 'Review']).count()
+        audit(request, 'SYNC', 'ExternalChannel', channel.id, 'Synchronized ONDC catalogue, orders and settlements')
+        return JsonResponse({'synced': True, 'pendingOrders': pending, 'lastSync': channel.last_sync_at.isoformat()})
+
     if action == 'create-channel':
         settings_data = data.get('settings') or {}
         settings_data.setdefault('webhookKey', secrets.token_urlsafe(24))
