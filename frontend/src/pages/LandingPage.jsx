@@ -1,121 +1,85 @@
 import Brand from '../components/Brand';
 import Icon from '../components/Icon';
 
-const features = [
-  ['box', 'Inventory that speaks shop language', 'Live stock, low-stock signals, SKU search and warehouse-ready quantity tracking.'],
-  ['receipt', 'B2B orders & GST-ready records', 'Capture phone, counter and WhatsApp orders in one clean order flow.'],
-  ['users', 'Customer credit / udhaar', 'Track outstanding balances, payment history and follow-up priority without ledger archaeology.'],
-  ['message', 'WhatsApp-first workflow', 'Share order summaries, payment reminders and product enquiries using the channel customers already use.'],
-  ['chart', 'Owner-level visibility', 'Sales, receivables, stock value and order health in a calm dashboard built for quick decisions.'],
-  ['shield', 'Role-based control', 'Owner, manager, sales, warehouse and accountant views keep sensitive actions where they belong.'],
+const signals = [
+  ['01', 'Inventory', 'Know what is available before the phone rings.'],
+  ['02', 'Order flow', 'Move from WhatsApp request to dispatch without retyping.'],
+  ['03', 'Collections', 'Keep every rupee visible until it lands.'],
 ];
 
-const trustItems = ['Role-based access', 'Demo works without backend', 'Mobile-first responsive UI', 'Django API ready'];
+const roles = ['OWNER', 'SALES', 'WAREHOUSE', 'ACCOUNTANT'];
 
 export default function LandingPage({ navigate }) {
   return (
-    <div className="marketing-shell">
-      <header className="marketing-nav container">
+    <div className="landing-v2">
+      <header className="landing-v2-nav">
         <Brand />
-        <nav className="nav-links" aria-label="Primary navigation">
-          <a href="#features">Features</a>
-          <a href="#roles">Roles</a>
-          <a href="#workflow">Workflow</a>
+        <nav aria-label="Primary navigation">
+          <a href="#features">Capabilities</a>
+          <a href="#workflow">Daily loop</a>
+          <a href="#roles">For your team</a>
         </nav>
-        <button className="btn btn-secondary nav-login" onClick={() => navigate('/login')}>Log in</button>
+        <div className="v2-nav-actions">
+          <span className="v2-live-status"><i /> NCR / 2026</span>
+          <button className="v2-btn v2-btn-ghost" onClick={() => navigate('/login')}>Log in <Icon name="arrow" size={15} /></button>
+        </div>
       </header>
 
       <main>
-        <section className="hero container">
-          <div className="hero-copy">
-            <div className="eyebrow"><span className="live-dot" /> Built for NCR wholesalers & distributors</div>
-            <h1>Run stock, B2B orders and customer credit without running between five apps.</h1>
-            <p className="hero-sub">SetuStock keeps inventory, orders, receivables and WhatsApp operations connected in one dependable workspace for growing trading businesses.</p>
-            <div className="hero-actions">
-              <button className="btn btn-primary" onClick={() => navigate('/login')}>Open demo <Icon name="arrow" size={17} /></button>
-              <a className="text-link" href="#features">See what it manages</a>
-              <button className="portal-demo-link" onClick={() => navigate('/portal')}>Dealer portal</button>
-              <button className="portal-demo-link" onClick={() => navigate('/supplier-portal')}>Supplier portal</button>
+        <section className="v2-hero">
+          <div className="v2-hero-copy">
+            <div className="v2-kicker"><span>SetuStock / 01</span><b>Wholesale operations OS</b></div>
+            <h1>Stock moves fast. Your system should move faster.</h1>
+            <p className="v2-hero-sub">A field-built command layer for NCR wholesalers and distributors: inventory, B2B orders, credit and dispatch in one clear rhythm.</p>
+            <div className="v2-hero-actions">
+              <button className="v2-btn v2-btn-primary" onClick={() => navigate('/login')}>Enter the workspace <Icon name="arrow" size={17} /></button>
+              <button className="v2-text-btn" onClick={() => navigate('/portal')}>Open dealer portal <span>↗</span></button>
             </div>
-            <div className="trust-row">
-              {trustItems.map((item) => <span key={item}><Icon name="check" size={15} /> {item}</span>)}
+            <div className="v2-proof-row">
+              <span><b>5</b> operating roles</span>
+              <span><b>24/7</b> stock visibility</span>
+              <span><b>GST</b> ready records</span>
             </div>
           </div>
 
-          <div className="hero-board" aria-label="SetuStock product preview">
-            <div className="board-top">
-              <div><small>Today’s pulse</small><strong>Good afternoon, Arjun</strong></div>
-              <div className="mini-avatar">AK</div>
+          <div className="v2-hero-stage" aria-label="SetuStock operations preview">
+            <div className="v2-stage-grid" />
+            <div className="v2-stage-top"><span>LIVE OPERATIONS</span><strong>09:42 <i /></strong></div>
+            <div className="v2-stage-main">
+              <div className="v2-stage-heading"><div><small>Good afternoon, Arjun</small><h2>Today’s control room</h2></div><span className="v2-avatar">AK</span></div>
+              <div className="v2-stage-metrics">
+                <div className="v2-stage-metric v2-metric-accent"><small>Sales today</small><strong>₹1,84,240</strong><em>+12.4%</em></div>
+                <div className="v2-stage-metric"><small>Receivable</small><strong>₹4.72L</strong><em>18 accounts</em></div>
+                <div className="v2-stage-metric"><small>Dispatch queue</small><strong>07</strong><em>ready to move</em></div>
+              </div>
+              <div className="v2-stage-body">
+                <div className="v2-chart"><div className="v2-chart-head"><span>Sales pulse</span><b>THIS WEEK</b></div><div className="v2-bars"><i /><i /><i /><i /><i /><i /><i /></div><div className="v2-chart-labels"><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span><span>S</span></div></div>
+                <div className="v2-attention"><div className="v2-chart-head"><span>Needs attention</span><b>03 ITEMS</b></div><div><i className="amber" /><span><strong>Polycab 2.5mm</strong><small>7 coils left</small></span><b>LOW</b></div><div><i className="rose" /><span><strong>Metro Electricals</strong><small>₹38,400 overdue</small></span><b>12D</b></div><div><i className="mint" /><span><strong>SO-1094 ready</strong><small>R.K. Trading Co.</small></span><b>GO</b></div></div>
+              </div>
             </div>
-            <div className="metric-grid">
-              <div className="metric-card featured"><small>Sales today</small><strong>₹1,84,240</strong><span>↑ 12.4% vs yesterday</span></div>
-              <div className="metric-card"><small>Receivable</small><strong>₹4.72L</strong><span>18 customers</span></div>
-              <div className="metric-card"><small>Orders</small><strong>34</strong><span>7 pending dispatch</span></div>
-            </div>
-            <div className="board-section">
-              <div className="board-heading"><strong>Needs attention</strong><span>View all</span></div>
-              <div className="attention-row"><i className="status-dot amber"/><div><strong>Polycab 2.5mm wire</strong><small>Only 7 coils left</small></div><span>Low stock</span></div>
-              <div className="attention-row"><i className="status-dot rose"/><div><strong>Metro Electricals</strong><small>₹38,400 overdue</small></div><span>12 days</span></div>
-              <div className="attention-row"><i className="status-dot sage"/><div><strong>SO-1094 ready</strong><small>R.K. Trading Co.</small></div><span>Dispatch</span></div>
-            </div>
+            <div className="v2-float-card v2-float-left"><span>STOCK COVER</span><strong>18.4 <small>days</small></strong><i><b /></i><em>Healthy across 3 warehouses</em></div>
+            <div className="v2-float-card v2-float-right"><span>FIELD TEAM</span><strong>12 <small>visits today</small></strong><div className="v2-avatars"><i>RS</i><i>MK</i><i>+4</i></div></div>
           </div>
         </section>
 
-        <section className="soft-band" id="features">
-          <div className="container section-wrap">
-            <div className="section-heading">
-              <span className="section-kicker">One operating layer</span>
-              <h2>Built around the messy parts of wholesale business.</h2>
-              <p>Not another generic CRM wearing an inventory hat. The workflow starts with stock, orders, customer balances and fulfilment.</p>
-            </div>
-            <div className="feature-grid">
-              {features.map(([icon, title, desc]) => (
-                <article className="feature-card" key={title}>
-                  <div className="feature-icon"><Icon name={icon} /></div>
-                  <h3>{title}</h3>
-                  <p>{desc}</p>
-                </article>
-              ))}
-            </div>
-          </div>
+        <div className="v2-marquee"><span>BUILT FOR THE EVERYDAY PRESSURE OF WHOLESALE</span><i>✦</i><span>STOCK · CREDIT · DISPATCH · PAYMENT</span><i>✦</i><span>DELHI NCR / INDIA</span></div>
+
+        <section className="v2-section v2-capabilities" id="features">
+          <div className="v2-section-intro"><div className="v2-kicker"><span>SetuStock / 02</span><b>One connected operating layer</b></div><h2>Not another dashboard. A better daily rhythm.</h2><p>The work is messy. The system should make the next action obvious.</p></div>
+          <div className="v2-signal-grid">{signals.map(([no, title, text]) => <article key={no} className={`v2-signal-card signal-${no}`}><span>{no}</span><Icon name={title === 'Inventory' ? 'box' : title === 'Order flow' ? 'receipt' : 'chart'} size={22} /><h3>{title}</h3><p>{text}</p><b className="v2-card-arrow">↗</b></article>)}</div>
         </section>
 
-        <section className="container role-section" id="roles">
-          <div className="section-heading left">
-            <span className="section-kicker">Role-aware by default</span>
-            <h2>Everyone sees the work they actually need.</h2>
-          </div>
-          <div className="role-strip">
-            {[
-              ['Owner', 'All modules, financial overview, users and settings'],
-              ['Manager', 'Sales, customers, inventory and operational reports'],
-              ['Sales', 'Customers, orders, quotations and collection follow-ups'],
-              ['Warehouse', 'Products, stock, picking and dispatch queue'],
-              ['Accountant', 'Invoices, receivables, payments and reports'],
-            ].map(([role, copy]) => <div className="role-card" key={role}><strong>{role}</strong><p>{copy}</p></div>)}
-          </div>
+        <section className="v2-section v2-workflow" id="workflow">
+          <div className="v2-workflow-copy"><div className="v2-kicker"><span>SetuStock / 03</span><b>The daily loop</b></div><h2>From enquiry to cash, without losing the thread.</h2><p>Every handoff has a place. Every exception has a signal. Your team spends less time asking “what happened?” and more time moving the business.</p><button className="v2-text-btn" onClick={() => navigate('/login')}>See the workspace <span>↗</span></button></div>
+          <div className="v2-loop"><div className="v2-loop-line" />{['Customer enquiry', 'Price + availability', 'Reserve & pack', 'Dispatch goods', 'Collect payment'].map((step, i) => <div className="v2-loop-step" key={step}><span>0{i + 1}</span><strong>{step}</strong><small>{['WhatsApp, phone, counter', 'Customer-specific rules', 'Warehouse-ready queue', 'Proof and status trail', 'Ledger stays current'][i]}</small></div>)}</div>
         </section>
 
-        <section className="container workflow" id="workflow">
-          <div className="workflow-copy">
-            <span className="section-kicker">Simple daily loop</span>
-            <h2>Enquiry → order → stock → dispatch → payment.</h2>
-            <p>Capture a customer request, confirm available stock, create an order, hand it to fulfilment and keep the outstanding balance visible until payment lands.</p>
-          </div>
-          <div className="workflow-steps">
-            {['Customer enquiry', 'Create B2B order', 'Reserve stock', 'Dispatch goods', 'Track payment'].map((s, i) => <div key={s}><span>0{i + 1}</span><strong>{s}</strong></div>)}
-          </div>
-        </section>
+        <section className="v2-section v2-roles" id="roles"><div className="v2-roles-head"><div><div className="v2-kicker"><span>SetuStock / 04</span><b>One system / many perspectives</b></div><h2>Give every person the right window.</h2></div><p>Owner, manager, sales, warehouse and accountant see the same business from the angle they need.</p></div><div className="v2-role-strip">{roles.map((role, i) => <div key={role} className={i === 0 ? 'active' : ''}><span>0{i + 1}</span><strong>{role}</strong><small>{['See the whole machine', 'Keep the pipeline moving', 'Make stock real', 'Keep cash clean'][i]}</small></div>)}</div></section>
 
-        <section className="cta-section">
-          <div className="container cta-card">
-            <div><span className="section-kicker">Demo-ready</span><h2>See the role-based product before connecting a backend.</h2><p>The React app carries realistic local demo data and automatically uses it when Django is offline.</p></div>
-            <button className="btn btn-light" onClick={() => navigate('/login')}>Enter demo <Icon name="arrow" size={17} /></button>
-          </div>
-        </section>
+        <section className="v2-cta"><div><span className="v2-kicker"><span>SetuStock / 05</span><b>Ready when you are</b></span><h2>Make the next order easier than the last one.</h2></div><button className="v2-btn v2-btn-light" onClick={() => navigate('/login')}>Open the demo <Icon name="arrow" size={17} /></button></section>
       </main>
 
-      <footer className="container footer"><Brand /><p>Wholesale operations software concept for Delhi NCR.</p><span>© 2026 SetuStock</span></footer>
+      <footer className="v2-footer"><Brand /><span>Wholesale operations software for the real pace of Indian distribution.</span><small>© 2026 SetuStock NCR</small></footer>
     </div>
   );
 }
