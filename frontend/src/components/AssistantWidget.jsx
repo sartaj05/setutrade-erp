@@ -13,6 +13,7 @@ const rolePrompts = {
 function demoReply(question) {
   const q = question.toLowerCase();
   if (q.includes('shelf') || q.includes('shell') || q.includes('expiry') || q.includes('expire') || q.includes('last 1 day')) return { answer: 'Shelf life is not stored on the current product records. Add lot or batch expiry dates in Product Master / Traceability and Setu can show days remaining and expiry alerts.', intent: 'expiry', data: { lots: [], nextStep: 'Record lot or batch expiry dates.' } };
+  if (q.includes('attention') || q.includes('today') || q.includes('urgent')) return { answer: 'Today\'s demo priorities are overdue customer balances, Polycab 2.5mm Wire low stock and 7 orders waiting for dispatch.', intent: 'dashboard', data: { priorities: ['Overdue customer balances', 'Polycab 2.5mm Wire low stock', '7 orders waiting for dispatch'] } };
   if (q.includes('stock') || q.includes('reorder') || q.includes('run out')) return { answer: 'Polycab 2.5mm Wire and GM 8 Module Plate are the highest stock-risk items right now.', intent: 'stock-risk', data: { products: [{ name: 'Polycab 2.5mm Wire Red', stock: 7, reorderLevel: 12 }, { name: 'GM 8 Module Plate', stock: 12, reorderLevel: 15 }] } };
   if (q.includes('overdue') || q.includes('receivable') || q.includes('collection')) return { answer: 'The largest overdue demo balances are Sethi Hardware House and NCR Buildmart.', intent: 'receivables', data: { customers: [{ name: 'Sethi Hardware House', outstanding: 124600 }, { name: 'NCR Buildmart', outstanding: 76750 }] } };
   if (q.includes('order') || q.includes('dispatch')) return { answer: 'There are 34 open demo orders, with 7 waiting for dispatch.', intent: 'orders', data: { openOrders: 34, waitingDispatch: 7 } };
@@ -23,6 +24,7 @@ function demoReply(question) {
 }
 
 const intentActions = {
+  dashboard: ['Open overview', 'dashboard'],
   sales: ['Open overview', 'dashboard'],
   orders: ['Open orders', 'orders'],
   'stock-risk': ['Open inventory', 'inventory'],
@@ -44,6 +46,7 @@ export default function AssistantWidget({ hidden = false, navigate, onModuleChan
   const [input, setInput] = useState('');
   const [threadId, setThreadId] = useState(null);
   const [messages, setMessages] = useState([]);
+  const [connection, setConnection] = useState(mode === 'api' ? 'live' : 'demo');
   const prompts = useMemo(() => rolePrompts[user?.role] || rolePrompts.OWNER, [user?.role]);
 
   if (hidden) return null;
@@ -59,9 +62,16 @@ export default function AssistantWidget({ hidden = false, navigate, onModuleChan
         ? await createApiResource('assistant', { question: value, ...(threadId ? { threadId } : {}) })
         : demoReply(value);
       if (result.threadId) setThreadId(result.threadId);
+      setConnection(mode === 'api' ? 'live' : 'demo');
       setMessages((rows) => [...rows, { role: 'assistant', content: result.answer, intent: result.intent, data: result.data }]);
     } catch (error) {
-      setMessages((rows) => [...rows, { role: 'assistant', content: error.message || 'I could not complete that request.', intent: 'error' }]);
+      if (mode === 'api' && (error.network || error.status === 0)) {
+        const fallback = demoReply(value);
+        setConnection('offline');
+        setMessages((rows) => [...rows, { role: 'assistant', content: `${fallback.answer} Backend is offline, so this is cached demo guidance until Django reconnects.`, intent: fallback.intent, data: fallback.data, offline: true }]);
+      } else {
+        setMessages((rows) => [...rows, { role: 'assistant', content: error.message || 'I could not complete that request.', intent: 'error' }]);
+      }
     } finally {
       setBusy(false);
     }
@@ -79,8 +89,8 @@ export default function AssistantWidget({ hidden = false, navigate, onModuleChan
   return <div className={`assistant-widget ${open ? 'is-open' : ''}`}>
     {open && <section className="assistant-widget-panel" aria-label="Setu operations assistant">
       <header className="assistant-widget-header">
-        <div><strong>Setu</strong><span>Operations copilot · {mode === 'api' ? 'Live workspace' : 'Demo workspace'}</span></div>
-        <div className="assistant-widget-header-actions"><span className="assistant-online"><i /> {mode === 'api' ? 'Live' : 'Demo'}</span><button onClick={clearConversation} aria-label="Clear conversation">↺</button></div>
+        <div><strong>Setu</strong><span>Operations copilot · {connection === 'offline' ? 'Cached guidance' : mode === 'api' ? 'Live workspace' : 'Demo workspace'}</span></div>
+        <div className="assistant-widget-header-actions"><span className={`assistant-online ${connection === 'offline' ? 'offline' : ''}`}><i /> {connection === 'offline' ? 'Offline' : mode === 'api' ? 'Live' : 'Demo'}</span><button onClick={clearConversation} aria-label="Clear conversation">↺</button></div>
       </header>
       <div className="assistant-widget-messages">
         {!messages.length && <div className="assistant-widget-welcome"><span className="assistant-bot">✦</span><div><p>Hi {user?.name?.split(' ')[0] || 'there'}! I can help with your SetuStock workspace.</p><div className="assistant-prompt-list">{prompts.map((prompt) => <button key={prompt} onClick={() => ask(prompt)}>{prompt}</button>)}</div></div></div>}
@@ -89,6 +99,7 @@ export default function AssistantWidget({ hidden = false, navigate, onModuleChan
           {message.data.customers?.map((customer) => <div key={customer.name}><strong>{customer.name}</strong><small>{money(customer.outstanding)} outstanding</small></div>)}
           {message.data.lots?.map((lot) => <div key={lot.lot}><strong>{lot.product} · {lot.lot}</strong><small>{lot.daysRemaining} days remaining</small></div>)}
           {message.data.warehouses?.map((warehouse) => <div key={warehouse.name}><strong>{warehouse.name}</strong><small>{warehouse.city}</small></div>)}
+          {message.data.priorities?.map((priority) => <div key={priority}><strong>{priority}</strong><small>Priority for today</small></div>)}
           {message.data.openOrders && <div><strong>{message.data.openOrders} open orders</strong><small>{message.data.waitingDispatch} waiting for dispatch</small></div>}
           {message.data.returns && <div><strong>{message.data.returns} returns</strong><small>{message.data.adjustments} stock adjustments to review</small></div>}
           {message.data.pending !== undefined && <div><strong>{message.data.pending} approvals pending</strong><small>Review before execution</small></div>}

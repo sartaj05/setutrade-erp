@@ -352,6 +352,8 @@ table td { border-color: #e8edf4; }
 /* Assistant response cards, prompt rail and workspace actions */
 .assistant-widget-header-actions { display: flex; align-items: center; gap: 10px; }
 .assistant-widget-header-actions > button { width: 26px; height: 26px; border: 1px solid rgba(255,255,255,.3); border-radius: 8px; background: rgba(255,255,255,.12); color: #fff; cursor: pointer; }
+.assistant-online.offline { color: #ffe7e2 !important; }
+.assistant-online.offline i { background: #ffb09e; }
 .assistant-widget-welcome > div { min-width: 0; }
 .assistant-prompt-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
 .assistant-prompt-list button, .assistant-widget-suggestions button { border: 1px solid #cbd9ef; border-radius: 99px; padding: 7px 9px; background: #fff; color: var(--app-blue); font-size: 10px; line-height: 1.25; text-align: left; cursor: pointer; }
