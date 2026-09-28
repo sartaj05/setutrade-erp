@@ -4,7 +4,7 @@ import Icon from './Icon';
 import { permissions } from '../data/demoData';
 import { demoNotifications } from '../data/productionData';
 import { useAuth } from '../context/AuthContext';
-import { getApiResource, patchApiResource } from '../services/api';
+import { getApiResource, healthApi, patchApiResource } from '../services/api';
 
 const moduleLabels = {
   dashboard: ['Overview', 'chart'], products: ['Products', 'box'], inventory: ['Inventory', 'box'], customers: ['Customers', 'users'],
@@ -20,9 +20,12 @@ export default function AppShell({ module, onModuleChange, children, navigate })
   const initials = user.name.split(' ').map((x) => x[0]).slice(0, 2).join('');
   const [search, setSearch] = useState(''); const [searchResults, setSearchResults] = useState([]); const [showSearch, setShowSearch] = useState(false);
   const [notifications, setNotifications] = useState(demoNotifications); const [showNotifications, setShowNotifications] = useState(false);
+  const [apiHealth, setApiHealth] = useState(mode === 'api' ? 'checking' : 'demo');
 
   useEffect(() => {
-    if (mode !== 'api') { setNotifications(demoNotifications); return; }
+    if (mode !== 'api') { setNotifications(demoNotifications); setApiHealth('demo'); return; }
+    setApiHealth('checking');
+    healthApi().then((payload) => setApiHealth(payload.ok && payload.database === 'ok' ? 'online' : 'degraded')).catch(() => setApiHealth('offline'));
     getApiResource('notifications').then((x) => setNotifications(x.notifications || [])).catch(() => {});
   }, [mode]);
 
@@ -44,7 +47,7 @@ export default function AppShell({ module, onModuleChange, children, navigate })
         <nav className="side-nav">
           {visibleModules.filter((key) => moduleLabels[key]).map((key) => { const [label, icon] = moduleLabels[key]; return <button className={module === key ? 'side-link active' : 'side-link'} key={key} onClick={() => onModuleChange(key)}><Icon name={icon} size={18} /><span>{label}</span></button>; })}
         </nav>
-        <div className="sidebar-bottom"><div className="mode-chip"><span className={mode === 'api' ? 'online' : ''} /> {mode === 'api' ? 'Production API connected' : 'Safe demo mode'}</div><button className="signout" onClick={signOut}>Sign out</button></div>
+        <div className="sidebar-bottom"><div className="mode-chip"><span className={apiHealth === 'online' ? 'online' : ''} /> {mode !== 'api' ? 'Safe demo mode' : apiHealth === 'checking' ? 'Checking production API…' : apiHealth === 'online' ? 'Production API connected' : apiHealth === 'degraded' ? 'Production API degraded' : 'Production API unavailable'}</div><button className="signout" onClick={signOut}>Sign out</button></div>
       </aside>
 
       <section className="app-main">

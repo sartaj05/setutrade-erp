@@ -42,8 +42,10 @@ async function refreshAccessToken() {
 export async function apiRequest(path, options = {}, retry = true) {
   const isForm = options.body instanceof FormData;
   const headers = authHeaders({ ...(isForm ? {} : { 'Content-Type': 'application/json' }), ...(options.headers || {}) });
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), Number(import.meta.env.VITE_API_TIMEOUT_MS || 12000));
   try {
-    const response = await fetch(`${API_BASE}${path}`, { ...options, headers });
+    const response = await fetch(`${API_BASE}${path}`, { ...options, headers, signal: controller.signal });
     if (response.status === 401 && retry && !path.startsWith('/auth/')) {
       const refreshed = await refreshAccessToken();
       if (refreshed) return apiRequest(path, options, false);
@@ -53,7 +55,9 @@ export async function apiRequest(path, options = {}, retry = true) {
     return data;
   } catch (error) {
     if (error instanceof ApiError) throw error;
-    throw new ApiError('Django API is unavailable.', 0, true);
+    throw new ApiError(error?.name === 'AbortError' ? 'Django API request timed out.' : 'Django API is unavailable.', 0, true);
+  } finally {
+    window.clearTimeout(timeout);
   }
 }
 
@@ -105,6 +109,10 @@ export function exportUrl(resource) {
 }
 
 export const apiBase = API_BASE;
+
+export function healthApi() {
+  return apiRequest('/health/');
+}
 
 export async function downloadCsv(resource) {
   const token = localStorage.getItem('setustock_token');
