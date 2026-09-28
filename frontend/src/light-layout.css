@@ -538,6 +538,17 @@ table td { border-color: #e8edf4; }
 .delivery-meta { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 0 20px 16px; }.delivery-meta span { display: grid; gap: 5px; color: var(--app-muted); font-size: 10px; }.delivery-meta strong { color: var(--app-ink); font-size: 12px; }.delivery-map-card > .secondary-btn { margin: 0 20px 20px; min-height: 36px; padding: 0 12px; border: 1px solid #c7d5eb; border-radius: 9px; background: #eef4ff; color: var(--app-blue); font-size: 11px; font-weight: 800; cursor: pointer; }
 .delivery-driver-card label { display: grid; gap: 7px; padding: 18px 20px 0; color: var(--app-muted); font-size: 11px; font-weight: 800; }.delivery-driver-card input { min-height: 42px; padding: 0 12px; border: 1px solid #cad7e8; border-radius: 9px; }.delivery-driver-card > p { margin: 14px 20px 22px; font-size: 11px; line-height: 1.5; }.delivery-driver-stats { display: flex; align-items: baseline; gap: 8px; margin: 0 20px 20px; padding: 16px; border-radius: 12px; background: #f0f5ff; color: var(--app-muted); }.delivery-driver-stats strong { color: var(--app-blue); font-size: 25px; }.delivery-driver-stats span { font-size: 11px; }
 .integration-marketplace { margin-bottom: 18px; overflow: hidden; }.integration-template-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; padding: 0 20px 20px; }.integration-template { display: grid; gap: 12px; padding: 15px; border: 1px solid #d8e2f0; border-radius: 12px; background: #fbfdff; }.integration-logo { display: grid; place-items: center; width: 34px; height: 34px; border-radius: 10px; background: #eaf1ff; color: var(--app-blue); font-size: 11px; font-weight: 900; }.integration-template strong { display: block; color: var(--app-ink); font-size: 11px; }.integration-template small { display: block; min-height: 32px; margin-top: 5px; color: var(--app-muted); font-size: 10px; line-height: 1.4; }.integration-template button { min-height: 32px; border: 1px solid #c7d5eb; border-radius: 8px; background: #fff; color: var(--app-blue); font-size: 10px; font-weight: 800; cursor: pointer; }.integration-template button:disabled { background: #eef8e5; border-color: #c6dfa2; color: #477029; cursor: default; }.edi-actions { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; padding: 0 20px 20px; }.edi-actions button { display: grid; gap: 5px; padding: 14px; border: 1px solid #cbd9f1; border-radius: 10px; background: #f5f8ff; color: var(--app-blue); font-size: 11px; font-weight: 800; text-align: left; cursor: pointer; }.edi-actions button:hover { background: #eaf1ff; }.edi-actions small { color: var(--app-muted); font-size: 10px; font-weight: 500; }
+.promotion-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(360px, .95fr); gap: 16px; margin-bottom: 18px; }
+.promotion-simulator, .promotion-result { overflow: hidden; }
+.promotion-form { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; padding: 0 20px 20px; }
+.promotion-form label { display: grid; gap: 6px; color: var(--app-muted); font-size: 11px; font-weight: 800; }
+.promotion-form input { min-height: 38px; padding: 0 10px; border: 1px solid #cad7e8; border-radius: 9px; color: var(--app-ink); }
+.promotion-form button { grid-column: 1 / -1; min-height: 39px; border: 1px solid var(--app-blue); border-radius: 9px; background: var(--app-blue); color: #fff; font-size: 11px; font-weight: 800; cursor: pointer; }
+.promotion-result-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; padding: 0 20px 16px; }
+.promotion-result-grid div { display: grid; gap: 5px; padding: 13px; border: 1px solid #d9e4f2; border-radius: 10px; background: #fbfdff; }
+.promotion-result-grid span { color: var(--app-muted); font-size: 10px; }
+.promotion-result-grid strong { color: var(--app-ink); font-size: 17px; }
+.break-even-note { margin: 0 20px 20px; padding: 13px; border-radius: 10px; background: #eef8e5; color: #4a6235; font-size: 11px; line-height: 1.45; }
 
 @media (max-width: 900px) {
   .app-content { padding: 34px 28px 64px; }
@@ -553,6 +564,7 @@ table td { border-color: #e8edf4; }
   .delivery-tracking-grid { grid-template-columns: 1fr; }
   .integration-template-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .edi-actions { grid-template-columns: 1fr; }
+  .promotion-layout { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 600px) {

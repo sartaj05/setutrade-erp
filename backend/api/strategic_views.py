@@ -59,6 +59,12 @@ def schemes(request):
         accrued=claims.exclude(status__in=['Rejected','Settled']).aggregate(v=Sum('claim_amount'))['v'] or 0
         return JsonResponse({'summary':{'active':schemes.filter(is_active=True).count(),'accrued':_money(accrued),'claims':claims.count()},'schemes':[{'id':x.id,'name':x.name,'supplier':x.supplier.name,'type':x.scheme_type,'start':_dt(x.start_date),'end':_dt(x.end_date),'target':_money(x.target_value),'rebate':_money(x.rebate_percent),'active':x.is_active} for x in schemes],'claims':[{'id':x.id,'claimNo':x.claim_no,'scheme':x.scheme.name,'supplier':x.scheme.supplier.name,'eligible':_money(x.eligible_value),'amount':_money(x.claim_amount),'status':x.status} for x in claims]})
     data=_body(request); action=data.get('action')
+    if action=='simulate':
+        try: price=Decimal(str(data.get('price') or 0)); cost=Decimal(str(data.get('cost') or 0)); quantity=Decimal(str(data.get('quantity') or 1)); discount=Decimal(str(data.get('discount') or 0)); rebate=Decimal(str(data.get('rebate') or 0))
+        except (TypeError, ValueError):return JsonResponse({'detail':'Price, cost, quantity, discount and rebate must be numeric.'},status=400)
+        if price<=0 or cost<0 or quantity<=0:return JsonResponse({'detail':'Price and quantity must be positive.'},status=400)
+        net_unit=price*(Decimal('1')-discount/Decimal('100')); net_revenue=net_unit*quantity; rebate_value=net_revenue*rebate/Decimal('100'); contribution=net_revenue-rebate_value-(cost*quantity); margin=(contribution/(net_revenue-rebate_value)*Decimal('100')) if net_revenue else Decimal('0'); break_even=(cost/net_unit).quantize(Decimal('0.01')) if net_unit else Decimal('0')
+        return JsonResponse({'inputs':{'price':float(price),'cost':float(cost),'quantity':float(quantity),'discount':float(discount),'rebate':float(rebate)},'netRevenue':_money(net_revenue-rebate_value),'rebateValue':_money(rebate_value),'contribution':_money(contribution),'margin':round(float(margin),2),'breakEvenQuantity':float(break_even)})
     if action=='create-scheme':
         supplier=m.Supplier.objects.filter(company=company,pk=data.get('supplierId')).first() or m.Supplier.objects.filter(company=company).first()
         if not supplier:return JsonResponse({'detail':'Supplier required.'},status=400)
