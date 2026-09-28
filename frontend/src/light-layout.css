@@ -368,3 +368,50 @@ table td { border-color: #e8edf4; }
 .assistant-action-link:hover { text-decoration: underline; }
 .assistant-widget-suggestions { display: flex; flex-wrap: wrap; gap: 6px; padding: 0 12px 10px; background: #f7f9fe; }
 .assistant-widget-suggestions:empty { display: none; }
+
+/* Final spacing and navigation polish */
+.app-content { padding: 42px clamp(28px, 5vw, 76px) 76px; }
+.module-header { margin: 0 0 32px; padding-top: 4px; }
+.module-header h1 { margin-top: 10px; }
+.module-summary { gap: 16px; margin: 22px 0 24px; }
+.module-summary > div { padding: 20px 22px; }
+.module-panel { border-radius: 18px; }
+.sidebar-bottom { margin-top: auto; padding: 16px 8px 10px; background: linear-gradient(180deg, rgba(247,249,253,0), #f8faff 28%); }
+.mode-chip { margin: 0 0 12px; padding: 9px 11px; border: 1px solid #e3eaf4; border-radius: 10px; background: #f7f9fc; }
+.signout { height: 42px; border: 1px solid #cfdcf0; border-radius: 11px; background: #fff; color: var(--app-blue); font-size: 11px; font-weight: 800; box-shadow: 0 6px 15px rgba(40,66,120,.06); }
+.signout::before { content: '↪'; margin-right: 7px; font-size: 15px; }
+.signout:hover { background: #fff0eb; border-color: #f0c7bc; color: #b6503d; box-shadow: 0 8px 18px rgba(197,90,70,.12); }
+
+/* Auth and registration card hierarchy */
+.login-panel { padding: clamp(28px, 6vw, 88px); }
+.login-box { padding: 34px; border: 1px solid var(--app-line); border-radius: 24px; }
+.login-heading h2 { font-size: clamp(31px, 4vw, 42px); margin: 17px 0 9px; }
+.login-form { gap: 17px; }
+.form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 13px; }
+.optional-label { color: #9aa7b8; font-size: 10px; font-weight: 500; }
+.auth-link-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.auth-link-row .link-button:last-child { color: var(--app-cobalt); font-weight: 800; }
+.register-form { gap: 14px; }
+
+/* Keep the three marketing surfaces visually consistent with the signed-in workspace. */
+.v2-signal-grid { gap: 16px; }
+.v2-signal-card { min-height: 248px; padding: 25px; border-radius: 16px; box-shadow: 0 14px 32px rgba(40,66,120,.06); transition: transform .2s ease, box-shadow .2s ease; }
+.v2-signal-card:hover { transform: translateY(-4px); box-shadow: 0 20px 42px rgba(40,66,120,.12); }
+.v2-role-strip { border-radius: 16px; overflow: hidden; box-shadow: 0 12px 30px rgba(40,66,120,.05); }
+.v2-role-strip > div { min-height: 178px; padding: 24px 20px; }
+.v2-cta { border-radius: 20px; padding: 54px 58px; }
+
+@media (max-width: 900px) {
+  .app-content { padding: 34px 28px 64px; }
+  .login-box { padding: 28px; }
+}
+
+@media (max-width: 600px) {
+  .app-content { padding: 26px 16px 88px; }
+  .login-panel { padding: 22px 16px; }
+  .login-box { padding: 24px 18px; border-radius: 20px; }
+  .form-grid { grid-template-columns: 1fr; }
+  .auth-link-row { align-items: flex-start; flex-direction: column; gap: 8px; }
+  .v2-signal-card { min-height: 210px; }
+  .v2-cta { padding: 32px 24px; }
+}

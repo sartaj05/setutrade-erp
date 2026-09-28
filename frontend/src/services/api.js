@@ -68,6 +68,13 @@ export async function loginApi(email, password) {
   return data.user;
 }
 
+export async function registerApi(details) {
+  const data = await apiRequest('/auth/register/', { method: 'POST', body: JSON.stringify(details) });
+  localStorage.setItem('setustock_token', data.token);
+  localStorage.setItem('setustock_refresh_token', data.refreshToken || '');
+  return data.user;
+}
+
 export async function logoutApi() {
   try { await apiRequest('/auth/logout/', { method: 'POST', body: '{}' }); } catch { /* local logout still wins */ }
   localStorage.removeItem('setustock_token');

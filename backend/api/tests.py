@@ -54,6 +54,18 @@ class ProductionApiTests(TestCase):
         self.assertIn('refreshToken', payload)
         self.assertIn('audit', payload['user']['permissions'])
 
+    def test_registration_creates_owner_workspace_and_session(self):
+        response = self.client.post('/api/auth/register/', data=json.dumps({
+            'name': 'New Owner', 'email': 'new-owner@example.com', 'password': 'secure-pass-123',
+            'businessName': 'New Owner Electricals', 'phone': '9876543210',
+        }), content_type='application/json')
+        self.assertEqual(response.status_code, 201, response.content)
+        payload = response.json()
+        self.assertEqual(payload['user']['role'], 'OWNER')
+        self.assertEqual(payload['user']['business'], 'New Owner Electricals')
+        self.assertTrue(User.objects.filter(email='new-owner@example.com').exists())
+        self.assertTrue(Company.objects.filter(name='New Owner Electricals').exists())
+
     def test_tenant_isolation_and_same_reference_codes(self):
         other = Company.objects.create(name='Other Co.', slug='other-co')
         Product.objects.create(company=other, sku='SKU-1', name='Other Switch')

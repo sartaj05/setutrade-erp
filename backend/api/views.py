@@ -23,6 +23,7 @@ from django.utils import timezone
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.utils.html import escape
+from django.utils.text import slugify
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from .auth import (
@@ -39,6 +40,7 @@ from .models import (
     PaymentAllocation, PaymentTransaction,
     Supplier, SupplierLedgerEntry, SupplierPayment, TaxNote, Warehouse, WhatsAppMessage,
     WhatsAppOrderDraft,
+    Profile,
 )
 from .services import (
     apply_stock, audit, calculate_line, create_order_items, decimal, dispatch_order,
@@ -151,6 +153,40 @@ def login_view(request):
         return JsonResponse({'detail': 'Account setup is incomplete. Contact your administrator.'}, status=403)
     access, refresh = create_session_tokens(user, request)
     return JsonResponse({'token': access, 'refreshToken': refresh, 'user': user_payload(user)})
+
+
+@csrf_exempt
+@require_POST
+def register_view(request):
+    body = _json_body(request) or {}
+    name = str(body.get('name', '')).strip()
+    email = str(body.get('email', '')).strip().lower()
+    password = str(body.get('password', ''))
+    business_name = str(body.get('businessName', '')).strip() or f'{name} Distributors'
+    phone = str(body.get('phone', '')).strip()
+    if not name or not email or not password:
+        return JsonResponse({'detail': 'Name, email and password are required.'}, status=400)
+    if len(password) < 8:
+        return JsonResponse({'detail': 'Password must be at least 8 characters.'}, status=400)
+    if User.objects.filter(email__iexact=email).exists():
+        return JsonResponse({'detail': 'An account with this email already exists.'}, status=409)
+
+    first_name, *last_names = name.split()
+    base_slug = slugify(business_name)[:70] or 'setustock-company'
+    company_slug = base_slug
+    suffix = 2
+    while Company.objects.filter(slug=company_slug).exists():
+        company_slug = f'{base_slug[:70 - len(str(suffix)) - 1]}-{suffix}'
+        suffix += 1
+
+    with transaction.atomic():
+        company = Company.objects.create(name=business_name[:180], slug=company_slug, phone=phone, email=email)
+        branch = Branch.objects.create(company=company, code='HQ', name='Head Office', city=company.state, phone=phone)
+        user = User.objects.create_user(username=email, email=email, password=password, first_name=first_name, last_name=' '.join(last_names))
+        Profile.objects.create(user=user, role=Profile.Role.OWNER, business_name=business_name[:160], company=company, branch=branch, phone=phone)
+
+    access, refresh = create_session_tokens(user, request)
+    return JsonResponse({'token': access, 'refreshToken': refresh, 'user': user_payload(user)}, status=201)
 
 
 @csrf_exempt
