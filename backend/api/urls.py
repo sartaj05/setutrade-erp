@@ -64,6 +64,7 @@ urlpatterns = [
     path('subscription/', views.subscription_billing),
     path('forecasting/', views.forecasting),
     path('assistant/', views.ai_assistant),
+    path('voice-ordering/', views.voice_ordering),
     path('collections/', expansion_views.collections),
     path('pay/<str:token>/', expansion_views.public_payment_link),
     path('wms/', expansion_views.wms),

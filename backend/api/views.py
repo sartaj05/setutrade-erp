@@ -931,6 +931,45 @@ def whatsapp(request):
 
 @csrf_exempt
 @require_http_methods(['GET', 'POST'])
+@roles_allowed('OWNER','MANAGER','SALES')
+def voice_ordering(request):
+    if request.method == 'GET':
+        query = str(request.GET.get('q', '')).strip()
+        products = _company_qs(Product, request).filter(is_active=True)
+        if query: products = products.filter(Q(name__icontains=query) | Q(sku__icontains=query))
+        return JsonResponse({'products': [{'id': p.id, 'sku': p.sku, 'name': p.name, 'stock': float(p.stock), 'unit': p.unit, 'price': float(p.sell_price), 'gst': float(p.gst_rate)} for p in products.order_by('name')[:30]]})
+    body = _json_body(request) or {}
+    action = body.get('action', 'draft')
+    if action == 'search':
+        query = str(body.get('query', '')).strip()
+        products = _company_qs(Product, request).filter(is_active=True).filter(Q(name__icontains=query) | Q(sku__icontains=query))[:30]
+        return JsonResponse({'products': [{'id': p.id, 'sku': p.sku, 'name': p.name, 'stock': float(p.stock), 'unit': p.unit, 'price': float(p.sell_price), 'gst': float(p.gst_rate)} for p in products]})
+    if action == 'confirm':
+        draft = _company_qs(WhatsAppOrderDraft, request).filter(pk=body.get('draftId')).first()
+        if not draft: return JsonResponse({'detail': 'Voice order draft not found.'}, status=404)
+        draft.status = WhatsAppOrderDraft.Status.CONFIRMED; draft.save(update_fields=['status'])
+        audit(request, 'confirm', 'WhatsAppOrderDraft', draft.id, f'Confirmed voice order {draft.draft_no}', {'language': body.get('language', 'en-IN')})
+        return JsonResponse({'draftId': draft.id, 'status': draft.status, 'message': 'Quantities and prices confirmed. The order is ready for ERP conversion.'})
+    if action == 'speak-summary':
+        customer = _company_qs(Customer, request).filter(pk=body.get('customerId')).first()
+        if not customer: return JsonResponse({'detail': 'Customer is required.'}, status=400)
+        invoice = _company_qs(Invoice, request).filter(order__customer=customer).order_by('-invoice_date', '-id').first()
+        text = f'{customer.name} has an outstanding balance of Rs. {customer.outstanding:,.0f}.'
+        if invoice: text += f' Latest invoice {invoice.invoice_no} is {invoice.status} for Rs. {invoice.total:,.0f}.'
+        return JsonResponse({'language': body.get('language', 'en-IN'), 'spokenText': text})
+    customer = _company_qs(Customer, request).filter(pk=body.get('customerId')).first() or _company_qs(Customer, request).filter(code=body.get('customer')).first()
+    transcript = str(body.get('voiceTranscript') or body.get('message') or '').strip()
+    if not customer or not transcript: return JsonResponse({'detail': 'customer and voice transcript are required.'}, status=400)
+    items = _parse_whatsapp_items(transcript, request.company)
+    total = sum(Decimal(str(x['quantity'])) * Decimal(str(x['price'])) for x in items)
+    draft = WhatsAppOrderDraft.objects.create(company=request.company, draft_no=_next_no('VOICE'), customer=customer, raw_message=transcript, parsed_items=items, estimated_total=total)
+    WhatsAppMessage.objects.create(company=request.company, customer=customer, direction='Inbound', message=f"[{body.get('language', 'en-IN')}] {transcript}", template_name='voice-order', status='Received')
+    audit(request, 'create', 'WhatsAppOrderDraft', draft.id, f'Created {body.get("language", "en-IN")} voice order draft {draft.draft_no}')
+    return JsonResponse({'draft': {'pk': draft.id, 'id': draft.draft_no, 'customer': customer.name, 'items': items, 'total': float(total), 'status': draft.status, 'language': body.get('language', 'en-IN'), 'confirmation': 'Please confirm each quantity and price before submitting this order.'}}, status=201)
+
+
+@csrf_exempt
+@require_http_methods(['GET', 'POST'])
 def whatsapp_webhook(request):
     """Meta WhatsApp webhook verification and inbound order capture."""
     if request.method == 'GET':
