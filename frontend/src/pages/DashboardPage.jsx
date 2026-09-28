@@ -1,5 +1,6 @@
 import { useAuth } from '../context/AuthContext';
 import { demoDashboard, roleHomeCopy } from '../data/demoData';
+import { demoAttention } from '../data/productionData';
 import StatCard from '../components/StatCard';
 import { useApiData } from '../services/useApiData';
 
@@ -25,7 +26,9 @@ const meta = {
 export default function DashboardPage() {
   const { user } = useAuth();
   const { data: apiData } = useApiData('dashboard', demoDashboard);
-  const data = { ...demoDashboard, ...apiData, metrics: { ...demoDashboard.metrics, ...(apiData.metrics || {}) }, recentOrders: apiData.recentOrders || demoDashboard.recentOrders, activity: demoDashboard.activity };
+  const { data: attentionData } = useApiData('attention', demoAttention);
+  const activity = (attentionData.items || []).slice(0, 5).map((item) => ({ title: item.title, text: item.message, time: item.time || item.createdAt || 'Recently', tone: item.level === 'critical' ? 'critical' : item.level === 'warning' ? 'warning' : 'info' }));
+  const data = { ...demoDashboard, ...apiData, metrics: { ...demoDashboard.metrics, ...(apiData.metrics || {}) }, recentOrders: apiData.recentOrders || demoDashboard.recentOrders, activity: activity.length ? activity : demoDashboard.activity };
   const keys = roleMetrics[user.role] || roleMetrics.OWNER;
 
   return (

@@ -42,3 +42,14 @@ export const demoNotifications = [
   { id: 1, title: 'Low stock needs attention', message: 'Polycab 2.5mm Wire Red is below its reorder level.', level: 'warning', module: 'insights', entityId: '1', read: false, time: '2026-09-21T10:10:00+05:30' },
   { id: 2, title: 'Collections follow-up', message: 'Two customer balances are overdue.', level: 'critical', module: 'ledger', entityId: '', read: false, time: '2026-09-21T09:40:00+05:30' },
 ];
+
+export const demoAttention = {
+  summary: { total: 5, critical: 2, warning: 2, info: 1 },
+  items: [
+    { id: 'a-1', type: 'overdue_customer', level: 'critical', title: 'Overdue customer', message: 'Metro Electricals has ₹38,400 outstanding.', module: 'ledger', time: '22 min ago' },
+    { id: 'a-2', type: 'low_stock', level: 'warning', title: 'Low stock', message: 'Polycab 2.5mm Wire Red reached 7 coils.', module: 'inventory', time: '48 min ago' },
+    { id: 'a-3', type: 'approval', level: 'info', title: 'Approval pending', message: 'A purchase discount request is waiting for review.', module: 'approvals', time: '1 hr ago' },
+    { id: 'a-4', type: 'unmatched_payment', level: 'critical', title: 'Payment needs matching', message: '₹38,400 UPI receipt is unmatched.', module: 'payments', time: '2 hr ago' },
+    { id: 'a-5', type: 'delayed_delivery', level: 'warning', title: 'Delayed delivery', message: 'Noida route is still out for delivery.', module: 'delivery', time: 'Today' },
+  ],
+};

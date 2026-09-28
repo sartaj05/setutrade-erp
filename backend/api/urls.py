@@ -52,6 +52,7 @@ urlpatterns = [
     path('search/', views.global_search),
     path('audit/', views.audit_logs),
     path('notifications/', views.notifications),
+    path('attention/', views.attention),
     path('attachments/', views.attachments),
     path('delivery/', views.delivery),
     path('approvals/', views.approvals),

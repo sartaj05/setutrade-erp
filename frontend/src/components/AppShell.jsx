@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Brand from './Brand';
 import Icon from './Icon';
 import { permissions } from '../data/demoData';
-import { demoNotifications } from '../data/productionData';
+import { demoNotifications, demoAttention } from '../data/productionData';
 import { useAuth } from '../context/AuthContext';
 import { getApiResource, healthApi, patchApiResource } from '../services/api';
 import AssistantWidget from './AssistantWidget';
@@ -37,10 +37,13 @@ export default function AppShell({ module, onModuleChange, children, navigate })
   const [planNotice, setPlanNotice] = useState('');
 
   useEffect(() => {
-    if (mode !== 'api') { setNotifications(demoNotifications); setApiHealth('demo'); return; }
+    if (mode !== 'api') { setNotifications([...demoAttention.items, ...demoNotifications]); setApiHealth('demo'); return; }
     setApiHealth('checking');
     healthApi().then((payload) => setApiHealth(payload.ok && payload.database === 'ok' ? 'online' : 'degraded')).catch(() => setApiHealth('offline'));
-    getApiResource('notifications').then((x) => setNotifications(x.notifications || [])).catch(() => {});
+    Promise.all([getApiResource('notifications'), getApiResource('attention')]).then(([noticeData, attentionData]) => {
+      const alerts = (attentionData.items || []).map((item) => ({ ...item, read: false, time: item.createdAt || 'Recently' }));
+      setNotifications([...alerts, ...(noticeData.notifications || [])]);
+    }).catch(() => {});
   }, [mode]);
 
   useEffect(() => {

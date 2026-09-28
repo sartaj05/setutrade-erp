@@ -36,7 +36,7 @@ from .models import (
     OrderItem, Payment, PriceList, PriceRule, Product, PurchaseItem, PurchaseOrder,
     Quotation, QuotationItem, ReorderSuggestion, ReturnItem, ReturnOrder, SalesTarget,
     SalesVisit, StockAdjustment, StockBalance, StockTransfer, StockTransferItem,
-    DemandForecast,
+    DemandForecast, BackgroundJob, WebhookReplay,
     PaymentAllocation, PaymentTransaction,
     Supplier, SupplierLedgerEntry, SupplierPayment, TaxNote, Warehouse, WhatsAppMessage,
     WhatsAppOrderDraft,
@@ -75,6 +75,10 @@ def _date(value, default=None):
 
 def _next_no(prefix):
     return f'{prefix}-{timezone.now().strftime("%y%m%d%H%M%S%f")[-14:]}'
+
+
+def _money(value):
+    return f'₹{Decimal(str(value or 0)):,.0f}'
 
 
 def _page(request, qs, serializer, default_size=50):
@@ -1225,6 +1229,37 @@ def notifications(request):
     return JsonResponse({'notifications':[{'id':n.id,'title':n.title,'message':n.message,'level':n.level,'module':n.module,'entityId':n.entity_id,'read':n.is_read,'time':n.created_at.isoformat()} for n in rows],'unread':qs.filter(is_read=False).count()})
 
 
+def _attention_items(company):
+    """Build the single exception feed consumed by dashboard, shell and assistant."""
+    today = timezone.localdate(); items = []
+    for row in Product.objects.filter(company=company, is_active=True, reorder_level__gt=0, stock__lte=F('reorder_level')).order_by('stock')[:12]:
+        items.append({'id': f'low-stock-{row.id}', 'type': 'low_stock', 'level': 'warning', 'title': 'Low stock', 'message': f'{row.name} has {row.stock:g} {row.unit} left against a reorder level of {row.reorder_level:g}.', 'module': 'inventory', 'entityId': row.id, 'createdAt': row.updated_at.isoformat()})
+    for row in Customer.objects.filter(company=company, outstanding__gt=0, due_date__lt=today).order_by('-outstanding')[:12]:
+        items.append({'id': f'overdue-{row.id}', 'type': 'overdue_customer', 'level': 'critical', 'title': 'Overdue customer', 'message': f'{row.name} has {_money(row.outstanding)} outstanding since {row.due_date.isoformat()}.', 'module': 'ledger', 'entityId': row.id, 'createdAt': row.due_date.isoformat()})
+    for row in ApprovalRequest.objects.filter(company=company, status='Pending').order_by('-id')[:12]:
+        items.append({'id': f'approval-{row.id}', 'type': 'approval', 'level': 'info', 'title': 'Approval pending', 'message': f'{row.title} is waiting for review.', 'module': 'approvals', 'entityId': row.id, 'createdAt': row.created_at.isoformat()})
+    expiry_limit = today + timedelta(days=30)
+    for row in InventoryLot.objects.filter(company=company, expiry_date__isnull=False, expiry_date__lte=expiry_limit, expiry_date__gte=today).exclude(status__in=['Closed', 'Expired']).select_related('product').order_by('expiry_date')[:12]:
+        items.append({'id': f'expiry-{row.id}', 'type': 'expiring_lot', 'level': 'warning', 'title': 'Lot expires soon', 'message': f'{row.product.name} / {row.lot_no} expires on {row.expiry_date.isoformat()}.', 'module': 'traceability', 'entityId': row.id, 'createdAt': row.received_at.isoformat()})
+    for row in PaymentTransaction.objects.filter(company=company, status__in=['Unmatched', 'Partial']).select_related('customer').order_by('-created_at')[:12]:
+        items.append({'id': f'payment-{row.id}', 'type': 'unmatched_payment', 'level': 'critical' if row.status == 'Unmatched' else 'warning', 'title': 'Payment needs matching', 'message': f'{_money(row.amount)} from {row.customer.name} is {row.status.lower()}.', 'module': 'payments', 'entityId': row.id, 'createdAt': row.created_at.isoformat()})
+    for row in DeliveryRun.objects.filter(company=company, delivery_date__lt=today).exclude(status='Completed').order_by('delivery_date')[:12]:
+        items.append({'id': f'delivery-{row.id}', 'type': 'delayed_delivery', 'level': 'critical', 'title': 'Delayed delivery', 'message': f'{row.run_no} for {row.route_name} is still {row.status.lower()}.', 'module': 'delivery', 'entityId': row.id, 'createdAt': row.created_at.isoformat()})
+    for row in BackgroundJob.objects.filter(company=company, status='Failed').order_by('-created_at')[:8]:
+        items.append({'id': f'job-{row.id}', 'type': 'failed_job', 'level': 'critical', 'title': 'Background job failed', 'message': f'{row.job_type}: {row.last_error or "retry required"}.', 'module': 'operations-center', 'entityId': row.id, 'createdAt': row.created_at.isoformat()})
+    for row in WebhookReplay.objects.filter(company=company, status='Failed').order_by('-created_at')[:8]:
+        items.append({'id': f'webhook-{row.id}', 'type': 'failed_webhook', 'level': 'critical', 'title': 'Webhook retry required', 'message': f'{row.source} event {row.event_id} failed after {row.attempts} attempt(s).', 'module': 'operations-center', 'entityId': row.id, 'createdAt': row.created_at.isoformat()})
+    severity = {'critical': 0, 'warning': 1, 'info': 2}
+    return sorted(items, key=lambda item: (severity.get(item['level'], 9), item['createdAt']))
+
+
+@require_GET
+@api_auth_required
+def attention(request):
+    items = _attention_items(request.company)
+    return JsonResponse({'summary': {'total': len(items), 'critical': sum(1 for x in items if x['level'] == 'critical'), 'warning': sum(1 for x in items if x['level'] == 'warning'), 'info': sum(1 for x in items if x['level'] == 'info')}, 'items': items})
+
+
 @csrf_exempt
 @require_http_methods(['GET','POST'])
 @api_auth_required
@@ -1467,6 +1502,11 @@ def forecasting(request):
 
 def _assistant_answer(company, question):
     q=question.lower().strip(); today=timezone.localdate()
+    if any(k in q for k in ['attention','urgent','priority','needs my attention']):
+        items = _attention_items(company)
+        if not items:
+            return 'attention', 'Nothing is currently asking for attention. Stock, receivables, approvals, payments and delivery queues look clear.', {'items': [], 'total': 0}
+        return 'attention', f"I found {len(items)} items needing attention: {items[0]['title'].lower()} is the highest priority.", {'items': items[:8], 'total': len(items)}
     if any(k in q for k in ['shelf','shell','expiry','expire','expiration','shelf life']):
         lots=InventoryLot.objects.filter(company=company,expiry_date__isnull=False).exclude(status__in=['Closed','Expired']).select_related('product','warehouse').order_by('expiry_date')[:8]
         if not lots:
