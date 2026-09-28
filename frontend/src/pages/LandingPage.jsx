@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import Brand from '../components/Brand';
 import Icon from '../components/Icon';
 
@@ -9,6 +10,13 @@ const signals = [
 
 const roles = ['OWNER', 'SALES', 'WAREHOUSE', 'ACCOUNTANT'];
 
+const roleDetails = {
+  OWNER: { title: 'Owner', short: 'See the whole machine', heading: 'Give the owner the right window.', description: 'See sales, stock, receivables and operating risk together before deciding what moves next.', metrics: [['Sales today', '₹1,84,240', '+12.4%'], ['Receivable', '₹4.72L', '18 accounts'], ['Dispatch queue', '07', 'ready to move']], attention: [['Polycab 2.5mm', '7 coils left', 'LOW'], ['Metro Electricals', '₹38,400 overdue', '12D'], ['SO-1094 ready', 'R.K. Trading Co.', 'GO']] },
+  SALES: { title: 'Sales', short: 'Keep the pipeline moving', heading: 'Give sales the right window.', description: 'Move from customer enquiry to quotation, order and collection without losing the next follow-up.', metrics: [['Open enquiries', '18', '6 due today'], ['Quotes this month', '42', '8 awaiting reply'], ['Collections due', '₹1.38L', 'this week']], attention: [['Metro Electricals', 'Quote follow-up due', 'TODAY'], ['NCR Buildmart', 'Credit order ready', 'GO'], ['Ahuja Enterprises', 'Repeat order signal', 'NEW']] },
+  WAREHOUSE: { title: 'Warehouse', short: 'Make stock real', heading: 'Give warehouse the right window.', description: 'Know what is available, what is reserved and what must move to dispatch next.', metrics: [['Stock cover', '18.4d', '3 warehouses'], ['Pick queue', '12', 'ready to pack'], ['Low-stock SKUs', '08', 'reorder attention']], attention: [['Polycab 2.5mm', '7 coils left', 'LOW'], ['SO-1097', 'Ready to pick', 'GO'], ['Noida Hub', 'Transfer suggested', 'MOVE']] },
+  ACCOUNTANT: { title: 'Accountant', short: 'Keep cash clean', heading: 'Give accounts the right window.', description: 'Keep every invoice, receipt, overdue balance and GST record traceable from one calm workspace.', metrics: [['Collected this month', '₹4.28L', '+8.2%'], ['Overdue accounts', '05', 'needs follow-up'], ['GST records', '124', 'ready to review']], attention: [['Metro Electricals', '₹38,400 overdue', '12D'], ['INV-1184', 'Payment not matched', 'CHECK'], ['GST return', 'Review 4 exceptions', 'DUE']] },
+};
+
 const plans = [
   { code: 'FREE', name: 'Free', price: '₹0', suffix: 'forever', text: 'For small teams getting their daily stock and order rhythm in place.', features: ['1 owner workspace', 'Products and inventory', 'Up to 50 SKUs', 'Dashboard and basic reports'], details: ['Role-aware overview', 'Customer and order records', 'Demo-safe workspace data'], tone: 'free' },
   { code: 'PREMIUM', name: 'Premium', price: '₹2,499', suffix: '/ month', text: 'For growing distributors who need connected sales, stock and collections.', features: ['Everything in Free', 'WhatsApp order drafts', 'GST invoices and collections', 'Field sales and approvals'], details: ['Up to 10 users', 'Up to 5 warehouses', 'Customer portal, delivery and forecasting'], tone: 'premium' },
@@ -16,6 +24,8 @@ const plans = [
 ];
 
 export default function LandingPage({ navigate }) {
+  const [activeRole, setActiveRole] = useState('OWNER');
+  const selectedRole = roleDetails[activeRole];
   return (
     <div className="landing-v2">
       <header className="landing-v2-nav">
@@ -82,7 +92,7 @@ export default function LandingPage({ navigate }) {
           <div className="v2-loop"><div className="v2-loop-line" />{['Customer enquiry', 'Price + availability', 'Reserve & pack', 'Dispatch goods', 'Collect payment'].map((step, i) => <div className="v2-loop-step" key={step}><span>0{i + 1}</span><strong>{step}</strong><small>{['WhatsApp, phone, counter', 'Customer-specific rules', 'Warehouse-ready queue', 'Proof and status trail', 'Ledger stays current'][i]}</small></div>)}</div>
         </section>
 
-        <section className="v2-section v2-roles" id="roles"><div className="v2-roles-head"><div><div className="v2-kicker"><span>SetuStock / 04</span><b>One system / many perspectives</b></div><h2>Give every person the right window.</h2></div><p>Owner, manager, sales, warehouse and accountant see the same business from the angle they need.</p></div><div className="v2-role-strip">{roles.map((role, i) => <div key={role} className={i === 0 ? 'active' : ''}><span>0{i + 1}</span><strong>{role}</strong><small>{['See the whole machine', 'Keep the pipeline moving', 'Make stock real', 'Keep cash clean'][i]}</small></div>)}</div></section>
+        <section className="v2-section v2-roles" id="roles"><div className="v2-roles-head"><div><div className="v2-kicker"><span>SetuStock / 04</span><b>One system / many perspectives</b></div><h2>{selectedRole.heading}</h2></div><p>{selectedRole.description}</p></div><div className="v2-role-strip">{roles.map((role, i) => <button type="button" key={role} className={activeRole === role ? 'active' : ''} onClick={() => setActiveRole(role)}><span>0{i + 1}</span><strong>{role}</strong><small>{roleDetails[role].short}</small></button>)}</div><div className="v2-role-detail"><span>Active perspective</span><strong>{selectedRole.title} workspace</strong><p>{selectedRole.description}</p><div>{selectedRole.metrics.map(([label, value]) => <span key={label}><b>{value}</b>{label}</span>)}</div></div></section>
 
         <section className="v2-section v2-pricing" id="plans">
           <div className="v2-pricing-head"><div><div className="v2-kicker"><span>SetuStock / 05</span><b>Simple plans, clear upgrades</b></div><h2>Start free. Grow when the operation does.</h2></div><p>Explore the workspace before you commit. Every plan is built around the same role-aware operating layer.</p></div>
