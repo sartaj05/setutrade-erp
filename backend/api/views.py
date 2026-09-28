@@ -110,6 +110,8 @@ def user_payload(user):
         permissions.append('data-exchange')
     if profile.role in ('OWNER', 'MANAGER') and 'support-center' not in permissions:
         permissions.append('support-center')
+    if 'demo-mode' not in permissions:
+        permissions.append('demo-mode')
     subscription = CompanySubscription.objects.filter(company=company).select_related('plan').first() if company else None
     today = timezone.localdate()
     if subscription:

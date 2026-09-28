@@ -9,7 +9,7 @@ import AssistantWidget from './AssistantWidget';
 import { normalizePlan, PLAN_LABELS, planAllows, requiredPlan } from '../data/plans';
 
 const moduleLabels = {
-  dashboard: ['Overview', 'chart'], 'client-workflow': ['Order-to-cash', 'chart'], onboarding: ['Client onboarding', 'users'], 'access-review': ['Role access review', 'shield'], 'support-center': ['Client support center', 'shield'], products: ['Products', 'box'], inventory: ['Inventory', 'box'], customers: ['Customers', 'users'],
+  dashboard: ['Overview', 'chart'], 'client-workflow': ['Order-to-cash', 'chart'], onboarding: ['Client onboarding', 'users'], 'access-review': ['Role access review', 'shield'], 'support-center': ['Client support center', 'shield'], 'demo-mode': ['Demo presentation', 'chart'], products: ['Products', 'box'], inventory: ['Inventory', 'box'], customers: ['Customers', 'users'],
   orders: ['Orders', 'receipt'], invoices: ['GST Invoices', 'receipt'], purchases: ['Purchases', 'box'], ledger: ['Credit Ledger', 'receipt'], 'data-exchange': ['Import / export', 'receipt'],
   warehouses: ['Warehouses', 'box'], barcode: ['Barcode Scan', 'box'], whatsapp: ['WhatsApp Orders', 'receipt'], tax: ['GST & Tax', 'receipt'],
   pricing: ['Price Rules', 'receipt'], returns: ['Returns & Damage', 'box'], 'field-sales': ['Field Sales', 'users'], insights: ['Smart Insights', 'chart'],
@@ -21,7 +21,7 @@ const navigationGroups = [
   { label: 'Sales & customers', keys: ['client-workflow', 'customers', 'orders', 'quotations', 'whatsapp', 'pricing', 'crm', 'field-sales', 'channels', 'collections', 'delivery', 'service-rma', 'contracts', 'schemes'] },
   { label: 'Inventory & fulfilment', keys: ['products', 'inventory', 'purchases', 'warehouses', 'barcode', 'returns', 'wms', 'invoice-ocr', 'procurement-intelligence', 'fleet-routes', 'traceability', 'quality', 'supply-planning', 'product-master'] },
   { label: 'Finance & compliance', keys: ['invoices', 'ledger', 'payments', 'data-exchange', 'tax', 'gst-cockpit', 'accounting', 'treasury', 'expenses', 'credit-risk', 'reports', 'report-builder', 'audit'] },
-  { label: 'Intelligence & admin', keys: ['onboarding', 'access-review', 'support-center', 'insights', 'forecasting', 'assistant', 'automations', 'distribution-network', 'supplier-portal-admin', 'approvals', 'team', 'settings', 'subscription', 'offline', 'operations-center', 'security-center', 'integrations', 'executive-bi', 'copilot-actions'] },
+  { label: 'Intelligence & admin', keys: ['onboarding', 'access-review', 'support-center', 'demo-mode', 'insights', 'forecasting', 'assistant', 'automations', 'distribution-network', 'supplier-portal-admin', 'approvals', 'team', 'settings', 'subscription', 'offline', 'operations-center', 'security-center', 'integrations', 'executive-bi', 'copilot-actions'] },
 ];
 
 export default function AppShell({ module, onModuleChange, children, navigate }) {

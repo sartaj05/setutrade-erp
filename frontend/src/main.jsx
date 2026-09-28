@@ -7,6 +7,7 @@ import './onboarding.css';
 import './access-review.css';
 import './exchange.css';
 import './support.css';
+import './demo-presentation.css';
 import App from './App';
 
 if ('serviceWorker' in navigator && import.meta.env.PROD) {
