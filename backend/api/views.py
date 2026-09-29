@@ -37,7 +37,7 @@ from .models import (
     AccountingConnection, AccountingExportJob, ApprovalPolicy, AssistantMessage, AssistantThread, CompanySubscription, OfflineSyncReceipt, SubscriptionInvoice, SubscriptionPayment, SubscriptionPlan, ApprovalRequest, Attachment, AuditLog, PurchaseInvoiceCapture, BarcodeScanLog, Branch, Company, Customer, CustomerPortalAccess, CustomerPortalOrder, DeliveryProof, DeliveryRun, DeliveryStop, GoodsReceipt,
     GoodsReceiptItem, InventoryLot, InventoryMovement, Invoice, LedgerEntry, Notification, Order,
     OrderItem, Payment, PriceList, PriceRule, Product, PurchaseItem, PurchaseOrder,
-    Quotation, QuotationItem, ReorderSuggestion, ReturnItem, ReturnOrder, SalesTarget,
+    Quotation, QuotationItem, ReorderSuggestion, ProcurementRecommendation, ReturnItem, ReturnOrder, SalesTarget,
     SalesVisit, StockAdjustment, StockBalance, StockTransfer, StockTransferItem,
     DemandForecast, BackgroundJob, WebhookReplay,
     PaymentAllocation, PaymentTransaction, PaymentLink,
@@ -1903,6 +1903,18 @@ def forecasting(request):
     if request.method=='POST':
         body=_json_body(request) or {};horizon=max(7,min(90,int(body.get('horizon',30) or 30)));products_qs=Product.objects.filter(company=request.company,is_active=True)[:250]
         warehouse=Warehouse.objects.filter(pk=body.get('warehouseId'),company=request.company).first() if body.get('warehouseId') else None
+        if body.get('action') == 'create-reorder-drafts':
+            supplier=Supplier.objects.filter(company=request.company).order_by('id').first()
+            if not supplier:return JsonResponse({'detail':'Add a supplier before creating reorder drafts.'},status=400)
+            drafts=[]
+            for p in products_qs:
+                avg,trend,forecast,safety,recommend,confidence,current=_forecast_row(request.company,p,warehouse,horizon)
+                DemandForecast.objects.update_or_create(company=request.company,product=p,warehouse=warehouse,horizon_days=horizon,defaults={'avg_daily_demand':avg,'trend_percent':trend,'forecast_quantity':forecast,'safety_stock':safety,'recommended_purchase':recommend,'confidence':confidence})
+                if recommend <= 0:continue
+                row,_=ProcurementRecommendation.objects.update_or_create(company=request.company,product=p,supplier=supplier,defaults={'recommended_qty':recommend,'expected_unit_cost':p.purchase_price,'expected_lead_days':5,'reason':f'AI {horizon}-day forecast recommends replenishment. Confidence {confidence}%.','status':ProcurementRecommendation.Status.OPEN})
+                drafts.append({'id':row.id,'product':p.name,'sku':p.sku,'quantity':float(recommend),'status':row.status,'confidence':float(confidence)})
+            audit(request,'create','ProcurementRecommendation',request.company.id,f'Created {len(drafts)} AI reorder drafts',{'horizon':horizon})
+            return JsonResponse({'ok':True,'horizon':horizon,'created':len(drafts),'drafts':drafts})
         for p in products_qs:
             avg,trend,forecast,safety,recommend,confidence,current=_forecast_row(request.company,p,warehouse,horizon)
             DemandForecast.objects.update_or_create(company=request.company,product=p,warehouse=warehouse,horizon_days=horizon,defaults={'avg_daily_demand':avg,'trend_percent':trend,'forecast_quantity':forecast,'safety_stock':safety,'recommended_purchase':recommend,'confidence':confidence})

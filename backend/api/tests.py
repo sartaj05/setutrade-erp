@@ -11,7 +11,7 @@ from django.test import Client, TestCase
 from django.utils import timezone
 from .models import (
     Branch, Company, Customer, InventoryMovement, Order, Product, Profile,
-    PurchaseOrder, StockBalance, Supplier, Warehouse, SupplierPortalAccess, AutomationRule, ExternalChannel, DistributionNetwork, WarehouseBin, DeliveryStop, DeliveryProof, SubscriptionPlan, CompanySubscription, SubscriptionPayment, WhatsAppMessage, WhatsAppOrderDraft,
+    PurchaseOrder, StockBalance, Supplier, Warehouse, SupplierPortalAccess, AutomationRule, ExternalChannel, DistributionNetwork, WarehouseBin, DeliveryStop, DeliveryProof, ProcurementRecommendation, SubscriptionPlan, CompanySubscription, SubscriptionPayment, WhatsAppMessage, WhatsAppOrderDraft,
 )
 
 
@@ -361,6 +361,19 @@ class ProductionApiTests(TestCase):
         execute = self.post('/api/copilot-actions/', {'action':'approve','id':proposal.json()['id']})
         self.assertEqual(execute.status_code, 200, execute.content)
         self.assertEqual(execute.json()['status'], 'Executed')
+
+    def test_ai_forecast_creates_approval_ready_reorder_drafts(self):
+        self.product.stock = Decimal('0'); self.product.reorder_level = Decimal('8'); self.product.save(update_fields=['stock','reorder_level'])
+        response = self.post('/api/forecasting/', {'action':'create-reorder-drafts','horizon':30})
+        self.assertEqual(response.status_code, 200, response.content)
+        self.assertGreaterEqual(response.json()['created'], 1)
+        recommendation = ProcurementRecommendation.objects.get(company=self.company, product=self.product)
+        self.assertEqual(recommendation.status, 'Open')
+        self.assertIn('AI 30-day forecast', recommendation.reason)
+        approved = self.post('/api/procurement-intelligence/', {'action':'approve','id':recommendation.id})
+        self.assertEqual(approved.status_code, 200, approved.content)
+        recommendation.refresh_from_db()
+        self.assertEqual(recommendation.status, 'Approved')
 
     def test_growth_v5_operational_modules(self):
         pim = self.post('/api/product-master/', {'action':'refresh-quality'})
