@@ -37,6 +37,12 @@ jobs:
         run: |
           npm install
           npm run build
+      - name: Install browser for E2E
+        working-directory: frontend
+        run: npx playwright install --with-deps chromium
+      - name: Run browser E2E
+        working-directory: frontend
+        run: npm run test:e2e
 
 
   mobile:
