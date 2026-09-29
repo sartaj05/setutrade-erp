@@ -357,6 +357,19 @@ class ProductionApiTests(TestCase):
         self.assertIn('alerts', snapshot.json())
         self.assertIn('slowServices', snapshot.json()['summary'])
 
+    def test_onboarding_wizard_saves_company_and_locations(self):
+        company = self.post('/api/onboarding/', {'action': 'update-company', 'name': 'Updated Test Distribution', 'state': 'Haryana', 'gstin': '06ABCDE1234F1Z5'})
+        self.assertEqual(company.status_code, 200, company.content)
+        branch = self.post('/api/onboarding/', {'action': 'create-branch', 'code': 'GUR', 'name': 'Gurugram Branch', 'city': 'Gurugram'})
+        self.assertEqual(branch.status_code, 200, branch.content)
+        warehouse = self.post('/api/onboarding/', {'action': 'create-warehouse', 'code': 'GUR-WH', 'name': 'Gurugram Warehouse', 'city': 'Gurugram', 'branchCode': 'GUR'})
+        self.assertEqual(warehouse.status_code, 200, warehouse.content)
+        checklist = self.client.get('/api/onboarding/', HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        self.assertEqual(checklist.status_code, 200, checklist.content)
+        self.assertEqual(checklist.json()['company']['state'], 'Haryana')
+        self.assertGreaterEqual(checklist.json()['checklist']['branches'], 1)
+        self.assertGreaterEqual(checklist.json()['checklist']['warehouses'], 1)
+
     def test_order_to_cash_acceptance_workflow(self):
         """Golden client-demo path: quote through delivery proof and ledger."""
         quote = self.post('/api/quotations/', {

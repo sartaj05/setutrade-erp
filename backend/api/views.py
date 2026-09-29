@@ -1359,8 +1359,33 @@ def onboarding(request):
     company = request.company
     if request.method == 'POST':
         body = _json_body(request) or {}
-        if body.get('action') != 'seed-demo':
-            return JsonResponse({'detail': 'Only the explicit seed-demo action is supported.'}, status=400)
+        action = body.get('action')
+        if action == 'update-company':
+            fields = ['name', 'gstin', 'pan', 'state', 'address', 'phone', 'email', 'invoice_prefix']
+            for field in fields:
+                if field in body: setattr(company, field, str(body[field]).strip())
+            if not company.name or not company.state: return JsonResponse({'detail': 'Company name and state are required.'}, status=400)
+            company.save()
+            audit(request, 'update', 'Company', company.id, 'Updated onboarding company profile')
+        elif action == 'create-branch':
+            code, name = str(body.get('code', '')).strip().upper(), str(body.get('name', '')).strip()
+            if not code or not name: return JsonResponse({'detail': 'Branch code and name are required.'}, status=400)
+            if Branch.objects.filter(company=company, code=code).exists(): return JsonResponse({'detail': 'That branch code already exists.'}, status=400)
+            branch = Branch.objects.create(company=company, code=code, name=name, city=body.get('city', ''), address=body.get('address', ''), gstin=body.get('gstin', ''))
+            audit(request, 'create', 'Branch', branch.id, f'Created onboarding branch {branch.code}')
+        elif action == 'create-warehouse':
+            code, name = str(body.get('code', '')).strip().upper(), str(body.get('name', '')).strip()
+            if not code or not name: return JsonResponse({'detail': 'Warehouse code and name are required.'}, status=400)
+            if Warehouse.objects.filter(company=company, code=code).exists(): return JsonResponse({'detail': 'That warehouse code already exists.'}, status=400)
+            branch = Branch.objects.filter(company=company, code=body.get('branchCode')).first() or Branch.objects.filter(company=company, is_active=True).first()
+            warehouse = Warehouse.objects.create(company=company, branch=branch, code=code, name=name, city=body.get('city', ''), address=body.get('address', ''))
+            audit(request, 'create', 'Warehouse', warehouse.id, f'Created onboarding warehouse {warehouse.code}')
+        elif action == 'complete':
+            audit(request, 'complete', 'Company', company.id, 'Completed client onboarding checklist')
+        elif action != 'seed-demo':
+            return JsonResponse({'detail': 'Unsupported onboarding action.'}, status=400)
+        if action != 'seed-demo':
+            return JsonResponse({'ok': True, 'action': action})
         branch, _ = Branch.objects.get_or_create(company=company, code='HQ', defaults={'name': 'Delhi Central', 'city': company.state or 'Delhi', 'gstin': company.gstin})
         warehouse, _ = Warehouse.objects.get_or_create(company=company, code='MAIN', defaults={'name': 'Main Warehouse', 'city': branch.city, 'branch': branch})
         for sku, name, category, unit, stock, reorder in [('DEMO-WIRE-25', 'Demo 2.5mm Copper Wire', 'Wires & Cables', 'coil', 18, 20), ('DEMO-MCB-32', 'Demo 32A DP MCB', 'Switchgear', 'pcs', 36, 24), ('DEMO-LED-12', 'Demo 12W LED Bulb', 'Lighting', 'pcs', 72, 30)]:
