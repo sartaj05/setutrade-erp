@@ -2,6 +2,7 @@ import json
 from datetime import timedelta
 from decimal import Decimal
 import os
+from time import perf_counter
 from django.db import connection
 from django.db.models import Sum, Count
 from django.http import JsonResponse
@@ -374,18 +375,22 @@ def report_builder(request):
 def _operations_snapshot(company):
     health=m.ServiceHealth.objects.filter(company=company).order_by('category','service_name'); job_q=m.BackgroundJob.objects.filter(company=company); hook_q=m.WebhookReplay.objects.filter(company=company)
     try:
+        started=perf_counter()
         with connection.cursor() as cursor: cursor.execute('SELECT 1'); cursor.fetchone()
-        database={'status':'Healthy','message':'Database query completed'}
+        database={'status':'Healthy','latency':round((perf_counter()-started)*1000),'message':'Database query completed'}
     except Exception as exc:
-        database={'status':'Failed','message':str(exc)[:180]}
+        database={'status':'Failed','latency':0,'message':str(exc)[:180]}
     security=m.SecurityEvent.objects.filter(company=company).order_by('-created_at')[:40]
     audit_rows=m.AuditLog.objects.filter(company=company).order_by('-created_at')[:40]
     offline=m.OfflineSyncReceipt.objects.filter(company=company).order_by('-synced_at')[:40]
+    alerts=m.AlertPolicy.objects.filter(company=company,is_active=True).order_by('name')
     services=[{'id':x.id,'service':x.service_name,'category':x.category,'status':x.status,'latency':x.latency_ms,'message':x.message,'checkedAt':_dt(x.checked_at)} for x in health]
-    if not any(x['service']=='Database' for x in services): services.append({'id':'database','service':'Database','category':'Internal','status':database['status'],'latency':0,'message':database['message'],'checkedAt':_dt(timezone.now())})
+    if not any(x['service']=='Database' for x in services): services.append({'id':'database','service':'Database','category':'Internal','status':database['status'],'latency':database['latency'],'message':database['message'],'checkedAt':_dt(timezone.now())})
     backup_status=os.getenv('BACKUP_STATUS','Not configured'); services.append({'id':'backup','service':'Backup','category':'Recovery','status':'Healthy' if backup_status.lower() in ['healthy','ok','completed'] else 'Degraded','latency':0,'message':f'{backup_status} · {os.getenv("BACKUP_LAST_RUN","last run not reported")}','checkedAt':_dt(timezone.now())})
     healthy=sum(1 for x in services if x['status']=='Healthy'); degraded=sum(1 for x in services if x['status']!='Healthy')
-    return {'summary':{'healthy':healthy,'degraded':degraded,'failedJobs':job_q.filter(status='Failed').count(),'failedWebhooks':hook_q.filter(status='Failed').count(),'securityEvents':security.count(),'offlineSyncFailures':0,'avgApiLatency':round(sum(x['latency'] for x in services if isinstance(x['latency'],int))/max(1,len(services)))},'services':services,'jobs':[{'id':x.id,'type':x.job_type,'key':x.job_key,'status':x.status,'attempts':x.attempts,'error':x.last_error,'scheduledAt':_dt(x.scheduled_at)} for x in job_q.order_by('-created_at')[:100]],'webhooks':[{'id':x.id,'source':x.source,'eventId':x.event_id,'status':x.status,'attempts':x.attempts,'error':x.last_error} for x in hook_q.order_by('-created_at')[:100]],'securityEvents':[{'id':x.id,'event':x.event_type,'severity':x.severity,'user':x.user.get_full_name() if x.user else 'System','ip':x.ip_address,'createdAt':_dt(x.created_at)} for x in security],'auditEvents':[{'id':x.id,'action':x.action,'entity':x.entity_type,'summary':x.summary,'createdAt':_dt(x.created_at)} for x in audit_rows],'offlineSync':{'recent':offline.count(),'failed':0},'backup':{'status':os.getenv('BACKUP_STATUS','Not configured'),'lastRun':os.getenv('BACKUP_LAST_RUN','Not reported'),'provider':os.getenv('BACKUP_PROVIDER','Configure backup provider')}}
+    latencies=[x['latency'] for x in services if isinstance(x['latency'],int)]
+    offline_failures=sum(1 for x in offline if str((x.payload or {}).get('status','')).lower() in {'failed','error'})
+    return {'summary':{'healthy':healthy,'degraded':degraded,'failedJobs':job_q.filter(status='Failed').count(),'failedWebhooks':hook_q.filter(status='Failed').count(),'securityEvents':security.count(),'offlineSyncFailures':offline_failures,'slowServices':sum(1 for latency in latencies if latency >= 300),'activeAlerts':alerts.count(),'avgApiLatency':round(sum(latencies)/max(1,len(latencies)))},'services':services,'jobs':[{'id':x.id,'type':x.job_type,'key':x.job_key,'status':x.status,'attempts':x.attempts,'error':x.last_error,'scheduledAt':_dt(x.scheduled_at)} for x in job_q.order_by('-created_at')[:100]],'webhooks':[{'id':x.id,'source':x.source,'eventId':x.event_id,'status':x.status,'attempts':x.attempts,'error':x.last_error} for x in hook_q.order_by('-created_at')[:100]],'securityEvents':[{'id':x.id,'event':x.event_type,'severity':x.severity,'user':x.user.get_full_name() if x.user else 'System','ip':x.ip_address,'createdAt':_dt(x.created_at)} for x in security],'auditEvents':[{'id':x.id,'action':x.action,'entity':x.entity_type,'summary':x.summary,'createdAt':_dt(x.created_at)} for x in audit_rows],'alerts':[{'id':x.id,'name':x.name,'condition':x.condition,'threshold':_money(x.threshold),'channels':x.channels,'active':x.is_active} for x in alerts],'offlineSync':{'recent':offline.count(),'failed':offline_failures},'backup':{'status':os.getenv('BACKUP_STATUS','Not configured'),'lastRun':os.getenv('BACKUP_LAST_RUN','Not reported'),'provider':os.getenv('BACKUP_PROVIDER','Configure backup provider')}}
 
 
 @csrf_exempt
@@ -403,7 +408,8 @@ def operations_center(request):
     if action=='heartbeat':
         defaults=[('Django API','Internal','Healthy',42),('PostgreSQL','Internal','Healthy',18),('Redis / Queue','Internal','Healthy',8),('WhatsApp','Provider','Healthy',110),('GST IRP','Provider','Degraded',380),('Payment Provider','Provider','Healthy',142),('ONDC Adapter','Provider','Healthy',190)]
         for name,category,status,latency in defaults:m.ServiceHealth.objects.update_or_create(company=company,service_name=name,defaults={'category':category,'status':status,'latency_ms':latency,'message':'Automated release heartbeat'})
-        return JsonResponse({'checked':len(defaults)})
+        audit(request,'heartbeat','ServiceHealth',company.id,f'Checked {len(defaults)} monitored services',{'services':len(defaults)})
+        return JsonResponse({'checked':len(defaults),'snapshot':_operations_snapshot(company)})
     if action=='retry-job':
         row=m.BackgroundJob.objects.filter(company=company,pk=data.get('jobId')).first()
         if not row:return JsonResponse({'detail':'Job not found.'},status=404)

@@ -352,6 +352,10 @@ class ProductionApiTests(TestCase):
         heartbeat = self.post('/api/operations-center/', {'action':'heartbeat'})
         self.assertEqual(heartbeat.status_code, 200, heartbeat.content)
         self.assertGreaterEqual(heartbeat.json()['checked'], 5)
+        snapshot = self.client.get('/api/operations-center/', HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        self.assertEqual(snapshot.status_code, 200, snapshot.content)
+        self.assertIn('alerts', snapshot.json())
+        self.assertIn('slowServices', snapshot.json()['summary'])
 
     def test_order_to_cash_acceptance_workflow(self):
         """Golden client-demo path: quote through delivery proof and ledger."""
