@@ -1,47 +1,78 @@
 # SetuStock NCR
 
-SetuStock is a client-shareable wholesale/distribution operations starter for Indian B2B businesses. It combines React + Vite with core Django APIs and supports both a safe standalone demo deployment and a live API-backed production deployment.
+SetuStock is a multi-tenant wholesale and distribution operations platform for Indian B2B businesses. It connects inventory, customer credit, quotations, orders, GST invoices, payments, delivery, WhatsApp workflows and role-based workspaces in one application.
 
 ## What is included
 
-- Trust-first responsive landing page and login
-- Roles: `OWNER`, `MANAGER`, `SALES`, `WAREHOUSE`, `ACCOUNTANT`
-- Tenant hierarchy: Company → Branch → Warehouse → User
-- Company-scoped products, customers, suppliers, orders, invoices and reports
-- Sales orders with stock reservation, packing/readiness and dispatch stock posting
-- Suppliers, purchase orders, approval, GRN and supplier payable posting
-- GST invoices with CGST/SGST/IGST, HSN, credit/debit notes and print-to-PDF HTML
-- Customer credit ledger, ageing, payments and supplier payments
-- Multi-warehouse balances and approved transfer → dispatch → receive workflow
-- Barcode/SKU lookup, stock actions, label printing and browser camera scanning where supported
-- WhatsApp B2B draft parsing plus optional Meta WhatsApp live outbound adapter
-- Customer-specific price lists, quantity slabs and schemes
-- Sales/purchase returns, damaged stock and stock adjustments
-- Field-sales visits, targets and collections
-- Reorder intelligence and business reporting
-- Quotations that convert to orders
-- Company onboarding/branding, branches and team accounts
-- Audit log, notifications, global search and file attachments
-- Product/customer CSV import and operational CSV exports
-- Password change/reset, expiring access + refresh sessions, revocation and login throttling
-- PWA manifest/service worker for installable mobile-friendly use
-- PostgreSQL-ready configuration, Docker Compose, backup/restore scripts and health checks
-- GitHub Actions CI and Django workflow tests
+- React + Vite web application
+- Django JSON API with SQLite development and PostgreSQL production support
+- Expo mobile client for staff and dealer workflows
+- Docker Compose stack with PostgreSQL, Gunicorn and Nginx
+- Playwright browser tests and Django regression tests
+- Owner, Manager, Sales, Warehouse and Accountant roles
+- Company, branch, warehouse and tenant-scoped records
+- Products, inventory, barcode, transfers, customers, suppliers and purchasing
+- Quotations, orders, stock reservation, dispatch, invoices, payments and ledgers
+- GST notes, CSV import/export, audit logs, notifications, search and attachments
+- Onboarding, subscription plans, billing checkout, renewals and payment retry
+- Signed WhatsApp order webhooks and reviewable order drafts
+- GPS delivery tracking, ETA, public tracking links, OTP and e-POD proof
+- Demand forecasting and approval-ready AI reorder drafts
+- Offline/PWA queue, dealer portal and mobile ordering
+- Operations control center, readiness checks and backup scripts
 
-See `FEATURES.md` for module details and `CLIENT_HANDOFF.md` for client-sharing guidance.
+External payment, Meta WhatsApp, GST, accounting, map and storage providers require client credentials and staging validation.
 
-## Two deployment modes
+## Repository structure
 
-### 1. Safe sales demo
+```text
+backend/                 Django project, API, models, migrations and tests
+frontend/                React/Vite web app and Playwright tests
+mobile/                  Expo React Native staff/dealer app
+scripts/                 Health check and PostgreSQL backup/restore scripts
+.github/workflows/       Backend, frontend, E2E and mobile CI
+docker-compose.yml       PostgreSQL + Django + Nginx stack
+```
 
-The React app can run without Django. It uses bundled sample data only when explicitly built with:
+Important guides: [deployment](DEPLOYMENT.md), [readiness](DEPLOYMENT_READINESS.md), [testing](TESTING.md), [client handoff](CLIENT_HANDOFF.md), [features](FEATURES.md) and [project brief](PROJECT_BRIEF.md).
+
+## Requirements
+
+- Python 3.13+
+- Node.js 22+
+- npm and Git
+- PostgreSQL for production, or Docker Desktop for the complete stack
+
+## Quick start: frontend demo
+
+Demo mode works without Django and uses only bundled sample data.
+
+### Windows PowerShell
+
+```powershell
+cd frontend
+npm install
+Copy-Item .env.example .env
+npm run dev
+```
+
+### macOS/Linux
+
+```bash
+cd frontend
+npm install
+cp .env.example .env
+npm run dev
+```
+
+Open `http://localhost:5173`.
 
 ```env
 VITE_APP_MODE=demo
 VITE_DEMO_FALLBACK=true
 ```
 
-Demo password: `demo123`
+All staff demo accounts use password `demo123`:
 
 ```text
 owner@setustock.demo
@@ -51,119 +82,222 @@ warehouse@setustock.demo
 accountant@setustock.demo
 ```
 
-### 2. Production/live client mode
-
-Use:
-
-```env
-VITE_APP_MODE=production
-VITE_API_URL=https://api.example.com/api
-VITE_DEMO_FALLBACK=false
-```
-
-Production mode requires the Django API. It does not silently replace an API failure with sample accounting data.
-
-## Local frontend
-
-```bash
-cd frontend
-cp .env.example .env
-npm install
-npm run dev
-```
-
-## Local backend
-
-```bash
-cd backend
-python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-cp .env.example .env
-python manage.py migrate
-python manage.py seed_demo  # demo/staging only
-python manage.py runserver
-```
-
-## Full local production-like stack
-
-At repository root:
-
-```bash
-export DJANGO_SECRET_KEY='replace-with-a-long-random-secret'
-export DB_PASSWORD='replace-this-password'
-docker compose up --build
-```
-
-Frontend: `http://localhost:8080`
-Backend: `http://localhost:8000/api/health/`
-
-The Docker frontend is built in production mode and therefore expects Django to be available.
-
-## Validation
-
-Backend CI performs:
-
-```bash
-python manage.py check
-python manage.py makemigrations --check --dry-run
-python manage.py migrate --noinput
-python manage.py test
-```
-
-Frontend CI performs:
-
-```bash
-npm install
-npm run build
-```
-
-## Git / GitHub
-
-The downloadable project is already an initialized Git repository with feature-wise history.
-
-```bash
-git status
-git log --oneline --reverse
-git branch
-```
-
-See `GITHUB_SETUP.md` before pushing it to your GitHub account.
-
-## Important compliance note
-
-SetuStock provides GST-oriented invoice/data workflows, but it is not a certified GST filing, e-invoice or accounting product by itself. Live GST/e-invoice/e-way-bill calls must be connected to an authorised provider and validated for the client's actual legal/compliance requirements before relying on them for statutory filing.
-
-
-## Growth v2: 10 additional phases
-
-The repository also includes a separate B2B dealer portal, delivery/e-POD, approvals, purchase invoice OCR review, accounting exports, offline/PWA sync, SaaS subscription billing, advanced forecasting, a data-grounded business assistant, and an Expo Android/iOS client. See `GROWTH_V2.md` for the feature map and production boundaries.
-
-## Growth v3: collections, WMS and network expansion
-
-Growth v3 adds automated collections/reconciliation, public payment links, advanced WMS waves/packing/cycle counts, a supplier portal, workflow automation, external website/ONDC/marketplace adapter boundaries, and privacy-scoped distributor-network visibility.
-
-See `GROWTH_V3.md` and `GROWTH_V3_COMMITS.md`.
-
-Demo surfaces after `python manage.py seed_demo`:
+Other demo surfaces:
 
 ```text
-Staff ERP:       /login                 password demo123
-Dealer portal:   /portal                dealer@setustock.demo / 1234
-Supplier portal: /supplier-portal       supplier@setustock.demo / 1234
+Dealer portal:   /portal                 dealer@setustock.demo / 1234
+Supplier portal: /supplier-portal        supplier@setustock.demo / 1234
 Payment page:    /pay/demo-rk-payment-link
 ```
 
-External commerce, payment confirmation, WhatsApp delivery, statutory GST services and receivable-financing submission are integration boundaries. They require the client's own vendor credentials and compliance setup; no live secrets are embedded in this repository.
+## Quick start: Django API
 
-## Growth v4: Phases 17–26
+### Windows PowerShell
 
-The repository now also includes CRM, manufacturer scheme claims, GST reconciliation, vendor-scored procurement, fleet route planning, explainable customer credit risk, enterprise security/privacy workflows, an integration hub with scoped developer API keys, contribution-profit BI and an approval-gated AI action copilot.
+```powershell
+cd backend
+python -m venv .venv
+& .\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+Copy-Item .env.example .env
+python manage.py migrate
+python manage.py seed_demo
+python manage.py runserver
+```
 
-See `GROWTH_V4.md` and `GROWTH_V4_COMMITS.md` for the implementation map.
+### macOS/Linux
 
-## Growth v5: operational depth (Phases 27–36)
+```bash
+cd backend
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env
+python manage.py migrate
+python manage.py seed_demo
+python manage.py runserver
+```
 
-Growth v5 adds governed product/PIM data, batch/serial/expiry traceability, treasury and bank reconciliation, B2B rate contracts/tenders, QC/quarantine, S&OP replenishment planning, warranty/RMA service, expense/petty-cash workflows, a custom report builder and an operations control center.
+API base URL: `http://127.0.0.1:8000/api/`.
 
-See `GROWTH_V5.md`, `GROWTH_V5_COMMITS.md` and `VALIDATION_V5.md` for feature, commit and validation details.
+```text
+GET /api/health/   liveness
+GET /api/ready/    database and migration readiness
+```
+
+For live API mode, set `frontend/.env` to:
+
+```env
+VITE_APP_MODE=production
+VITE_API_URL=http://127.0.0.1:8000/api
+VITE_DEMO_FALLBACK=false
+```
+
+Production mode reports API failures instead of silently showing demo accounting data.
+
+## Quick start: Docker
+
+From the repository root:
+
+```bash
+docker compose up --build
+```
+
+```text
+Frontend: http://localhost:8080
+Backend:  http://localhost:8000/api/health/
+Ready:    http://localhost:8000/api/ready/
+```
+
+For deployment, replace local defaults with strong secret-managed values:
+
+```bash
+DJANGO_SECRET_KEY="use-a-long-random-secret"
+DB_PASSWORD="use-a-strong-database-password"
+RELEASE_VERSION="2026.09.29"
+docker compose up --build -d
+```
+
+Never run `seed_demo` against a client's production database.
+
+## Roles and access
+
+| Role | Main responsibility |
+| --- | --- |
+| Owner | Full visibility, settings, billing, security and approvals |
+| Manager | Sales, inventory, purchasing, approvals and team operations |
+| Sales | Customers, quotations, orders, collections, WhatsApp and field visits |
+| Warehouse | Products, stock, barcode, purchasing, fulfilment and delivery |
+| Accountant | Invoices, payments, ledgers, GST, reports and reconciliation |
+
+Role permissions and subscription plan restrictions are validated by the backend as well as the frontend sidebar.
+
+## Recommended client-demo workflow
+
+1. Sign in as Owner and review the dashboard.
+2. Configure company, branch, warehouse and team roles.
+3. Create/import products, customers and suppliers.
+4. Create and approve a purchase order, then receive it through GRN.
+5. Create a quotation and convert it into a sales order.
+6. Confirm the order and verify reserved stock.
+7. Pack, mark ready and dispatch the order.
+8. Create the GST invoice and verify customer outstanding.
+9. Record payment and verify the ledger.
+10. Create a delivery run, update GPS/ETA, open the tracking link and capture OTP e-POD.
+11. Open Forecasting and create reorder drafts for approval.
+12. Review audit logs, operations health, billing state and role access.
+
+## WhatsApp setup
+
+Keep Meta credentials on the backend in `backend/.env`:
+
+```env
+WHATSAPP_ACCESS_TOKEN=
+WHATSAPP_PHONE_NUMBER_ID=
+WHATSAPP_VERIFY_TOKEN=
+WHATSAPP_APP_SECRET=
+```
+
+Webhook endpoint: `/api/whatsapp/webhook/`.
+
+Inbound messages are matched to the company phone number and customer phone number, converted into reviewable order drafts and protected against duplicate provider replay. Test signed webhooks in staging before enabling live outbound delivery.
+
+## Billing setup
+
+The subscription workspace supports Free, Premium and Enterprise plans, usage limits, checkout records, renewals, failed-payment retries, invoices and cancellation scheduling.
+
+Live collection requires provider credentials and a signed webhook secret. A paid plan activates only after the payment provider confirms the transaction. Never expose provider secret keys in the frontend.
+
+## Mobile app
+
+The Expo client supports staff login, dealer login, customer-specific catalogue/order flows, delivery visibility, offline queue support and the business assistant.
+
+```bash
+cd mobile
+npm install
+npx expo install --fix
+```
+
+Use a reachable LAN or HTTPS API address; a phone cannot use the computer's `127.0.0.1`:
+
+```bash
+EXPO_PUBLIC_API_URL=http://YOUR-LAN-IP:8000/api npm start
+```
+
+Dealer demo access is `dealer@setustock.demo / 1234`. Production mobile release also requires HTTPS, EAS builds, secure secrets, push notifications, crash monitoring, privacy disclosures and device testing.
+
+## Testing
+
+Backend:
+
+```bash
+cd backend
+python manage.py check
+python manage.py check --deploy
+python manage.py makemigrations --check --dry-run
+python manage.py test
+```
+
+Frontend:
+
+```bash
+cd frontend
+npm install
+npm run build
+npm run test:e2e
+```
+
+Mobile configuration:
+
+```bash
+cd mobile
+npm install
+npx expo config --type public
+```
+
+The browser suite covers login, role restrictions, core navigation and blank-page regression checks.
+
+## Production checklist
+
+1. Use PostgreSQL and a unique secret-managed `DJANGO_SECRET_KEY`.
+2. Set `DJANGO_DEBUG=false`, explicit allowed hosts, CORS and CSRF origins.
+3. Terminate HTTPS at the reverse proxy and enable secure cookies/HSTS.
+4. Build React with `VITE_APP_MODE=production` and `VITE_DEMO_FALLBACK=false`.
+5. Configure SMTP for password reset and account notifications.
+6. Use private object storage for uploaded documents at scale.
+7. Schedule PostgreSQL backups and test a restore.
+8. Monitor `/api/health/`, `/api/ready/`, 5xx responses, failed jobs, webhook retries and login lockouts.
+9. Configure payment, WhatsApp, GST, accounting and map providers in staging first.
+10. Create the client's own owner/company/branch/warehouse records; do not use public demo accounts.
+
+Backup commands:
+
+```bash
+./scripts/backup_postgres.sh
+./scripts/restore_postgres.sh backups/<file>.dump
+./scripts/healthcheck.sh http://localhost:8000/api/ready/
+```
+
+Backups include SHA-256 sidecar files. Set `BACKUP_RETENTION_DAYS` to prune old backup files.
+
+## Known boundaries
+
+- GST/e-invoice/e-way-bill screens are provider-ready, not statutory certification.
+- Billing is provider-ready until real credentials and webhooks are configured.
+- The generic commerce/channel adapter is not a certified live ONDC integration.
+- AI suggestions create drafts or approval proposals; financial/customer-facing actions require human approval.
+- Demo mode uses sample data and must not be used for real accounting or GST filing.
+
+## Recommended next features
+
+After the current release, prioritize:
+
+1. **Live payment reconciliation** — settlements, refunds, partial payments and automatic invoice allocation.
+2. **Real WhatsApp production inbox** — templates, media/voice-note ingestion, delivery receipts, opt-in management and retry queues.
+3. **Driver mobile e-POD capture** — native camera signature/photo capture, push notifications, route maps and background location updates.
+4. **Operational observability** — APM/error tracking, centralized logs, alert routing, backup-age alerts and tenant usage analytics.
+5. **AI feedback and action governance** — forecast accuracy tracking, recommendation outcomes, approval limits and safe execution of approved collection/transfer actions.
+
+## Compliance note
+
+SetuStock provides operational and GST-oriented workflows, but it is not a certified GST filing or accounting product by itself. Validate the client's legal, tax, privacy, payment and data-retention requirements before production use.
