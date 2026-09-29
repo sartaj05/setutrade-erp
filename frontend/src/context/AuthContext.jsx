@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { demoAccounts, permissions } from '../data/demoData';
 import { getApiResource, loginApi, logoutApi, registerApi } from '../services/api';
+import { planAllows } from '../data/plans';
 
 const AuthContext = createContext(null);
 const STORAGE_KEY = 'setustock_auth';
@@ -149,7 +150,7 @@ export function AuthProvider({ children }) {
     setUser(null); setMode('demo');
   };
 
-  const can = (module) => Boolean(user && (user.permissions || permissions[user.role] || []).includes(module));
+  const can = (module) => Boolean(user && (user.permissions || permissions[user.role] || []).includes(module) && planAllows(user.subscription?.code || user.plan, module, user.subscription?.status || 'Active'));
   const value = useMemo(() => ({ user, mode, sessionReady, login, register, loginDemo, registerDemo, resetDemoPassword, logout, can, setUser }), [user, mode, sessionReady]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }

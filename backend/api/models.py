@@ -853,8 +853,10 @@ class SubscriptionPlan(models.Model):
     monthly_price=models.DecimalField(max_digits=10,decimal_places=2)
     annual_price=models.DecimalField(max_digits=10,decimal_places=2,default=0)
     user_limit=models.PositiveIntegerField(default=3)
+    product_limit=models.PositiveIntegerField(default=100)
     branch_limit=models.PositiveIntegerField(default=1)
     warehouse_limit=models.PositiveIntegerField(default=1)
+    order_limit=models.PositiveIntegerField(default=100)
     features=models.JSONField(default=list,blank=True)
     is_active=models.BooleanField(default=True)
 

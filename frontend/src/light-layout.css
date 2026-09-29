@@ -230,6 +230,7 @@ table td { border-color: #e8edf4; }
 
 /* Give content panels a clearer hierarchy across signed-in screens. */
 .module-header { margin-bottom: 28px; }
+.plan-grid .current-plan { border-color: var(--app-blue); box-shadow: 0 14px 34px rgba(27,57,109,.12); }
 .module-header h1 { letter-spacing: -.035em; }
 .stat-card, .module-panel, .panel, .card { border-radius: 16px; }
 .stat-card:hover, .module-panel:hover { border-color: #bfd0ea; box-shadow: 0 14px 34px rgba(40,66,120,.08); }

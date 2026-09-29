@@ -1,4 +1,5 @@
 import json
+from datetime import timedelta
 from decimal import Decimal
 from django.contrib.auth.models import User
 from django.contrib.auth.hashers import make_password
@@ -6,7 +7,7 @@ from django.test import Client, TestCase
 from django.utils import timezone
 from .models import (
     Branch, Company, Customer, InventoryMovement, Order, Product, Profile,
-    PurchaseOrder, StockBalance, Supplier, Warehouse, SupplierPortalAccess, AutomationRule, ExternalChannel, DistributionNetwork, WarehouseBin, DeliveryStop,
+    PurchaseOrder, StockBalance, Supplier, Warehouse, SupplierPortalAccess, AutomationRule, ExternalChannel, DistributionNetwork, WarehouseBin, DeliveryStop, SubscriptionPlan, CompanySubscription,
 )
 
 
@@ -19,6 +20,8 @@ class ProductionApiTests(TestCase):
             username='owner-test', email='owner-test@example.com', password='test-password-123', first_name='Owner',
         )
         Profile.objects.create(user=self.owner, role='OWNER', business_name=self.company.name, company=self.company, branch=self.branch)
+        self.enterprise_plan = SubscriptionPlan.objects.create(code='BUSINESS', name='Enterprise', monthly_price=4999, annual_price=49990, user_limit=50, product_limit=10000, branch_limit=20, warehouse_limit=50, order_limit=10000, features=['Multi-branch', 'Advanced reports'])
+        CompanySubscription.objects.create(company=self.company, plan=self.enterprise_plan, status='Active', started_at=timezone.localdate(), current_period_end=timezone.localdate() + timedelta(days=30))
         self.warehouse = Warehouse.objects.create(company=self.company, branch=self.branch, code='WH1', name='Main Warehouse', city='Delhi')
         self.product = Product.objects.create(
             company=self.company, sku='SKU-1', name='Test Switch', purchase_price=Decimal('50'),
@@ -188,6 +191,33 @@ class ProductionApiTests(TestCase):
         assistant = self.post('/api/assistant/', {'question':'What are month-to-date sales?'})
         self.assertEqual(assistant.status_code, 200, assistant.content)
         self.assertEqual(assistant.json()['intent'], 'sales')
+
+    def test_subscription_enforces_feature_limits_and_expiry(self):
+        free_plan = SubscriptionPlan.objects.create(code='STARTER', name='Free', monthly_price=0, user_limit=1, product_limit=1, branch_limit=1, warehouse_limit=1, order_limit=1, features=['Core inventory'])
+        subscription = CompanySubscription.objects.get(company=self.company)
+        subscription.plan = free_plan
+        subscription.status = 'Active'
+        subscription.current_period_end = timezone.localdate() + timedelta(days=30)
+        subscription.save(update_fields=['plan', 'status', 'current_period_end', 'updated_at'])
+
+        premium = self.client.get('/api/assistant/', HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        self.assertEqual(premium.status_code, 402, premium.content)
+        self.assertEqual(premium.json()['error'], 'subscription_required')
+        self.assertEqual(premium.json()['requiredPlan'], 'PREMIUM')
+
+        product = self.post('/api/products/', {'sku': 'SKU-2', 'name': 'Second Switch', 'sell': 100})
+        self.assertEqual(product.status_code, 402, product.content)
+        branch = self.post('/api/branches/', {'code': 'NOI', 'name': 'Noida Branch'})
+        self.assertEqual(branch.status_code, 402, branch.content)
+        member = self.post('/api/team/', {'email': 'second@example.com', 'name': 'Second User', 'role': 'SALES'})
+        self.assertEqual(member.status_code, 402, member.content)
+
+        subscription.status = 'Trial'
+        subscription.current_period_end = timezone.localdate() - timedelta(days=1)
+        subscription.save(update_fields=['status', 'current_period_end', 'updated_at'])
+        expired = self.client.get('/api/delivery/', HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        self.assertEqual(expired.status_code, 402, expired.content)
+        self.assertEqual(expired.json()['status'], 'Expired')
 
 
     def test_growth_v3_collections_wms_and_automation(self):

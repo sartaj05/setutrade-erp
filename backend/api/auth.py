@@ -11,6 +11,85 @@ from .models import AuthSession
 ACCESS_SALT = 'setustock.api.access'
 REFRESH_SALT = 'setustock.api.refresh'
 
+PLAN_ALIASES = {'FREE': 'FREE', 'STARTER': 'FREE', 'PREMIUM': 'PREMIUM', 'GROWTH': 'PREMIUM', 'ENTERPRISE': 'ENTERPRISE', 'BUSINESS': 'ENTERPRISE'}
+PLAN_LABELS = {'FREE': 'Free', 'PREMIUM': 'Premium', 'ENTERPRISE': 'Enterprise'}
+PLAN_LEVELS = {'FREE': 0, 'PREMIUM': 1, 'ENTERPRISE': 2}
+PLAN_LIMITS = {'FREE': {'users': 3, 'products': 100, 'branches': 1, 'warehouses': 1, 'orders': 100}, 'PREMIUM': {'users': 10, 'products': 2500, 'branches': 3, 'warehouses': 5, 'orders': 1000}, 'ENTERPRISE': {'users': 50, 'products': 10000, 'branches': 20, 'warehouses': 50, 'orders': 10000}}
+PLAN_FEATURES = {
+    'FREE': {'whatsapp': False, 'tax': False, 'pricing': False, 'invoices': False, 'payments': False, 'delivery': False, 'approvals': False, 'field-sales': False, 'collections': False, 'offline': False, 'forecasting': False, 'assistant': False, 'traceability': False, 'wms': False, 'invoice-ocr': False, 'accounting': False, 'gst-cockpit': False, 'procurement-intelligence': False, 'fleet-routes': False, 'product-master': False, 'service-rma': False, 'quality': False, 'supply-planning': False, 'distribution-network': False, 'credit-risk': False, 'security-center': False, 'integrations': False, 'executive-bi': False, 'copilot-actions': False, 'treasury': False, 'contracts': False, 'expenses': False, 'report-builder': False, 'operations-center': False, 'team': False, 'audit': False},
+    'PREMIUM': {'whatsapp': True, 'tax': True, 'pricing': True, 'invoices': True, 'payments': True, 'delivery': True, 'approvals': True, 'field-sales': True, 'collections': True, 'offline': True, 'forecasting': True, 'assistant': True, 'traceability': True, 'wms': True, 'invoice-ocr': True, 'accounting': True, 'gst-cockpit': True, 'procurement-intelligence': True, 'fleet-routes': True, 'product-master': True, 'service-rma': True, 'quality': True, 'supply-planning': True, 'distribution-network': False, 'credit-risk': False, 'security-center': False, 'integrations': False, 'executive-bi': False, 'copilot-actions': False, 'treasury': False, 'contracts': False, 'expenses': False, 'report-builder': False, 'operations-center': False, 'team': False, 'audit': False},
+    'ENTERPRISE': {'whatsapp': True, 'tax': True, 'pricing': True, 'invoices': True, 'payments': True, 'delivery': True, 'approvals': True, 'field-sales': True, 'collections': True, 'offline': True, 'forecasting': True, 'assistant': True, 'traceability': True, 'wms': True, 'invoice-ocr': True, 'accounting': True, 'gst-cockpit': True, 'procurement-intelligence': True, 'fleet-routes': True, 'product-master': True, 'service-rma': True, 'quality': True, 'supply-planning': True, 'distribution-network': True, 'credit-risk': True, 'security-center': True, 'integrations': True, 'executive-bi': True, 'copilot-actions': True, 'treasury': True, 'contracts': True, 'expenses': True, 'report-builder': True, 'operations-center': True, 'team': True, 'audit': True},
+}
+for _plan_features in PLAN_FEATURES.values():
+    _plan_features.setdefault('settings', False)
+PLAN_FEATURES['ENTERPRISE']['settings'] = True
+
+def normalize_plan_code(code):
+    return PLAN_ALIASES.get(str(code or 'FREE').upper(), 'FREE')
+
+
+def _subscription_snapshot(company):
+    from .models import CompanySubscription
+    today = timezone.localdate()
+    subscription = CompanySubscription.objects.filter(company=company).select_related('plan').first()
+    if not subscription:
+        code = 'FREE'
+        status = 'Trial'
+        period_end = None
+        trial_end = None
+        limits = dict(PLAN_LIMITS[code])
+    else:
+        code = normalize_plan_code(subscription.plan.code)
+        status = subscription.status
+        if subscription.current_period_end and subscription.current_period_end < today:
+            status = 'Expired' if subscription.status == 'Trial' else 'Past Due'
+        period_end = subscription.current_period_end
+        trial_end = subscription.trial_end
+        limits = {key: getattr(subscription.plan, f'{key[:-1]}_limit' if key in ('users', 'branches', 'warehouses') else f'{key[:-1]}_limit' if key == 'products' else 'order_limit', default) for key, default in PLAN_LIMITS[code].items()}
+    features = PLAN_FEATURES[code]
+    return {'subscription': subscription, 'code': code, 'name': PLAN_LABELS[code], 'status': status, 'periodEnd': period_end, 'trialEnd': trial_end, 'limits': limits, 'features': features}
+
+
+def subscription_usage(company):
+    from django.contrib.auth.models import User
+    from .models import Branch, Order, Product, Warehouse
+    today = timezone.localdate()
+    return {'users': User.objects.filter(profile__company=company, is_active=True).count(), 'products': Product.objects.filter(company=company, is_active=True).count(), 'branches': Branch.objects.filter(company=company, is_active=True).count(), 'warehouses': Warehouse.objects.filter(company=company, is_active=True).count(), 'orders': Order.objects.filter(company=company, order_date__year=today.year, order_date__month=today.month).count()}
+
+
+def subscription_payload(company):
+    snapshot = _subscription_snapshot(company)
+    usage = subscription_usage(company)
+    return {'code': snapshot['code'], 'name': snapshot['name'], 'status': snapshot['status'], 'periodEnd': snapshot['periodEnd'].isoformat() if snapshot['periodEnd'] else None, 'trialEnd': snapshot['trialEnd'].isoformat() if snapshot['trialEnd'] else None, 'daysRemaining': max(0, (snapshot['periodEnd'] - timezone.localdate()).days) if snapshot['periodEnd'] else None, 'limits': snapshot['limits'], 'userLimit': snapshot['limits']['users'], 'productLimit': snapshot['limits']['products'], 'branchLimit': snapshot['limits']['branches'], 'warehouseLimit': snapshot['limits']['warehouses'], 'orderLimit': snapshot['limits']['orders'], 'usage': usage, 'features': [key for key, enabled in snapshot['features'].items() if enabled], 'featureAccess': snapshot['features']}
+
+
+def subscription_feature_for_path(request):
+    path = request.path.split('/api/', 1)[-1].strip('/')
+    module = path.split('/', 1)[0]
+    return module if module in PLAN_FEATURES['FREE'] else None
+
+
+def subscription_denial(request, feature):
+    snapshot = _subscription_snapshot(request.company)
+    required = 'ENTERPRISE' if not PLAN_FEATURES['PREMIUM'].get(feature, False) else 'PREMIUM'
+    return JsonResponse({'detail': f'{feature.replace("-", " ").title()} requires the {PLAN_LABELS[required]} plan.', 'error': 'subscription_required', 'feature': feature, 'requiredPlan': required, 'currentPlan': snapshot['code'], 'status': snapshot['status'], 'upgradeUrl': '/app?module=subscription'}, status=402)
+
+
+def subscription_allows(company, feature):
+    snapshot = _subscription_snapshot(company)
+    if snapshot['status'] in ('Expired', 'Past Due', 'Cancelled'):
+        return False
+    return bool(snapshot['features'].get(feature, False))
+
+
+def usage_limit_response(request, resource, increment=1):
+    snapshot = _subscription_snapshot(request.company)
+    usage = subscription_usage(request.company)
+    limit = snapshot['limits'].get(resource)
+    if limit is not None and usage.get(resource, 0) + increment > limit:
+        return JsonResponse({'detail': f'{resource.title()} limit reached for the {snapshot["name"]} plan.', 'error': 'subscription_limit_reached', 'resource': resource, 'limit': limit, 'usage': usage.get(resource, 0), 'currentPlan': snapshot['code'], 'requiredPlan': 'PREMIUM' if snapshot['code'] == 'FREE' else 'ENTERPRISE', 'upgradeUrl': '/app?module=subscription'}, status=402)
+    return None
+
 
 def _client_ip(request):
     forwarded = request.META.get('HTTP_X_FORWARDED_FOR', '')
@@ -97,6 +176,9 @@ def api_auth_required(view_func):
         request.api_user = user
         request.company = profile.company
         request.branch = profile.branch
+        feature = subscription_feature_for_path(request)
+        if feature and not subscription_allows(request.company, feature):
+            return subscription_denial(request, feature)
         return view_func(request, *args, **kwargs)
     return wrapped
 

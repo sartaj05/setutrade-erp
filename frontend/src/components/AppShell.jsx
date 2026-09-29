@@ -28,8 +28,9 @@ export default function AppShell({ module, onModuleChange, children, navigate })
   const { user, mode, logout } = useAuth();
   const roleModules = user.permissions || permissions[user.role] || ['dashboard'];
   const plan = normalizePlan(user.subscription?.code || user.plan);
-  const visibleModules = roleModules.filter((key) => planAllows(plan, key));
-  const lockedModules = roleModules.filter((key) => !planAllows(plan, key));
+  const planStatus = user.subscription?.status || 'Active';
+  const visibleModules = roleModules.filter((key) => planAllows(plan, key, planStatus));
+  const lockedModules = roleModules.filter((key) => !planAllows(plan, key, planStatus));
   const initials = user.name.split(' ').map((x) => x[0]).slice(0, 2).join('');
   const [search, setSearch] = useState(''); const [searchResults, setSearchResults] = useState([]); const [showSearch, setShowSearch] = useState(false);
   const [notifications, setNotifications] = useState(demoNotifications); const [showNotifications, setShowNotifications] = useState(false);
@@ -69,7 +70,7 @@ export default function AppShell({ module, onModuleChange, children, navigate })
           {navigationGroups.map((group) => {
             const items = group.keys.filter((key) => roleModules.includes(key) && moduleLabels[key]);
             if (!items.length) return null;
-            return <div className="side-nav-group" key={group.label}><span className="side-nav-label">{group.label}</span>{items.map((key) => { const [label, icon] = moduleLabels[key]; const locked = !planAllows(plan, key); return <button className={`${module === key ? 'side-link active' : 'side-link'}${locked ? ' locked' : ''}`} key={key} onClick={() => { if (locked) { setPlanNotice(`${label} requires the ${PLAN_LABELS[requiredPlan(key)]} plan.`); return; } onModuleChange(key); }} title={locked ? `Requires ${PLAN_LABELS[requiredPlan(key)]}` : label}><Icon name={icon} size={18} /><span>{label}</span>{locked && <em>Upgrade</em>}</button>; })}</div>;
+            return <div className="side-nav-group" key={group.label}><span className="side-nav-label">{group.label}</span>{items.map((key) => { const [label, icon] = moduleLabels[key]; const locked = !planAllows(plan, key, planStatus); return <button className={`${module === key ? 'side-link active' : 'side-link'}${locked ? ' locked' : ''}`} key={key} onClick={() => { if (locked) { setPlanNotice(`${label} requires the ${PLAN_LABELS[requiredPlan(key)]} plan.`); return; } onModuleChange(key); }} title={locked ? `Requires ${PLAN_LABELS[requiredPlan(key)]}` : label}><Icon name={icon} size={18} /><span>{label}</span>{locked && <em>Upgrade</em>}</button>; })}</div>;
           })}
         </nav>
         <div className="sidebar-bottom"><div className="mode-chip"><span className={apiHealth === 'online' ? 'online' : ''} /> {mode !== 'api' ? 'Safe demo mode' : apiHealth === 'checking' ? 'Checking production API…' : apiHealth === 'online' ? 'Production API connected' : apiHealth === 'degraded' ? 'Production API degraded' : 'Production API unavailable'}</div><button className="signout" onClick={signOut}>Sign out</button></div>

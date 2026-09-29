@@ -28,6 +28,8 @@ export const PLAN_REQUIREMENTS = {
 };
 
 export function requiredPlan(module) { return PLAN_REQUIREMENTS[module] || 'FREE'; }
-export function planAllows(plan, module) {
+export function planAllows(plan, module, status = 'Active') {
+  const normalizedStatus = String(status || 'Active');
+  if (['Expired', 'Past Due', 'Cancelled'].includes(normalizedStatus)) return requiredPlan(module) === 'FREE';
   return PLAN_LEVELS[normalizePlan(plan)] >= PLAN_LEVELS[requiredPlan(module)];
 }

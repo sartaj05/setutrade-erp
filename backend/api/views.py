@@ -29,7 +29,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_http_methods, require_POST
 from .auth import (
     api_auth_required, create_session_tokens, refresh_access_token, create_portal_token, portal_auth_required,
-    revoke_request_session, roles_allowed,
+    revoke_request_session, roles_allowed, subscription_payload, usage_limit_response, normalize_plan_code, PLAN_FEATURES, PLAN_LABELS,
 )
 from .models import (
     AccountingConnection, AccountingExportJob, ApprovalPolicy, AssistantMessage, AssistantThread, CompanySubscription, OfflineSyncReceipt, SubscriptionInvoice, SubscriptionPlan, ApprovalRequest, Attachment, AuditLog, PurchaseInvoiceCapture, BarcodeScanLog, Branch, Company, Customer, CustomerPortalAccess, CustomerPortalOrder, DeliveryProof, DeliveryRun, DeliveryStop, GoodsReceipt,
@@ -112,21 +112,7 @@ def user_payload(user):
         permissions.append('support-center')
     if 'demo-mode' not in permissions:
         permissions.append('demo-mode')
-    subscription = CompanySubscription.objects.filter(company=company).select_related('plan').first() if company else None
-    today = timezone.localdate()
-    if subscription:
-        plan = subscription.plan
-        plan_payload = {
-            'code': plan.code, 'name': plan.name,
-            'userLimit': plan.user_limit, 'branchLimit': plan.branch_limit, 'warehouseLimit': plan.warehouse_limit,
-            'features': plan.features, 'status': subscription.status,
-            'periodEnd': subscription.current_period_end.isoformat() if subscription.current_period_end else None,
-            'trialEnd': subscription.trial_end.isoformat() if subscription.trial_end else None,
-            'daysRemaining': max(0, (subscription.current_period_end - today).days) if subscription.current_period_end else None,
-            'usage': {'users': company.profiles.count(), 'branches': company.branches.count(), 'warehouses': company.warehouses.count()},
-        }
-    else:
-        plan_payload = {'code': 'FREE', 'name': 'Free', 'userLimit': 3, 'branchLimit': 1, 'warehouseLimit': 1, 'features': ['Core inventory', 'Customers', 'Orders'], 'status': 'Trial', 'periodEnd': None, 'trialEnd': None, 'daysRemaining': None, 'usage': {'users': company.profiles.count(), 'branches': company.branches.count(), 'warehouses': company.warehouses.count()} if company else {}}
+    plan_payload = subscription_payload(company) if company else {}
     return {
         'id': user.id,
         'name': user.get_full_name() or user.username,
@@ -344,6 +330,9 @@ def products(request):
     if request.method == 'POST':
         if request.api_user.profile.role not in ['OWNER', 'MANAGER', 'WAREHOUSE']:
             return JsonResponse({'detail': 'You have read-only access to the product catalogue.'}, status=403)
+        limit_error = usage_limit_response(request, 'products')
+        if limit_error:
+            return limit_error
         body = _json_body(request)
         if body is None or not body.get('sku') or not body.get('name'):
             return JsonResponse({'detail': 'sku and name are required.'}, status=400)
@@ -454,6 +443,9 @@ def orders(request):
     if request.method == 'POST':
         if request.api_user.profile.role == 'ACCOUNTANT':
             return JsonResponse({'detail': 'Accountant role cannot create sales orders.'}, status=403)
+        limit_error = usage_limit_response(request, 'orders')
+        if limit_error:
+            return limit_error
         body = _json_body(request) or {}
         customer = _company_qs(Customer, request).filter(pk=body.get('customerId')).first() or _company_qs(Customer, request).filter(code=body.get('customer')).first()
         warehouse = _company_qs(Warehouse, request).filter(pk=body.get('warehouseId')).first() or _company_qs(Warehouse, request).filter(code=body.get('warehouse')).first()
@@ -1247,6 +1239,14 @@ def import_csv(request, resource):
     except Exception: return JsonResponse({'detail':'Could not parse CSV.'},status=400)
     created=updated=0
     if resource=='products':
+        new_products = 0
+        for row in rows:
+            sku = (row.get('SKU') or row.get('sku') or '').strip()
+            if sku and (row.get('Name') or row.get('name')) and not Product.objects.filter(company=request.company, sku=sku).exists():
+                new_products += 1
+        limit_error = usage_limit_response(request, 'products', new_products)
+        if limit_error:
+            return limit_error
         for row in rows:
             sku=(row.get('SKU') or row.get('sku') or '').strip(); name=(row.get('Name') or row.get('name') or '').strip()
             if not sku or not name: continue
@@ -1283,6 +1283,9 @@ def import_csv(request, resource):
 @roles_allowed('OWNER')
 def team(request):
     if request.method=='POST':
+        limit_error = usage_limit_response(request, 'users')
+        if limit_error:
+            return limit_error
         body=_json_body(request) or {}; email=str(body.get('email','')).strip().lower(); role=body.get('role','SALES'); name=str(body.get('name','')).strip()
         if not email or role not in PERMISSIONS: return JsonResponse({'detail':'valid email and role are required.'},status=400)
         if User.objects.filter(email__iexact=email).exists(): return JsonResponse({'detail':'An account with this email already exists.'},status=400)
@@ -1338,6 +1341,9 @@ def settings_view(request):
 @require_POST
 @roles_allowed('OWNER')
 def branches(request):
+    limit_error = usage_limit_response(request, 'branches')
+    if limit_error:
+        return limit_error
     body=_json_body(request) or {}
     if not body.get('code') or not body.get('name'): return JsonResponse({'detail':'code and name are required.'},status=400)
     branch=Branch.objects.create(company=request.company,code=body['code'],name=body['name'],city=body.get('city',''),address=body.get('address',''),gstin=body.get('gstin',''),phone=body.get('phone',''))
@@ -1693,11 +1699,17 @@ def offline_sync(request):
 @roles_allowed('OWNER')
 def subscription_billing(request):
     # Ensure a useful baseline exists even on a fresh tenant database.
-    starter,_=SubscriptionPlan.objects.get_or_create(code='STARTER',defaults={'name':'Starter','monthly_price':999,'annual_price':9990,'user_limit':3,'branch_limit':1,'warehouse_limit':1,'features':['Core ERP','GST invoices','Customer portal']})
-    growth,_=SubscriptionPlan.objects.get_or_create(code='GROWTH',defaults={'name':'Growth','monthly_price':2499,'annual_price':24990,'user_limit':10,'branch_limit':3,'warehouse_limit':5,'features':['Everything in Starter','WhatsApp','Field sales','Approvals','Delivery']})
-    business,_=SubscriptionPlan.objects.get_or_create(code='BUSINESS',defaults={'name':'Business','monthly_price':4999,'annual_price':49990,'user_limit':50,'branch_limit':20,'warehouse_limit':50,'features':['Everything in Growth','Accounting','AI assistant','Advanced forecasting']})
+    plan_defaults={
+        'STARTER':{'name':'Free','monthly_price':0,'annual_price':0,'user_limit':3,'product_limit':100,'branch_limit':1,'warehouse_limit':1,'order_limit':100,'features':['Core inventory','Customers','Orders','Quotations']},
+        'GROWTH':{'name':'Premium','monthly_price':2499,'annual_price':24990,'user_limit':10,'product_limit':2500,'branch_limit':3,'warehouse_limit':5,'order_limit':1000,'features':['WhatsApp','GST invoices','Payments','Field sales','Approvals','Delivery','AI assistant']},
+        'BUSINESS':{'name':'Enterprise','monthly_price':4999,'annual_price':49990,'user_limit':50,'product_limit':10000,'branch_limit':20,'warehouse_limit':50,'order_limit':10000,'features':['Multi-branch','Advanced reports','API integrations','Security center','AI action copilot']},
+    }
+    plans=[]
+    for code,defaults in plan_defaults.items():
+        plan,_=SubscriptionPlan.objects.update_or_create(code=code,defaults=defaults)
+        plans.append(plan)
     sub=CompanySubscription.objects.filter(company=request.company).select_related('plan').first()
-    if not sub: sub=CompanySubscription.objects.create(company=request.company,plan=growth,status=CompanySubscription.Status.TRIAL,started_at=timezone.localdate(),current_period_end=timezone.localdate()+timedelta(days=14),trial_end=timezone.localdate()+timedelta(days=14))
+    if not sub: sub=CompanySubscription.objects.create(company=request.company,plan=plans[1],status=CompanySubscription.Status.TRIAL,started_at=timezone.localdate(),current_period_end=timezone.localdate()+timedelta(days=14),trial_end=timezone.localdate()+timedelta(days=14))
     if request.method=='POST':
         body=_json_body(request) or {}; action=body.get('action','change-plan')
         if action=='change-plan':
@@ -1705,10 +1717,20 @@ def subscription_billing(request):
             if not plan:return JsonResponse({'detail':'Plan not found.'},status=404)
             sub.plan=plan;sub.status=CompanySubscription.Status.ACTIVE;sub.current_period_end=timezone.localdate()+timedelta(days=30);sub.save(update_fields=['plan','status','current_period_end','updated_at'])
             inv=SubscriptionInvoice.objects.create(company=request.company,subscription=sub,invoice_no=_next_no('SUB'),amount=plan.monthly_price,tax=plan.monthly_price*Decimal('0.18'),due_date=timezone.localdate()+timedelta(days=7))
+            audit(request,'change_plan','CompanySubscription',sub.id,f'Changed subscription to {plan.name}',{'plan':plan.code,'invoice':inv.invoice_no})
             return JsonResponse({'ok':True,'invoiceNo':inv.invoice_no,'status':sub.status})
-        if action=='cancel': sub.cancel_at_period_end=True;sub.save(update_fields=['cancel_at_period_end','updated_at']);return JsonResponse({'ok':True})
-    plans=SubscriptionPlan.objects.filter(is_active=True).order_by('monthly_price'); invoices=SubscriptionInvoice.objects.filter(company=request.company).order_by('-created_at')[:20]
-    return JsonResponse({'subscription':{'status':sub.status,'plan':sub.plan.code,'planName':sub.plan.name,'periodEnd':sub.current_period_end.isoformat(),'cancelAtPeriodEnd':sub.cancel_at_period_end},'usage':{'users':request.company.profiles.count(),'branches':request.company.branches.count(),'warehouses':request.company.warehouses.count()},'plans':[{'code':p.code,'name':p.name,'monthly':float(p.monthly_price),'annual':float(p.annual_price),'userLimit':p.user_limit,'branchLimit':p.branch_limit,'warehouseLimit':p.warehouse_limit,'features':p.features} for p in plans],'invoices':[{'invoiceNo':x.invoice_no,'amount':float(x.amount+x.tax),'status':x.status,'dueDate':x.due_date.isoformat()} for x in invoices]})
+        if action=='cancel': sub.cancel_at_period_end=True;sub.save(update_fields=['cancel_at_period_end','updated_at']);audit(request,'cancel_plan','CompanySubscription',sub.id,'Scheduled subscription cancellation');return JsonResponse({'ok':True})
+        if action=='resume': sub.cancel_at_period_end=False;sub.save(update_fields=['cancel_at_period_end','updated_at']);audit(request,'resume_plan','CompanySubscription',sub.id,'Resumed subscription');return JsonResponse({'ok':True})
+        if action=='update-plan':
+            plan=SubscriptionPlan.objects.filter(code=body.get('planCode')).first()
+            if not plan:return JsonResponse({'detail':'Plan not found.'},status=404)
+            for field in ['monthly_price','annual_price','user_limit','product_limit','branch_limit','warehouse_limit','order_limit']:
+                if field in body:setattr(plan,field,body[field])
+            if isinstance(body.get('features'),list):plan.features=body['features']
+            plan.save();audit(request,'update_plan','SubscriptionPlan',plan.id,f'Updated {plan.name} plan limits');return JsonResponse({'ok':True,'plan':plan.code})
+    invoices=SubscriptionInvoice.objects.filter(company=request.company).order_by('-created_at')[:20]
+    current=subscription_payload(request.company)
+    return JsonResponse({'subscription':{**current,'plan':sub.plan.code,'planName':PLAN_LABELS[normalize_plan_code(sub.plan.code)],'cancelAtPeriodEnd':sub.cancel_at_period_end},'usage':current['usage'],'limits':current['limits'],'plans':[{'code':p.code,'publicCode':normalize_plan_code(p.code),'name':PLAN_LABELS[normalize_plan_code(p.code)],'monthly':float(p.monthly_price),'annual':float(p.annual_price),'userLimit':p.user_limit,'productLimit':p.product_limit,'branchLimit':p.branch_limit,'warehouseLimit':p.warehouse_limit,'orderLimit':p.order_limit,'limits':{'users':p.user_limit,'products':p.product_limit,'branches':p.branch_limit,'warehouses':p.warehouse_limit,'orders':p.order_limit},'features':p.features,'featureAccess':PLAN_FEATURES[normalize_plan_code(p.code)]} for p in plans],'invoices':[{'invoiceNo':x.invoice_no,'amount':float(x.amount+x.tax),'status':x.status,'dueDate':x.due_date.isoformat()} for x in invoices]})
 
 def _forecast_row(company, product, warehouse=None, horizon=30):
     today=timezone.localdate(); recent_start=today-timedelta(days=30); prev_start=today-timedelta(days=60)
