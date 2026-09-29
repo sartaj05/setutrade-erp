@@ -247,6 +247,28 @@ class ProductionApiTests(TestCase):
             duplicate = self.client.post('/api/subscription/webhook/razorpay/', data=raw, content_type='application/json', HTTP_X_RAZORPAY_SIGNATURE=signature)
         self.assertEqual(duplicate.status_code, 200, duplicate.content)
 
+    def test_billing_admin_cancel_resume_retry_and_renew(self):
+        checkout = self.post('/api/subscription/', {'action': 'change-plan', 'planCode': 'GROWTH'})
+        self.assertEqual(checkout.status_code, 201, checkout.content)
+        payment_id = checkout.json()['paymentId']
+        failed_body = json.dumps({'externalOrderId': checkout.json()['checkout']['orderId'], 'paymentId': 'pay_failed_001', 'status': 'failed'}).encode()
+        with self.settings(BILLING_WEBHOOK_SECRET='test-secret'):
+            failed = self.client.post('/api/subscription/webhook/razorpay/', data=failed_body, content_type='application/json', HTTP_X_RAZORPAY_SIGNATURE=hmac.new(b'test-secret', failed_body, hashlib.sha256).hexdigest())
+        self.assertEqual(failed.status_code, 200, failed.content)
+        self.assertEqual(failed.json()['status'], 'Failed')
+        retry = self.post('/api/subscription/', {'action': 'retry-payment', 'paymentId': payment_id})
+        self.assertEqual(retry.status_code, 201, retry.content)
+        self.assertNotEqual(retry.json()['paymentId'], payment_id)
+        cancelled = self.post('/api/subscription/', {'action': 'cancel'})
+        self.assertEqual(cancelled.status_code, 200, cancelled.content)
+        self.assertTrue(cancelled.json()['cancelAtPeriodEnd'])
+        resumed = self.post('/api/subscription/', {'action': 'resume'})
+        self.assertEqual(resumed.status_code, 200, resumed.content)
+        self.assertFalse(resumed.json()['cancelAtPeriodEnd'])
+        renewed = self.post('/api/subscription/', {'action': 'renew'})
+        self.assertEqual(renewed.status_code, 201, renewed.content)
+        self.assertEqual(renewed.json()['status'], 'Pending')
+
 
     def test_growth_v3_collections_wms_and_automation(self):
         collection = self.post('/api/collections/', {'action':'task','customerId':self.customer.id,'amount':25000,'date':timezone.localdate().isoformat(),'priority':'High'})

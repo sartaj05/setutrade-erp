@@ -1770,15 +1770,19 @@ def subscription_billing(request):
                 sub.plan=plan;sub.status=CompanySubscription.Status.ACTIVE;sub.current_period_end=timezone.localdate()+timedelta(days=365);sub.trial_end=None;sub.save(update_fields=['plan','status','current_period_end','trial_end','updated_at'])
                 audit(request,'change_plan','CompanySubscription',sub.id,f'Changed subscription to {plan.name}',{'plan':plan.code,'billing':'free'})
                 return JsonResponse({'ok':True,'status':sub.status,'plan':plan.code,'checkout':None})
-            provider=str(body.get('provider') or os.getenv('BILLING_PROVIDER','RAZORPAY')).upper()
-            receipt=_next_no('SUBORD')
-            provider_order_id,configured=_create_billing_provider_order(provider,receipt,plan.monthly_price)
-            inv=SubscriptionInvoice.objects.create(company=request.company,subscription=sub,invoice_no=_next_no('SUB'),amount=plan.monthly_price,tax=plan.monthly_price*Decimal('0.18'),due_date=timezone.localdate()+timedelta(days=7))
-            payment=SubscriptionPayment.objects.create(company=request.company,subscription=sub,target_plan=plan,invoice=inv,provider=provider,external_order_id=provider_order_id,amount=plan.monthly_price,currency='INR',status=SubscriptionPayment.Status.PENDING,payload={'receipt':receipt,'providerConfigured':configured})
-            audit(request,'checkout_created','SubscriptionPayment',payment.id,f'Created {plan.name} checkout',{'provider':provider,'orderId':provider_order_id,'invoice':inv.invoice_no})
-            return JsonResponse({'ok':True,'status':payment.status,'invoiceNo':inv.invoice_no,'paymentId':payment.id,'checkout':{'provider':provider,'orderId':provider_order_id,'amount':float(payment.amount),'currency':payment.currency,'providerConfigured':configured,'keyId':os.getenv('RAZORPAY_KEY_ID','') if provider=='RAZORPAY' else '', 'message':'Complete payment with the configured provider; subscription activates after webhook confirmation.'}},status=201)
-        if action=='cancel': sub.cancel_at_period_end=True;sub.save(update_fields=['cancel_at_period_end','updated_at']);audit(request,'cancel_plan','CompanySubscription',sub.id,'Scheduled subscription cancellation');return JsonResponse({'ok':True})
-        if action=='resume': sub.cancel_at_period_end=False;sub.save(update_fields=['cancel_at_period_end','updated_at']);audit(request,'resume_plan','CompanySubscription',sub.id,'Resumed subscription');return JsonResponse({'ok':True})
+            return _subscription_checkout_response(request, sub, plan, body.get('provider'), 'change_plan')
+        if action in ('renew', 'retry-payment'):
+            payment = SubscriptionPayment.objects.filter(company=request.company, pk=body.get('paymentId')).first() if action == 'retry-payment' else None
+            plan = payment.target_plan if payment else sub.plan
+            if not plan or plan.monthly_price <= 0:
+                sub.status=CompanySubscription.Status.ACTIVE; sub.cancel_at_period_end=False; sub.current_period_end=timezone.localdate()+timedelta(days=365); sub.save(update_fields=['status','cancel_at_period_end','current_period_end','updated_at'])
+                audit(request, 'renew_plan', 'CompanySubscription', sub.id, f'Renewed {plan.name if plan else "Free"} subscription', {'billing':'free'})
+                return JsonResponse({'ok':True,'status':sub.status,'plan':sub.plan.code,'checkout':None})
+            if payment and payment.status == SubscriptionPayment.Status.PAID:
+                return JsonResponse({'detail':'This payment is already settled.'}, status=400)
+            return _subscription_checkout_response(request, sub, plan, body.get('provider') or (payment.provider if payment else None), action)
+        if action=='cancel': sub.cancel_at_period_end=True;sub.save(update_fields=['cancel_at_period_end','updated_at']);audit(request,'cancel_plan','CompanySubscription',sub.id,'Scheduled subscription cancellation');return JsonResponse({'ok':True,'cancelAtPeriodEnd':True})
+        if action=='resume': sub.cancel_at_period_end=False;sub.save(update_fields=['cancel_at_period_end','updated_at']);audit(request,'resume_plan','CompanySubscription',sub.id,'Resumed subscription');return JsonResponse({'ok':True,'cancelAtPeriodEnd':False})
         if action=='update-plan':
             plan=SubscriptionPlan.objects.filter(code=body.get('planCode')).first()
             if not plan:return JsonResponse({'detail':'Plan not found.'},status=404)
@@ -1789,6 +1793,16 @@ def subscription_billing(request):
     invoices=SubscriptionInvoice.objects.filter(company=request.company).order_by('-created_at')[:20]
     current=subscription_payload(request.company)
     return JsonResponse({'subscription':{**current,'plan':sub.plan.code,'planName':PLAN_LABELS[normalize_plan_code(sub.plan.code)],'cancelAtPeriodEnd':sub.cancel_at_period_end},'usage':current['usage'],'limits':current['limits'],'plans':[{'code':p.code,'publicCode':normalize_plan_code(p.code),'name':PLAN_LABELS[normalize_plan_code(p.code)],'monthly':float(p.monthly_price),'annual':float(p.annual_price),'userLimit':p.user_limit,'productLimit':p.product_limit,'branchLimit':p.branch_limit,'warehouseLimit':p.warehouse_limit,'orderLimit':p.order_limit,'limits':{'users':p.user_limit,'products':p.product_limit,'branches':p.branch_limit,'warehouses':p.warehouse_limit,'orders':p.order_limit},'features':p.features,'featureAccess':PLAN_FEATURES[normalize_plan_code(p.code)]} for p in plans],'invoices':[{'invoiceNo':x.invoice_no,'amount':float(x.amount+x.tax),'status':x.status,'dueDate':x.due_date.isoformat()} for x in invoices],'payments':[{'id':x.id,'provider':x.provider,'orderId':x.external_order_id,'paymentId':x.external_payment_id,'amount':float(x.amount),'status':x.status,'createdAt':x.created_at.isoformat()} for x in SubscriptionPayment.objects.filter(company=request.company).order_by('-created_at')[:20]]})
+
+
+def _subscription_checkout_response(request, subscription, plan, provider=None, reason='change_plan'):
+    provider=str(provider or os.getenv('BILLING_PROVIDER','RAZORPAY')).upper()
+    receipt=_next_no('SUBORD')
+    provider_order_id,configured=_create_billing_provider_order(provider,receipt,plan.monthly_price)
+    invoice=SubscriptionInvoice.objects.create(company=request.company,subscription=subscription,invoice_no=_next_no('SUB'),amount=plan.monthly_price,tax=plan.monthly_price*Decimal('0.18'),due_date=timezone.localdate()+timedelta(days=7))
+    payment=SubscriptionPayment.objects.create(company=request.company,subscription=subscription,target_plan=plan,invoice=invoice,provider=provider,external_order_id=provider_order_id,amount=plan.monthly_price,currency='INR',status=SubscriptionPayment.Status.PENDING,payload={'receipt':receipt,'providerConfigured':configured,'reason':reason})
+    audit(request,'checkout_created','SubscriptionPayment',payment.id,f'Created {plan.name} checkout',{'provider':provider,'orderId':provider_order_id,'invoice':invoice.invoice_no,'reason':reason})
+    return JsonResponse({'ok':True,'status':payment.status,'invoiceNo':invoice.invoice_no,'paymentId':payment.id,'checkout':{'provider':provider,'orderId':provider_order_id,'amount':float(payment.amount),'currency':payment.currency,'providerConfigured':configured,'keyId':os.getenv('RAZORPAY_KEY_ID','') if provider=='RAZORPAY' else '', 'message':'Complete payment with the configured provider; subscription activates after webhook confirmation.'}},status=201)
 
 
 def _create_billing_provider_order(provider, receipt, amount):
