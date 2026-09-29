@@ -9,7 +9,7 @@ const steps = [['Company profile', 'Set the legal identity and tax details used 
 export default function OnboardingPage() {
   const { mode } = useAuth();
   const [data, setData] = useState(demo); const [step, setStep] = useState(0); const [busy, setBusy] = useState(false); const [notice, setNotice] = useState('');
-  const [company, setCompany] = useState({}); const [branch, setBranch] = useState({ code: '', name: '', city: '' }); const [warehouse, setWarehouse] = useState({ code: '', name: '', city: '' });
+  const [company, setCompany] = useState(demo.company); const [branch, setBranch] = useState({ code: '', name: '', city: '' }); const [warehouse, setWarehouse] = useState({ code: '', name: '', city: '' });
   const load = () => { if (mode === 'api') getApiResource('onboarding').then((next) => { setData(next); setCompany(next.company || {}); }).catch((err) => setNotice(err.message)); };
   useEffect(load, [mode]);
   const checks = useMemo(() => Object.entries(data.checklist || {}).map(([key, value]) => ({ key, label: labels[key] || key, value, complete: typeof value === 'number' ? value > 0 : Boolean(value) })), [data]);
