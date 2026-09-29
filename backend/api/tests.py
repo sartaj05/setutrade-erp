@@ -1,6 +1,8 @@
 import json
 import hashlib
 import hmac
+import os
+from unittest.mock import patch
 from datetime import timedelta
 from decimal import Decimal
 from django.contrib.auth.models import User
@@ -9,7 +11,7 @@ from django.test import Client, TestCase
 from django.utils import timezone
 from .models import (
     Branch, Company, Customer, InventoryMovement, Order, Product, Profile,
-    PurchaseOrder, StockBalance, Supplier, Warehouse, SupplierPortalAccess, AutomationRule, ExternalChannel, DistributionNetwork, WarehouseBin, DeliveryStop, SubscriptionPlan, CompanySubscription, SubscriptionPayment,
+    PurchaseOrder, StockBalance, Supplier, Warehouse, SupplierPortalAccess, AutomationRule, ExternalChannel, DistributionNetwork, WarehouseBin, DeliveryStop, SubscriptionPlan, CompanySubscription, SubscriptionPayment, WhatsAppMessage, WhatsAppOrderDraft,
 )
 
 
@@ -268,6 +270,31 @@ class ProductionApiTests(TestCase):
         renewed = self.post('/api/subscription/', {'action': 'renew'})
         self.assertEqual(renewed.status_code, 201, renewed.content)
         self.assertEqual(renewed.json()['status'], 'Pending')
+
+    def test_whatsapp_webhook_verification_signature_and_idempotent_draft(self):
+        self.customer.phone = '9876543210'; self.customer.save(update_fields=['phone'])
+        self.company.whatsapp_phone_number_id = 'phone-test-1'; self.company.save(update_fields=['whatsapp_phone_number_id'])
+        payload = {'entry': [{'changes': [{'value': {'metadata': {'phone_number_id': 'phone-test-1'}, 'messages': [{'id': 'wamid-test-1', 'from': '9876543210', 'text': {'body': 'Need 2 SKU-1'}}]}}]}]}
+        raw = json.dumps(payload).encode()
+        with patch.dict(os.environ, {'WHATSAPP_VERIFY_TOKEN':'verify-test','WHATSAPP_APP_SECRET':'app-secret-test'}, clear=False), self.settings(DEBUG=False):
+            verified = self.client.get('/api/whatsapp/webhook/?hub.verify_token=verify-test&hub.challenge=challenge-1')
+            self.assertEqual(verified.status_code, 200)
+            self.assertEqual(verified.content.decode(), 'challenge-1')
+            signature = 'sha256=' + hmac.new(b'app-secret-test', raw, hashlib.sha256).hexdigest()
+            response = self.client.post('/api/whatsapp/webhook/', data=raw, content_type='application/json', HTTP_X_HUB_SIGNATURE_256=signature)
+            self.assertEqual(response.status_code, 200, response.content)
+            self.assertEqual(len(response.json()['created']), 1)
+            duplicate = self.client.post('/api/whatsapp/webhook/', data=raw, content_type='application/json', HTTP_X_HUB_SIGNATURE_256=signature)
+            self.assertEqual(duplicate.status_code, 200, duplicate.content)
+            self.assertTrue(duplicate.json()['created'][0]['duplicate'])
+        self.assertEqual(WhatsAppMessage.objects.filter(provider_message_id='wamid-test-1').count(), 1)
+        self.assertEqual(WhatsAppOrderDraft.objects.filter(company=self.company).count(), 1)
+
+    def test_whatsapp_payment_reminder_is_reviewable_before_live_send(self):
+        response = self.post('/api/whatsapp/', {'action':'payment-reminder','customerId':self.customer.id})
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(response.json()['message']['status'], 'Draft')
+        self.assertTrue(WhatsAppMessage.objects.filter(customer=self.customer,template_name='payment-reminder',status='Draft').exists())
 
 
     def test_growth_v3_collections_wms_and_automation(self):

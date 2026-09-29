@@ -942,7 +942,15 @@ def _send_whatsapp_live(customer, message):
 @roles_allowed('OWNER','MANAGER','SALES')
 def whatsapp(request):
     if request.method=='POST':
-        body=_json_body(request) or {}; customer=_company_qs(Customer,request).filter(pk=body.get('customerId')).first() or _company_qs(Customer,request).filter(code=body.get('customer')).first(); raw=str(body.get('message','')).strip(); direction=body.get('direction','Inbound')
+        body=_json_body(request) or {}; action=body.get('action','parse'); customer=_company_qs(Customer,request).filter(pk=body.get('customerId')).first() or _company_qs(Customer,request).filter(code=body.get('customer')).first(); raw=str(body.get('message','')).strip(); direction=body.get('direction','Inbound')
+        if action == 'payment-reminder':
+            if not customer: return JsonResponse({'detail':'customer is required.'},status=400)
+            raw = str(body.get('message') or f'Hello {customer.name}, your SetuStock account has an outstanding balance of Rs. {customer.outstanding:,.0f}. Please let us know if you need a payment link.')
+            provider_id,error=_send_whatsapp_live(customer,raw) if body.get('sendLive') else (None,None)
+            status='Failed' if error else ('Sent' if provider_id else 'Draft')
+            msg=WhatsAppMessage.objects.create(company=request.company,customer=customer,direction='Outbound',message=raw,template_name='payment-reminder',status=status,provider_message_id=provider_id or '')
+            audit(request,'payment_reminder','WhatsAppMessage',msg.id,f'Prepared payment reminder for {customer.code}',{'live':bool(body.get('sendLive'))})
+            return JsonResponse({'message':{'id':msg.id,'status':status,'providerId':provider_id,'error':error,'text':raw}},status=201)
         if not customer or not raw: return JsonResponse({'detail':'customer and message are required.'},status=400)
         if direction=='Outbound':
             provider_id,error=_send_whatsapp_live(customer,raw) if body.get('sendLive') else (None,None)
@@ -1009,8 +1017,10 @@ def whatsapp_webhook(request):
     app_secret = os.getenv('WHATSAPP_APP_SECRET', '')
     signature = request.headers.get('X-Hub-Signature-256', '')
     expected = 'sha256=' + hmac.new(app_secret.encode(), raw, hashlib.sha256).hexdigest() if app_secret else ''
-    if not settings.DEBUG and (not app_secret or not hmac.compare_digest(signature, expected)):
+    if app_secret and (not signature or not hmac.compare_digest(signature, expected)):
         return JsonResponse({'detail': 'Webhook signature is invalid.'}, status=401)
+    if not app_secret and not settings.DEBUG:
+        return JsonResponse({'detail': 'Webhook signing secret is not configured.'}, status=503)
     try:
         payload = json.loads(raw.decode() or '{}')
     except (UnicodeDecodeError, json.JSONDecodeError):
@@ -1022,20 +1032,25 @@ def whatsapp_webhook(request):
             metadata = value.get('metadata') or {}
             phone_id = metadata.get('phone_number_id') or os.getenv('WHATSAPP_PHONE_NUMBER_ID')
             company = Company.objects.filter(is_active=True, whatsapp_phone_number_id=phone_id).first() if phone_id else None
-            if not company:
+            if not company and settings.DEBUG:
                 company = Company.objects.filter(is_active=True).first()
             if not company: continue
             for message in value.get('messages', []):
                 wa_id = str(message.get('from', '')).strip()
                 text = str(((message.get('text') or {}).get('body')) or '').strip()
                 if not wa_id or not text: continue
+                provider_message_id = str(message.get('id', '')).strip()
+                existing = WhatsAppMessage.objects.filter(company=company,provider_message_id=provider_message_id).first() if provider_message_id else None
+                if existing:
+                    created.append({'messageId': existing.id, 'duplicate': True, 'phoneNumberId': phone_id})
+                    continue
                 customer = None
                 for candidate in Customer.objects.filter(company=company, is_active=True).only('id', 'phone', 'code', 'name'):
                     normalized = re.sub(r'\D', '', candidate.phone or '')
                     if normalized and (normalized.endswith(wa_id) or wa_id.endswith(normalized)):
                         customer = candidate; break
                 if not customer: continue
-                message_row = WhatsAppMessage.objects.create(company=company, customer=customer, direction='Inbound', message=text, provider_message_id=str(message.get('id', '')), status='Received')
+                message_row = WhatsAppMessage.objects.create(company=company, customer=customer, direction='Inbound', message=text, provider_message_id=provider_message_id, status='Received')
                 items = _parse_whatsapp_items(text, company)
                 total = sum(Decimal(str(x['quantity'])) * Decimal(str(x['price'])) for x in items)
                 draft = WhatsAppOrderDraft.objects.create(company=company, draft_no=_next_no('WA'), customer=customer, raw_message=text, parsed_items=items, estimated_total=total)
