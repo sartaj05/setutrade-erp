@@ -11,7 +11,7 @@ from django.test import Client, TestCase
 from django.utils import timezone
 from .models import (
     Branch, Company, Customer, InventoryMovement, Order, Product, Profile,
-    PurchaseOrder, StockBalance, Supplier, Warehouse, SupplierPortalAccess, AutomationRule, ExternalChannel, DistributionNetwork, WarehouseBin, DeliveryStop, SubscriptionPlan, CompanySubscription, SubscriptionPayment, WhatsAppMessage, WhatsAppOrderDraft,
+    PurchaseOrder, StockBalance, Supplier, Warehouse, SupplierPortalAccess, AutomationRule, ExternalChannel, DistributionNetwork, WarehouseBin, DeliveryStop, DeliveryProof, SubscriptionPlan, CompanySubscription, SubscriptionPayment, WhatsAppMessage, WhatsAppOrderDraft,
 )
 
 
@@ -453,8 +453,16 @@ class ProductionApiTests(TestCase):
         run = self.post('/api/delivery/', {'action': 'create-run', 'routeName': 'Client demo route', 'driverName': 'Demo Driver', 'orderIds': [order['pk']]})
         self.assertEqual(run.status_code, 201, run.content)
         stop = DeliveryStop.objects.get(run_id=run.json()['id'])
+        tracked = self.post('/api/delivery/', {'action': 'track', 'runId': run.json()['id'], 'stopId': stop.id, 'latitude': 28.6139, 'longitude': 77.2090, 'etaAt': '2026-09-29T16:00:00+05:30'})
+        self.assertEqual(tracked.status_code, 200, tracked.content)
+        tracking = self.client.get(f"/api/delivery/track/{run.json()['trackingToken']}/")
+        self.assertEqual(tracking.status_code, 200, tracking.content)
+        self.assertEqual(tracking.json()['lastLocation']['latitude'], 28.6139)
+        bad_otp = self.post('/api/delivery/', {'action': 'deliver', 'stopId': stop.id, 'otp': '000000', 'receiverName': 'Demo Receiver', 'signature': 'demo-signature'})
+        self.assertEqual(bad_otp.status_code, 400, bad_otp.content)
         delivered = self.post('/api/delivery/', {'action': 'deliver', 'stopId': stop.id, 'otp': stop.delivery_otp, 'otpVerified': True, 'receiverName': 'Demo Receiver', 'signature': 'demo-signature'})
         self.assertEqual(delivered.status_code, 200, delivered.content)
+        self.assertTrue(DeliveryProof.objects.filter(stop=stop, otp_verified=True).exists())
 
         workflow = self.client.get('/api/client-workflow/', HTTP_AUTHORIZATION=f'Bearer {self.token}')
         self.assertEqual(workflow.status_code, 200, workflow.content)

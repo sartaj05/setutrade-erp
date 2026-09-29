@@ -22,6 +22,7 @@ from django.core.mail import send_mail
 from django.db.models import F, Q, Sum
 from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
+from django.utils.dateparse import parse_datetime
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.utils.html import escape
@@ -1631,11 +1632,23 @@ def delivery(request):
             if not run:return JsonResponse({'detail':'Delivery run not found.'},status=404)
             try: latitude=Decimal(str(body.get('latitude'))); longitude=Decimal(str(body.get('longitude')))
             except (TypeError, ValueError):return JsonResponse({'detail':'Valid latitude and longitude are required.'},status=400)
-            run.last_latitude=latitude;run.last_longitude=longitude;run.last_location_at=timezone.now();run.eta_at=body.get('etaAt') or run.eta_at;run.save(update_fields=['last_latitude','last_longitude','last_location_at','eta_at'])
+            eta = parse_datetime(str(body.get('etaAt'))) if body.get('etaAt') else run.eta_at
+            if body.get('etaAt') and not eta:return JsonResponse({'detail':'etaAt must be a valid ISO datetime.'},status=400)
+            if eta and timezone.is_naive(eta):eta=timezone.make_aware(eta)
+            run.last_latitude=latitude;run.last_longitude=longitude;run.last_location_at=timezone.now();run.eta_at=eta;run.save(update_fields=['last_latitude','last_longitude','last_location_at','eta_at'])
             stop=DeliveryStop.objects.filter(run=run,pk=body.get('stopId')).first() if body.get('stopId') else None
-            if stop and body.get('etaAt'):stop.eta_at=body.get('etaAt');stop.save(update_fields=['eta_at'])
+            if stop and body.get('etaAt'):stop.eta_at=eta;stop.save(update_fields=['eta_at'])
             audit(request,'track','DeliveryRun',run.id,f'Updated live location for {run.run_no}',{'latitude':float(latitude),'longitude':float(longitude)})
             return JsonResponse({'ok':True,'lastLocationAt':run.last_location_at.isoformat(),'etaAt':run.eta_at.isoformat() if run.eta_at else None})
+        if action=='run-status':
+            run=DeliveryRun.objects.filter(company=request.company,pk=body.get('runId')).first()
+            if not run:return JsonResponse({'detail':'Delivery run not found.'},status=404)
+            status=str(body.get('status','')).strip()
+            allowed={choice for choice,_ in DeliveryRun.Status.choices}
+            if status not in allowed:return JsonResponse({'detail':'Invalid delivery run status.'},status=400)
+            run.status=status; run.save(update_fields=['status'])
+            audit(request,'status','DeliveryRun',run.id,f'Updated {run.run_no} to {status}')
+            return JsonResponse({'ok':True,'status':run.status})
         if action=='tracking-link':
             run=DeliveryRun.objects.filter(company=request.company,pk=body.get('runId')).first()
             if not run:return JsonResponse({'detail':'Delivery run not found.'},status=404)
@@ -1645,10 +1658,14 @@ def delivery(request):
         if not stop:return JsonResponse({'detail':'Delivery stop not found.'},status=404)
         if action=='deliver':
             supplied=str(body.get('otp','')).strip()
-            if supplied and stop.delivery_otp and supplied != stop.delivery_otp:return JsonResponse({'detail':'Delivery OTP is invalid.'},status=400)
-            otp_verified=bool(body.get('otpVerified')) or bool(supplied and supplied == stop.delivery_otp)
+            if stop.delivery_otp and supplied != stop.delivery_otp:return JsonResponse({'detail':'A valid delivery OTP is required.'},status=400)
+            otp_verified=bool(stop.delivery_otp and supplied == stop.delivery_otp) or bool(body.get('otpVerified') and not stop.delivery_otp)
+            receiver_name=str(body.get('receiverName','')).strip()[:120]
+            signature_data=str(body.get('signature','')).strip()[:5000]
+            photo_url=str(body.get('photoUrl','')).strip()[:200]
+            if not receiver_name or not (signature_data or photo_url):return JsonResponse({'detail':'Receiver name and signature or photo proof are required.'},status=400)
             stop.status=DeliveryStop.Status.DELIVERED;stop.delivered_at=timezone.now();stop.save(update_fields=['status','delivered_at'])
-            DeliveryProof.objects.update_or_create(stop=stop,defaults={'otp_verified':otp_verified,'receiver_name':str(body.get('receiverName',''))[:120],'photo_url':str(body.get('photoUrl',''))[:200],'signature_data':str(body.get('signature',''))[:5000],'note':str(body.get('note',''))[:240]})
+            DeliveryProof.objects.update_or_create(stop=stop,defaults={'otp_verified':otp_verified,'receiver_name':receiver_name,'photo_url':photo_url,'signature_data':signature_data,'note':str(body.get('note',''))[:240]})
         elif action=='fail': stop.status=DeliveryStop.Status.FAILED;stop.failure_reason=str(body.get('reason','Unable to deliver'))[:240];stop.save(update_fields=['status','failure_reason'])
         return JsonResponse({'ok':True,'status':stop.status})
     runs=DeliveryRun.objects.filter(company=request.company).prefetch_related('stops__order__customer').order_by('-delivery_date','-id')[:30]
