@@ -34,7 +34,7 @@ scripts/                 Health check and PostgreSQL backup/restore scripts
 docker-compose.yml       PostgreSQL + Django + Nginx stack
 ```
 
-Important guides: [deployment](DEPLOYMENT.md), [readiness](DEPLOYMENT_READINESS.md), [testing](TESTING.md), [client handoff](CLIENT_HANDOFF.md), [features](FEATURES.md) and [project brief](PROJECT_BRIEF.md).
+Canonical project documents: [growth and product summary](GROWTH.md) and [validation and operations guide](VALIDATION.md).
 
 ## Requirements
 
@@ -227,6 +227,8 @@ EXPO_PUBLIC_API_URL=http://YOUR-LAN-IP:8000/api npm start
 Dealer demo access is `dealer@setustock.demo / 1234`. Production mobile release also requires HTTPS, EAS builds, secure secrets, push notifications, crash monitoring, privacy disclosures and device testing.
 
 ## Testing
+
+The complete validation, CI, deployment-readiness, and client-acceptance workflow is maintained in [VALIDATION.md](VALIDATION.md).
 
 Backend:
 
