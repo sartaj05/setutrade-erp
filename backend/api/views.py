@@ -4,6 +4,8 @@ import io
 import json
 import os
 import re
+import zipfile
+import xml.etree.ElementTree as ET
 import urllib.error
 import urllib.request
 import hmac
@@ -40,7 +42,7 @@ from .models import (
     Quotation, QuotationItem, ReorderSuggestion, ProcurementRecommendation, ReturnItem, ReturnOrder, SalesTarget,
     SalesVisit, StockAdjustment, StockBalance, StockTransfer, StockTransferItem,
     DemandForecast, BackgroundJob, WebhookReplay,
-    PaymentAllocation, PaymentTransaction, PaymentLink,
+    PaymentAllocation, PaymentTransaction, PaymentLink, ImportBatch, OnboardingFeedback,
     Supplier, SupplierLedgerEntry, SupplierPayment, TaxNote, Warehouse, WhatsAppMessage,
     WhatsAppOrderDraft,
     Profile,
@@ -1241,6 +1243,478 @@ def client_workflow(request):
     return JsonResponse({'steps': steps, 'context': {'customer': (order or quote).customer.name if (order or quote) else None, 'order': order.order_no if order else None, 'invoice': invoice.invoice_no if invoice else None, 'payment': float(payment.amount) if payment else 0, 'delivery': delivery_status}})
 
 
+IMPORT_SCHEMAS = {
+    'products': {
+        'label': 'Products',
+        'fields': [
+            ('sku', 'SKU', True, ['sku', 'product code', 'item code']),
+            ('name', 'Name', True, ['name', 'product name', 'item name']),
+            ('category', 'Category', False, ['category', 'product category']),
+            ('unit', 'Unit', False, ['unit', 'uom', 'primary uom']),
+            ('purchase_price', 'Purchase price', False, ['purchase price', 'buy price', 'cost']),
+            ('sell_price', 'Sell price', False, ['sell price', 'sale price', 'dealer price']),
+            ('reorder_level', 'Reorder level', False, ['reorder', 'reorder level', 'minimum stock']),
+            ('hsn_code', 'HSN', False, ['hsn', 'hsn code']),
+            ('gst_rate', 'GST rate', False, ['gst', 'gst rate', 'tax rate']),
+            ('barcode', 'Barcode', False, ['barcode', 'ean', 'upc']),
+        ],
+    },
+    'customers': {
+        'label': 'Customers',
+        'fields': [
+            ('code', 'Code', True, ['code', 'customer code', 'customer id']),
+            ('name', 'Name', True, ['name', 'customer name']),
+            ('city', 'City', False, ['city', 'town']),
+            ('state', 'State', False, ['state', 'state name']),
+            ('address', 'Address', False, ['address']),
+            ('phone', 'Phone', False, ['phone', 'mobile', 'mobile number']),
+            ('email', 'Email', False, ['email', 'email address']),
+            ('gstin', 'GSTIN', False, ['gstin', 'gst number', 'tax id']),
+            ('credit_limit', 'Credit limit', False, ['credit limit', 'credit']),
+        ],
+    },
+    'suppliers': {
+        'label': 'Suppliers',
+        'fields': [
+            ('code', 'Code', True, ['code', 'supplier code', 'supplier id']),
+            ('name', 'Name', True, ['name', 'supplier name']),
+            ('city', 'City', False, ['city', 'town']),
+            ('state', 'State', False, ['state', 'state name']),
+            ('address', 'Address', False, ['address']),
+            ('phone', 'Phone', False, ['phone', 'mobile', 'mobile number']),
+            ('email', 'Email', False, ['email', 'email address']),
+            ('gstin', 'GSTIN', False, ['gstin', 'gst number', 'tax id']),
+        ],
+    },
+    'opening-stock': {
+        'label': 'Opening stock',
+        'fields': [
+            ('warehouse', 'Warehouse code', True, ['warehouse', 'warehouse code', 'warehouse id']),
+            ('sku', 'SKU', True, ['sku', 'product code', 'item code']),
+            ('quantity', 'Quantity', True, ['quantity', 'opening quantity', 'stock']),
+            ('reserved', 'Reserved quantity', False, ['reserved', 'reserved quantity']),
+        ],
+    },
+    'opening-balances': {
+        'label': 'Opening balances',
+        'fields': [
+            ('customer_code', 'Customer code', True, ['customer code', 'customer', 'customer id', 'code']),
+            ('amount', 'Amount', True, ['amount', 'balance', 'opening balance']),
+            ('entry_type', 'Entry type', True, ['entry type', 'type']),
+            ('reference', 'Reference', True, ['reference', 'invoice', 'invoice number']),
+            ('entry_date', 'Entry date', False, ['entry date', 'date']),
+            ('due_date', 'Due date', False, ['due date', 'due']),
+            ('note', 'Note', False, ['note', 'notes', 'description']),
+        ],
+    },
+}
+
+
+def _import_key(value):
+    return re.sub(r'[^a-z0-9]+', '', str(value or '').strip().lower())
+
+
+def _import_mapping(resource, headers, requested=None):
+    requested = requested if isinstance(requested, dict) else {}
+    normalized = {_import_key(header): header for header in headers}
+    mapping = {}
+    for key, _label, _required, aliases in IMPORT_SCHEMAS[resource]['fields']:
+        source = requested.get(key)
+        if source in headers:
+            mapping[key] = source
+            continue
+        candidates = [key] + aliases
+        mapping[key] = next((normalized[_import_key(alias)] for alias in candidates if _import_key(alias) in normalized), '')
+    return mapping
+
+
+def _xlsx_rows(content):
+    namespace = {'main': 'http://schemas.openxmlformats.org/spreadsheetml/2006/main'}
+    with zipfile.ZipFile(io.BytesIO(content)) as archive:
+        shared = []
+        if 'xl/sharedStrings.xml' in archive.namelist():
+            shared_root = ET.fromstring(archive.read('xl/sharedStrings.xml'))
+            for item in shared_root.findall('main:si', namespace):
+                shared.append(''.join(node.text or '' for node in item.iter('{http://schemas.openxmlformats.org/spreadsheetml/2006/main}t')))
+        sheet_name = next((name for name in archive.namelist() if name.startswith('xl/worksheets/sheet') and name.endswith('.xml')), None)
+        if not sheet_name:
+            raise ValueError('The Excel workbook does not contain a worksheet.')
+        root = ET.fromstring(archive.read(sheet_name))
+        rows = []
+        for row in root.findall('.//main:row', namespace):
+            cells = {}
+            max_index = -1
+            for cell in row.findall('main:c', namespace):
+                reference = cell.attrib.get('r', '')
+                letters = re.sub(r'[^A-Z]', '', reference.upper())
+                index = 0
+                for char in letters:
+                    index = index * 26 + ord(char) - 64
+                index -= 1
+                if index < 0:
+                    continue
+                value_node = cell.find('main:v', namespace)
+                inline_node = cell.find('main:is', namespace)
+                if inline_node is not None:
+                    value = ''.join(node.text or '' for node in inline_node.iter('{http://schemas.openxmlformats.org/spreadsheetml/2006/main}t'))
+                else:
+                    value = value_node.text if value_node is not None else ''
+                    if cell.attrib.get('t') == 's' and value != '':
+                        value = shared[int(value)]
+                cells[index] = value or ''
+                max_index = max(max_index, index)
+            rows.append([cells.get(index, '') for index in range(max_index + 1)])
+    if not rows:
+        return [], []
+    headers = [str(value).strip() for value in rows[0]]
+    return headers, [dict(zip(headers, row + [''] * max(0, len(headers) - len(row)))) for row in rows[1:]]
+
+
+def _read_import_upload(upload):
+    if not upload:
+        raise ValueError('A CSV or Excel file is required.')
+    if upload.size > 10 * 1024 * 1024:
+        raise ValueError('The import file must be 10 MB or smaller.')
+    content = upload.read()
+    if str(upload.name or '').lower().endswith('.xlsx'):
+        headers, rows = _xlsx_rows(content)
+    else:
+        try:
+            text = content.decode('utf-8-sig')
+            reader = csv.DictReader(io.StringIO(text))
+            headers, rows = reader.fieldnames or [], list(reader)
+        except (UnicodeDecodeError, csv.Error, ValueError):
+            raise ValueError('Could not parse the file. Use UTF-8 CSV or XLSX format.')
+    headers = [str(header or '').strip() for header in headers]
+    if not headers or not any(headers):
+        raise ValueError('The file must contain a header row.')
+    if len(rows) > 5000:
+        raise ValueError('The import file can contain at most 5,000 data rows.')
+    return headers, [{str(key).strip(): str(value or '').strip() for key, value in row.items()} for row in rows]
+
+
+def _import_value(row, mapping, key):
+    source = mapping.get(key)
+    return str(row.get(source, '') if source else '').strip()
+
+
+def _strict_decimal(value, field, row_number, errors, required=False, maximum=None):
+    if not value:
+        if required:
+            errors.append({'row': row_number, 'field': field, 'message': f'{field} is required.'})
+        return None
+    try:
+        parsed = Decimal(value)
+    except (ArithmeticError, TypeError, ValueError):
+        errors.append({'row': row_number, 'field': field, 'message': f'{field} must be a number.'})
+        return None
+    if parsed < 0:
+        errors.append({'row': row_number, 'field': field, 'message': f'{field} cannot be negative.'})
+    if maximum is not None and parsed > maximum:
+        errors.append({'row': row_number, 'field': field, 'message': f'{field} must be {maximum} or less.'})
+    return parsed
+
+
+def _validate_import_rows(resource, rows, mapping, request):
+    errors, duplicates, prepared = [], [], []
+    schema = IMPORT_SCHEMAS[resource]
+    required_fields = {key for key, _label, required, _aliases in schema['fields'] if required}
+    for key in required_fields:
+        if not mapping.get(key):
+            errors.append({'row': 0, 'field': key, 'message': f'No source column is mapped to {key}.'})
+    seen = set()
+    for index, row in enumerate(rows, start=2):
+        values = {key: _import_value(row, mapping, key) for key, _label, _required, _aliases in schema['fields']}
+        row_errors = len(errors)
+        for key in required_fields:
+            if not values.get(key):
+                errors.append({'row': index, 'field': key, 'message': f'{key} is required.'})
+        if resource in ('products', 'customers', 'suppliers'):
+            identity = values.get('sku') or values.get('code')
+            if identity:
+                identity = identity.upper()
+                if identity in seen:
+                    errors.append({'row': index, 'field': 'identity', 'message': f'Duplicate {identity} appears more than once in this file.'})
+                seen.add(identity)
+                model = {'products': Product, 'customers': Customer, 'suppliers': Supplier}[resource]
+                if model.objects.filter(company=request.company, **({'sku': identity} if resource == 'products' else {'code': identity})).exists():
+                    duplicates.append({'row': index, 'key': identity, 'kind': 'existing', 'action': 'update'})
+            if values.get('email') and not re.match(r'^[^@\s]+@[^@\s]+\.[^@\s]+$', values['email']):
+                errors.append({'row': index, 'field': 'email', 'message': 'Email format is invalid.'})
+            if values.get('gstin') and not re.match(r'^[0-9A-Za-z]{15}$', values['gstin']):
+                errors.append({'row': index, 'field': 'gstin', 'message': 'GSTIN must contain 15 letters or numbers.'})
+        if resource == 'products':
+            _strict_decimal(values.get('purchase_price'), 'purchase_price', index, errors)
+            _strict_decimal(values.get('sell_price'), 'sell_price', index, errors)
+            _strict_decimal(values.get('reorder_level'), 'reorder_level', index, errors)
+            _strict_decimal(values.get('gst_rate'), 'gst_rate', index, errors, maximum=Decimal('100'))
+        elif resource == 'customers':
+            _strict_decimal(values.get('credit_limit'), 'credit_limit', index, errors)
+        elif resource == 'opening-stock':
+            quantity = _strict_decimal(values.get('quantity'), 'quantity', index, errors, required=True)
+            reserved = _strict_decimal(values.get('reserved'), 'reserved', index, errors)
+            if reserved is not None and quantity is not None and reserved > quantity:
+                errors.append({'row': index, 'field': 'reserved', 'message': 'Reserved quantity cannot exceed quantity.'})
+            if values.get('sku') and not _company_qs(Product, request).filter(sku=values['sku']).exists():
+                errors.append({'row': index, 'field': 'sku', 'message': f"Product {values['sku']} does not exist. Import products first."})
+            if values.get('warehouse') and not _company_qs(Warehouse, request).filter(code=values['warehouse']).exists():
+                errors.append({'row': index, 'field': 'warehouse', 'message': f"Warehouse {values['warehouse']} does not exist."})
+            key = f"{values.get('warehouse', '').upper()}|{values.get('sku', '').upper()}"
+            if key in seen:
+                errors.append({'row': index, 'field': 'identity', 'message': f'Duplicate opening-stock key {key} appears more than once.'})
+            seen.add(key)
+        elif resource == 'opening-balances':
+            amount = _strict_decimal(values.get('amount'), 'amount', index, errors, required=True)
+            if amount is not None and amount == 0:
+                errors.append({'row': index, 'field': 'amount', 'message': 'Amount must be greater than zero.'})
+            if values.get('entry_type') not in ('Invoice', 'Payment', 'Credit Note', 'Adjustment'):
+                errors.append({'row': index, 'field': 'entry_type', 'message': 'Entry type must be Invoice, Payment, Credit Note, or Adjustment.'})
+            customer = _company_qs(Customer, request).filter(code=values.get('customer_code')).first()
+            if values.get('customer_code') and not customer:
+                errors.append({'row': index, 'field': 'customer_code', 'message': f"Customer {values['customer_code']} does not exist."})
+            if customer and values.get('reference') and LedgerEntry.objects.filter(company=request.company, customer=customer, reference=values['reference']).exists():
+                duplicates.append({'row': index, 'key': values['reference'], 'kind': 'existing', 'action': 'skip'})
+            for date_field in ('entry_date', 'due_date'):
+                if values.get(date_field):
+                    try:
+                        timezone.datetime.strptime(values[date_field][:10], '%Y-%m-%d').date()
+                    except ValueError:
+                        errors.append({'row': index, 'field': date_field, 'message': 'Use YYYY-MM-DD format.'})
+        if len(errors) == row_errors:
+            prepared.append(values)
+    return errors[:200], duplicates[:200], prepared
+
+
+def _import_batch_payload(batch, include_rows=False):
+    payload = {
+        'id': batch.id, 'resource': batch.resource, 'label': IMPORT_SCHEMAS.get(batch.resource, {}).get('label', batch.resource),
+        'filename': batch.filename, 'status': batch.status, 'rows': batch.row_count, 'created': batch.created_count,
+        'updated': batch.updated_count, 'errors': batch.error_count, 'duplicates': batch.duplicate_count,
+        'headers': batch.headers, 'mapping': batch.mapping, 'validationErrors': batch.errors, 'duplicateRows': batch.duplicates,
+        'createdAt': batch.created_at.isoformat(), 'completedAt': batch.completed_at.isoformat() if batch.completed_at else None,
+    }
+    if include_rows:
+        payload['rowsData'] = json.loads(batch.raw_content or '{"headers": [], "rows": []}').get('rows', [])
+    return payload
+
+
+@csrf_exempt
+@require_POST
+@roles_allowed('OWNER', 'MANAGER')
+def import_preview(request):
+    resource = str(request.POST.get('resource', '')).strip()
+    if resource not in IMPORT_SCHEMAS:
+        return JsonResponse({'detail': 'Unsupported import resource.'}, status=400)
+    try:
+        headers, rows = _read_import_upload(request.FILES.get('file'))
+        requested = json.loads(request.POST.get('mapping') or '{}')
+        mapping = _import_mapping(resource, headers, requested)
+        errors, duplicates, _prepared = _validate_import_rows(resource, rows, mapping, request)
+    except (ValueError, json.JSONDecodeError, zipfile.BadZipFile, ET.ParseError) as exc:
+        return JsonResponse({'detail': str(exc)}, status=400)
+    batch = ImportBatch.objects.create(
+        company=request.company, uploaded_by=request.api_user, resource=resource, filename=str(request.FILES['file'].name)[:180],
+        status=ImportBatch.Status.READY if not errors else ImportBatch.Status.PREVIEW, row_count=len(rows), error_count=len(errors),
+        duplicate_count=len(duplicates), headers=headers, mapping=mapping, errors=errors, duplicates=duplicates,
+        raw_content=json.dumps({'headers': headers, 'rows': rows}),
+    )
+    audit(request, 'preview', 'ImportBatch', batch.id, f'Previewed {resource} import', {'rows': len(rows), 'errors': len(errors), 'duplicates': len(duplicates)})
+    return JsonResponse(_import_batch_payload(batch, include_rows=True), status=201)
+
+
+@require_GET
+@roles_allowed('OWNER', 'MANAGER', 'ACCOUNTANT')
+def import_batches(request):
+    batches = _company_qs(ImportBatch, request).select_related('uploaded_by')[:30]
+    return JsonResponse({'imports': [_import_batch_payload(batch) for batch in batches], 'resources': {key: {'label': value['label'], 'fields': [{'key': field[0], 'label': field[1], 'required': field[2]} for field in value['fields']]} for key, value in IMPORT_SCHEMAS.items()}})
+
+
+@require_GET
+@roles_allowed('OWNER', 'MANAGER', 'ACCOUNTANT')
+def import_batch_detail(request, pk):
+    batch = _company_qs(ImportBatch, request).filter(pk=pk).first()
+    if not batch:
+        return JsonResponse({'detail': 'Import batch not found.'}, status=404)
+    return JsonResponse(_import_batch_payload(batch, include_rows=True))
+
+
+def _set_import_fields(instance, fields):
+    for field, value in fields.items():
+        setattr(instance, field, value)
+    instance.save(update_fields=list(fields.keys()))
+
+
+@csrf_exempt
+@require_POST
+@roles_allowed('OWNER', 'MANAGER')
+def import_commit(request, pk):
+    batch = _company_qs(ImportBatch, request).filter(pk=pk).first()
+    if not batch:
+        return JsonResponse({'detail': 'Import batch not found.'}, status=404)
+    if batch.status == ImportBatch.Status.COMPLETED:
+        return JsonResponse(_import_batch_payload(batch))
+    if batch.status == ImportBatch.Status.ROLLED_BACK:
+        return JsonResponse({'detail': 'This import has already been rolled back.'}, status=400)
+    stored = json.loads(batch.raw_content or '{"rows": []}')
+    rows = stored.get('rows', [])
+    errors, duplicates, prepared = _validate_import_rows(batch.resource, rows, batch.mapping, request)
+    if errors:
+        batch.errors, batch.error_count, batch.status = errors, len(errors), ImportBatch.Status.PREVIEW
+        batch.save(update_fields=['errors', 'error_count', 'status'])
+        return JsonResponse(_import_batch_payload(batch), status=400)
+    rollback_data = []
+    created = updated = 0
+    try:
+        with transaction.atomic():
+            for values in prepared:
+                resource = batch.resource
+                if resource == 'products':
+                    key = values['sku'].upper()
+                    obj = _company_qs(Product, request).filter(sku=key).first()
+                    fields = {'sku': key, 'name': values['name'], 'category': values.get('category', ''), 'unit': values.get('unit') or 'pcs', 'purchase_price': _strict_decimal(values.get('purchase_price'), 'purchase_price', 0, [],) or Decimal('0'), 'sell_price': _strict_decimal(values.get('sell_price'), 'sell_price', 0, [],) or Decimal('0'), 'reorder_level': _strict_decimal(values.get('reorder_level'), 'reorder_level', 0, [],) or Decimal('0'), 'hsn_code': values.get('hsn_code', ''), 'gst_rate': _strict_decimal(values.get('gst_rate'), 'gst_rate', 0, [], maximum=Decimal('100')) or Decimal('18'), 'barcode': values.get('barcode') or None}
+                    if obj:
+                        old = {field: str(getattr(obj, field) or '') for field in fields if field != 'sku'}
+                        rollback_data.append({'model': 'Product', 'pk': obj.pk, 'created': False, 'old': old})
+                        _set_import_fields(obj, {field: value for field, value in fields.items() if field != 'sku'})
+                        updated += 1
+                    else:
+                        obj = Product.objects.create(company=request.company, **fields)
+                        rollback_data.append({'model': 'Product', 'pk': obj.pk, 'created': True})
+                        created += 1
+                elif resource in ('customers', 'suppliers'):
+                    model = Customer if resource == 'customers' else Supplier
+                    code = values['code'].upper()
+                    field_values = {'code': code, 'name': values['name'], 'city': values.get('city', ''), 'state': values.get('state') or request.company.state, 'address': values.get('address', ''), 'phone': values.get('phone', ''), 'email': values.get('email', ''), 'gstin': values.get('gstin', '')}
+                    if resource == 'customers':
+                        field_values['credit_limit'] = _strict_decimal(values.get('credit_limit'), 'credit_limit', 0, []) or Decimal('0')
+                    obj = _company_qs(model, request).filter(code=code).first()
+                    if obj:
+                        old = {field: str(getattr(obj, field) or '') for field in field_values if field != 'code'}
+                        rollback_data.append({'model': model.__name__, 'pk': obj.pk, 'created': False, 'old': old})
+                        _set_import_fields(obj, {field: value for field, value in field_values.items() if field != 'code'})
+                        updated += 1
+                    else:
+                        obj = model.objects.create(company=request.company, **field_values)
+                        rollback_data.append({'model': model.__name__, 'pk': obj.pk, 'created': True})
+                        created += 1
+                elif resource == 'opening-stock':
+                    product = _company_qs(Product, request).get(sku=values['sku'])
+                    warehouse = _company_qs(Warehouse, request).get(code=values['warehouse'])
+                    quantity = _strict_decimal(values['quantity'], 'quantity', 0, []) or Decimal('0')
+                    reserved = _strict_decimal(values.get('reserved'), 'reserved', 0, []) or Decimal('0')
+                    balance = StockBalance.objects.filter(warehouse=warehouse, product=product).first()
+                    if balance:
+                        rollback_data.append({'model': 'StockBalance', 'pk': balance.pk, 'created': False, 'old': {'quantity': str(balance.quantity), 'reserved': str(balance.reserved)}, 'product': product.pk, 'productStock': str(product.stock)})
+                        balance.quantity, balance.reserved = quantity, reserved
+                        balance.save(update_fields=['quantity', 'reserved'])
+                        updated += 1
+                    else:
+                        balance = StockBalance.objects.create(warehouse=warehouse, product=product, quantity=quantity, reserved=reserved)
+                        rollback_data.append({'model': 'StockBalance', 'pk': balance.pk, 'created': True, 'product': product.pk, 'productStock': str(product.stock)})
+                        created += 1
+                    product.stock = StockBalance.objects.filter(product=product).aggregate(v=Sum('quantity'))['v'] or Decimal('0')
+                    product.save(update_fields=['stock', 'updated_at'])
+                elif resource == 'opening-balances':
+                    customer = _company_qs(Customer, request).get(code=values['customer_code'])
+                    amount = _strict_decimal(values['amount'], 'amount', 0, []) or Decimal('0')
+                    entry_type = values['entry_type']
+                    entry = LedgerEntry.objects.create(company=request.company, customer=customer, entry_type=entry_type, reference=values['reference'], amount=amount, entry_date=_date(values.get('entry_date')), due_date=_date(values.get('due_date')) if values.get('due_date') else None, note=values.get('note', 'Imported opening balance'))
+                    rollback_data.append({'model': 'LedgerEntry', 'pk': entry.pk, 'created': True, 'customer': customer.pk, 'customerOutstanding': str(customer.outstanding), 'customerDueDate': customer.due_date.isoformat() if customer.due_date else None})
+                    delta = amount if entry_type in ('Invoice', 'Adjustment') else -amount
+                    customer.outstanding = max(Decimal('0'), customer.outstanding + delta)
+                    customer.due_date = entry.due_date or customer.due_date
+                    customer.save(update_fields=['outstanding', 'due_date'])
+                    created += 1
+            batch.rollback_data = rollback_data
+            batch.created_count, batch.updated_count, batch.error_count = created, updated, 0
+            batch.duplicate_count = len(duplicates)
+            batch.status = ImportBatch.Status.COMPLETED
+            batch.completed_at = timezone.now()
+            batch.save(update_fields=['rollback_data', 'created_count', 'updated_count', 'error_count', 'duplicate_count', 'status', 'completed_at'])
+    except Exception as exc:
+        batch.status = ImportBatch.Status.FAILED
+        batch.errors = [{'row': 0, 'field': 'import', 'message': str(exc)[:240]}]
+        batch.error_count = 1
+        batch.save(update_fields=['status', 'errors', 'error_count'])
+        return JsonResponse(_import_batch_payload(batch), status=400)
+    audit(request, 'commit', 'ImportBatch', batch.id, f'Committed {batch.resource} import', {'created': created, 'updated': updated})
+    return JsonResponse(_import_batch_payload(batch))
+
+
+@csrf_exempt
+@require_POST
+@roles_allowed('OWNER', 'MANAGER')
+def import_rollback(request, pk):
+    batch = _company_qs(ImportBatch, request).filter(pk=pk).first()
+    if not batch:
+        return JsonResponse({'detail': 'Import batch not found.'}, status=404)
+    if batch.status != ImportBatch.Status.COMPLETED:
+        return JsonResponse({'detail': 'Only a completed import can be rolled back.'}, status=400)
+    model_map = {'Product': Product, 'Customer': Customer, 'Supplier': Supplier, 'StockBalance': StockBalance, 'LedgerEntry': LedgerEntry}
+    try:
+        with transaction.atomic():
+            for change in reversed(batch.rollback_data or []):
+                model = model_map[change['model']]
+                scope = {'company': request.company}
+                if model is StockBalance:
+                    scope = {'warehouse__company': request.company}
+                instance = model.objects.filter(pk=change['pk'], **scope).first()
+                if change.get('created'):
+                    if instance:
+                        instance.delete()
+                    if model is StockBalance:
+                        product = _company_qs(Product, request).filter(pk=change.get('product')).first()
+                        if product:
+                            product.stock = StockBalance.objects.filter(product=product).aggregate(v=Sum('quantity'))['v'] or Decimal('0')
+                            product.save(update_fields=['stock', 'updated_at'])
+                    elif model is LedgerEntry:
+                        customer = _company_qs(Customer, request).filter(pk=change.get('customer')).first()
+                        if customer:
+                            customer.outstanding = Decimal(change.get('customerOutstanding') or '0')
+                            customer.due_date = _date(change.get('customerDueDate')) if change.get('customerDueDate') else None
+                            customer.save(update_fields=['outstanding', 'due_date'])
+                    continue
+                if instance:
+                    _set_import_fields(instance, change.get('old', {}))
+                if model is StockBalance:
+                    product = _company_qs(Product, request).filter(pk=change.get('product')).first()
+                    if product:
+                        product.stock = StockBalance.objects.filter(product=product).aggregate(v=Sum('quantity'))['v'] or Decimal('0')
+                        product.save(update_fields=['stock', 'updated_at'])
+                elif model is LedgerEntry:
+                    customer = _company_qs(Customer, request).filter(pk=change.get('customer')).first()
+                    if customer:
+                        customer.outstanding = Decimal(change.get('customerOutstanding') or '0')
+                        customer.due_date = _date(change.get('customerDueDate')) if change.get('customerDueDate') else None
+                        customer.save(update_fields=['outstanding', 'due_date'])
+            batch.status = ImportBatch.Status.ROLLED_BACK
+            batch.rolled_back_at = timezone.now()
+            batch.save(update_fields=['status', 'rolled_back_at'])
+    except Exception as exc:
+        return JsonResponse({'detail': f'Rollback failed: {str(exc)[:220]}'}, status=409)
+    audit(request, 'rollback', 'ImportBatch', batch.id, f'Rolled back {batch.resource} import')
+    return JsonResponse(_import_batch_payload(batch))
+
+
+@csrf_exempt
+@require_http_methods(['GET', 'POST'])
+@roles_allowed('OWNER', 'MANAGER', 'SALES', 'WAREHOUSE', 'ACCOUNTANT')
+def onboarding_feedback(request):
+    if request.method == 'POST':
+        body = _json_body(request) or {}
+        try:
+            rating = int(body.get('rating', 0))
+        except (TypeError, ValueError):
+            rating = 0
+        if rating < 1 or rating > 5:
+            return JsonResponse({'detail': 'Rating must be between 1 and 5.'}, status=400)
+        feedback = OnboardingFeedback.objects.create(company=request.company, submitted_by=request.api_user, rating=rating, workflow=str(body.get('workflow') or 'Overall onboarding')[:80], worked_well=str(body.get('workedWell') or '')[:5000], blockers=str(body.get('blockers') or '')[:5000], requested_features=str(body.get('requestedFeatures') or '')[:5000], would_recommend=body.get('wouldRecommend') if isinstance(body.get('wouldRecommend'), bool) else None)
+        audit(request, 'create', 'OnboardingFeedback', feedback.id, 'Submitted client onboarding feedback', {'rating': rating, 'workflow': feedback.workflow})
+        return JsonResponse({'feedback': {'id': feedback.id, 'rating': feedback.rating, 'workflow': feedback.workflow}}, status=201)
+    rows = _company_qs(OnboardingFeedback, request).select_related('submitted_by')[:20]
+    return JsonResponse({'feedback': [{'id': row.id, 'rating': row.rating, 'workflow': row.workflow, 'workedWell': row.worked_well, 'blockers': row.blockers, 'requestedFeatures': row.requested_features, 'wouldRecommend': row.would_recommend, 'submittedBy': row.submitted_by.get_full_name() if row.submitted_by else '', 'createdAt': row.created_at.isoformat()} for row in rows]})
+
+
 @require_GET
 @roles_allowed('OWNER','MANAGER','ACCOUNTANT')
 def export_csv(request, resource):
@@ -1435,7 +1909,7 @@ def onboarding(request):
         for code, name, city in [('DEMO-C-001', 'Demo Retailer Noida', 'Noida'), ('DEMO-C-002', 'Demo Retailer Gurugram', 'Gurugram')]:
             Customer.objects.get_or_create(company=company, code=code, defaults={'name': name, 'city': city, 'state': company.state or 'Delhi', 'credit_limit': Decimal('100000')})
         audit(request, 'seed_demo', 'Company', company.id, 'Seeded client demo workspace', {'branch': branch.code, 'warehouse': warehouse.code})
-    return JsonResponse({'company': {'name': company.name, 'gstin': company.gstin, 'state': company.state, 'address': company.address, 'phone': company.phone, 'email': company.email}, 'checklist': {'companyProfile': bool(company.name and company.state), 'gstin': bool(company.gstin), 'branches': company.branches.filter(is_active=True).count(), 'warehouses': company.warehouses.filter(is_active=True).count(), 'products': company.products.filter(is_active=True).count(), 'customers': company.customers.filter(is_active=True).count(), 'openingBalances': company.ledger_entries.exists()}})
+    return JsonResponse({'company': {'name': company.name, 'gstin': company.gstin, 'state': company.state, 'address': company.address, 'phone': company.phone, 'email': company.email}, 'checklist': {'companyProfile': bool(company.name and company.state), 'gstin': bool(company.gstin), 'branches': company.branches.filter(is_active=True).count(), 'warehouses': company.warehouses.filter(is_active=True).count(), 'users': company.profiles.filter(user__is_active=True).count(), 'products': company.products.filter(is_active=True).count(), 'customers': company.customers.filter(is_active=True).count(), 'suppliers': company.suppliers.count(), 'openingBalances': company.ledger_entries.exists()}})
 
 
 @csrf_exempt

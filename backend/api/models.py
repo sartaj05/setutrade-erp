@@ -1847,3 +1847,50 @@ class AlertPolicy(models.Model):
     channels=models.JSONField(default=list,blank=True)
     is_active=models.BooleanField(default=True)
     created_at=models.DateTimeField(auto_now_add=True)
+
+# --- Client onboarding / staged data migration ---
+class ImportBatch(models.Model):
+    class Status(models.TextChoices):
+        PREVIEW = 'Preview', 'Preview'
+        READY = 'Ready', 'Ready to import'
+        COMPLETED = 'Completed', 'Completed'
+        FAILED = 'Failed', 'Failed'
+        ROLLED_BACK = 'Rolled Back', 'Rolled back'
+
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='import_batches')
+    uploaded_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True,related_name='import_batches')
+    resource=models.CharField(max_length=40)
+    filename=models.CharField(max_length=180)
+    status=models.CharField(max_length=30,choices=Status.choices,default=Status.PREVIEW)
+    row_count=models.PositiveIntegerField(default=0)
+    created_count=models.PositiveIntegerField(default=0)
+    updated_count=models.PositiveIntegerField(default=0)
+    error_count=models.PositiveIntegerField(default=0)
+    duplicate_count=models.PositiveIntegerField(default=0)
+    headers=models.JSONField(default=list,blank=True)
+    mapping=models.JSONField(default=dict,blank=True)
+    errors=models.JSONField(default=list,blank=True)
+    duplicates=models.JSONField(default=list,blank=True)
+    raw_content=models.TextField(blank=True)
+    rollback_data=models.JSONField(default=list,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+    completed_at=models.DateTimeField(null=True,blank=True)
+    rolled_back_at=models.DateTimeField(null=True,blank=True)
+
+    class Meta:
+        ordering=['-created_at']
+
+
+class OnboardingFeedback(models.Model):
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='onboarding_feedback')
+    submitted_by=models.ForeignKey(User,on_delete=models.SET_NULL,null=True,blank=True,related_name='onboarding_feedback')
+    rating=models.PositiveSmallIntegerField(default=0)
+    workflow=models.CharField(max_length=80,default='Overall onboarding')
+    worked_well=models.TextField(blank=True)
+    blockers=models.TextField(blank=True)
+    requested_features=models.TextField(blank=True)
+    would_recommend=models.BooleanField(null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering=['-created_at']

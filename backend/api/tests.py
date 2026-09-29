@@ -7,10 +7,11 @@ from datetime import timedelta
 from decimal import Decimal
 from django.contrib.auth.models import User
 from django.contrib.auth.hashers import make_password
+from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase
 from django.utils import timezone
 from .models import (
-    Branch, Company, Customer, InventoryMovement, Order, Product, Profile,
+    Branch, Company, Customer, ImportBatch, InventoryMovement, LedgerEntry, OnboardingFeedback, Order, Product, Profile,
     PurchaseOrder, StockBalance, Supplier, Warehouse, SupplierPortalAccess, AutomationRule, ExternalChannel, DistributionNetwork, WarehouseBin, DeliveryStop, DeliveryProof, ProcurementRecommendation, SubscriptionPlan, CompanySubscription, SubscriptionPayment, WhatsAppMessage, WhatsAppOrderDraft,
 )
 
@@ -436,6 +437,62 @@ class ProductionApiTests(TestCase):
         self.assertEqual(checklist.json()['company']['state'], 'Haryana')
         self.assertGreaterEqual(checklist.json()['checklist']['branches'], 1)
         self.assertGreaterEqual(checklist.json()['checklist']['warehouses'], 1)
+
+    def test_staged_import_preview_commit_and_rollback(self):
+        product_csv = b'SKU,Name,Category,Purchase Price,Sell Price,GST Rate\nSKU-2,Second Switch,Switchgear,75,125,18\n'
+        preview = self.client.post('/api/imports/preview/', data={
+            'resource': 'products', 'file': SimpleUploadedFile('products.csv', product_csv, content_type='text/csv'),
+        }, HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        self.assertEqual(preview.status_code, 201, preview.content)
+        self.assertEqual(preview.json()['status'], 'Ready')
+        batch_id = preview.json()['id']
+        committed = self.client.post(f'/api/imports/{batch_id}/commit/', HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        self.assertEqual(committed.status_code, 200, committed.content)
+        self.assertEqual(committed.json()['created'], 1)
+        self.assertTrue(Product.objects.filter(company=self.company, sku='SKU-2', name='Second Switch').exists())
+
+        stock_csv = b'Warehouse code,SKU,Quantity,Reserved quantity\nWH1,SKU-1,64,4\n'
+        stock_preview = self.client.post('/api/imports/preview/', data={
+            'resource': 'opening-stock', 'file': SimpleUploadedFile('opening-stock.csv', stock_csv, content_type='text/csv'),
+        }, HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        self.assertEqual(stock_preview.status_code, 201, stock_preview.content)
+        stock_id = stock_preview.json()['id']
+        stock_commit = self.client.post(f'/api/imports/{stock_id}/commit/', HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        self.assertEqual(stock_commit.status_code, 200, stock_commit.content)
+        balance = StockBalance.objects.get(warehouse=self.warehouse, product=self.product)
+        self.assertEqual(balance.quantity, Decimal('64.00'))
+        rolled_back = self.client.post(f'/api/imports/{stock_id}/rollback/', HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        self.assertEqual(rolled_back.status_code, 200, rolled_back.content)
+        balance.refresh_from_db()
+        self.assertEqual(balance.quantity, Decimal('50.00'))
+        self.assertEqual(rolled_back.json()['status'], 'Rolled Back')
+
+    def test_opening_balance_import_and_onboarding_feedback(self):
+        balance_csv = b'Customer code,Amount,Entry type,Reference,Entry date,Due date,Note\nC-1,12500,Invoice,OPEN-001,2026-09-01,2026-09-30,Opening receivable\n'
+        preview = self.client.post('/api/imports/preview/', data={
+            'resource': 'opening-balances', 'file': SimpleUploadedFile('opening-balances.csv', balance_csv, content_type='text/csv'),
+        }, HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        self.assertEqual(preview.status_code, 201, preview.content)
+        commit = self.client.post(f"/api/imports/{preview.json()['id']}/commit/", HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        self.assertEqual(commit.status_code, 200, commit.content)
+        self.customer.refresh_from_db()
+        self.assertEqual(self.customer.outstanding, Decimal('12500.00'))
+        self.assertTrue(LedgerEntry.objects.filter(company=self.company, reference='OPEN-001').exists())
+        rolled_back = self.client.post(f"/api/imports/{preview.json()['id']}/rollback/", HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        self.assertEqual(rolled_back.status_code, 200, rolled_back.content)
+        self.customer.refresh_from_db()
+        self.assertEqual(self.customer.outstanding, Decimal('0.00'))
+        self.assertFalse(LedgerEntry.objects.filter(company=self.company, reference='OPEN-001').exists())
+
+        feedback = self.client.post('/api/onboarding/feedback/', data=json.dumps({
+            'rating': 4, 'workflow': 'Data import', 'workedWell': 'Preview was clear.',
+            'blockers': 'Need supplier opening balances.', 'requestedFeatures': 'More Excel templates.', 'wouldRecommend': True,
+        }), content_type='application/json', HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        self.assertEqual(feedback.status_code, 201, feedback.content)
+        self.assertTrue(OnboardingFeedback.objects.filter(company=self.company, rating=4).exists())
+        feedback_list = self.client.get('/api/onboarding/feedback/', HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        self.assertEqual(feedback_list.status_code, 200, feedback_list.content)
+        self.assertEqual(feedback_list.json()['feedback'][0]['workflow'], 'Data import')
 
     def test_order_to_cash_acceptance_workflow(self):
         """Golden client-demo path: quote through delivery proof and ledger."""
