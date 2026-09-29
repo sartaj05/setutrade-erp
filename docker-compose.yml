@@ -16,6 +16,7 @@ services:
     build: ./backend
     environment:
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-local-docker-only-secret-change-me}
+      RELEASE_VERSION: ${RELEASE_VERSION:-local-compose}
       DJANGO_DEBUG: "false"
       DJANGO_ALLOWED_HOSTS: localhost,127.0.0.1,backend
       CORS_ALLOWED_ORIGINS: http://localhost:8080
@@ -35,7 +36,7 @@ services:
     volumes:
       - setustock_media:/app/media
     healthcheck:
-      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/health/ | grep -q 'setustock-api'"]
+      test: ["CMD-SHELL", "curl -fsS http://localhost:8000/api/ready/ | grep -q 'true'"]
       interval: 15s
       timeout: 5s
       retries: 5

@@ -20,6 +20,7 @@ jobs:
         working-directory: backend
         run: |
           python manage.py check
+          python manage.py check --deploy
           python manage.py makemigrations --check --dry-run
           python manage.py migrate --noinput
           python manage.py seed_demo

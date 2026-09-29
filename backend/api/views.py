@@ -143,6 +143,31 @@ def health(request):
     return JsonResponse({'ok': database == 'ok', 'service': 'setustock-api', 'version': os.getenv('RELEASE_VERSION', 'dev'), 'database': database, 'migrations': migrations if database == 'ok' else None, 'time': timezone.now().isoformat()}, status=status)
 
 
+@require_GET
+def readiness(request):
+    """Kubernetes/load-balancer readiness probe with explicit dependency state."""
+    checks = {'database': False, 'migrations': False}
+    migration_count = None
+    try:
+        with connection.cursor() as cursor:
+            cursor.execute('SELECT 1')
+            checks['database'] = cursor.fetchone() == (1,)
+            cursor.execute('SELECT COUNT(*) FROM django_migrations')
+            migration_count = cursor.fetchone()[0]
+            checks['migrations'] = migration_count > 0
+    except Exception:
+        logger.exception('readiness_check_failed')
+    ready = all(checks.values())
+    return JsonResponse({
+        'ready': ready,
+        'service': 'setustock-api',
+        'version': os.getenv('RELEASE_VERSION', 'dev'),
+        'checks': checks,
+        'migrationCount': migration_count,
+        'time': timezone.now().isoformat(),
+    }, status=200 if ready else 503)
+
+
 @csrf_exempt
 @require_POST
 def login_view(request):

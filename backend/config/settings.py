@@ -44,7 +44,11 @@ WSGI_APPLICATION = 'config.wsgi.application'
 
 DB_ENGINE = os.getenv('DB_ENGINE', 'django.db.backends.sqlite3')
 if DB_ENGINE == 'django.db.backends.sqlite3':
-    DATABASES = {'default': {'ENGINE': DB_ENGINE, 'NAME': BASE_DIR / 'db.sqlite3'}}
+    DATABASES = {'default': {
+        'ENGINE': DB_ENGINE,
+        'NAME': BASE_DIR / 'db.sqlite3',
+        'CONN_MAX_AGE': int(os.getenv('DB_CONN_MAX_AGE', '0')),
+    }}
 else:
     DATABASES = {'default': {
         'ENGINE': DB_ENGINE,
@@ -116,3 +120,35 @@ EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
 EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'true').lower() == 'true'
 EMAIL_TIMEOUT = int(os.getenv('EMAIL_TIMEOUT', '8'))
+
+# Keep application logs useful in both containers and managed log collectors.
+# Secrets and request bodies are never logged by the API middleware.
+LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO' if not DEBUG else 'WARNING').upper()
+LOGGING = {
+    'version': 1,
+    'disable_existing_loggers': False,
+    'formatters': {
+        'application': {
+            'format': '{asctime} {levelname} {name} request_id={request_id} {message}',
+            'style': '{',
+        },
+        'standard': {
+            'format': '{asctime} {levelname} {name} {message}',
+            'style': '{',
+        },
+    },
+    'filters': {
+        'request_id': {'()': 'api.logging_filters.RequestIdFilter'},
+    },
+    'handlers': {
+        'console': {
+            'class': 'logging.StreamHandler',
+            'formatter': 'application',
+            'filters': ['request_id'],
+        },
+    },
+    'loggers': {
+        'setustock': {'handlers': ['console'], 'level': LOG_LEVEL, 'propagate': False},
+        'django.request': {'handlers': ['console'], 'level': 'ERROR', 'propagate': False},
+    },
+}

@@ -96,10 +96,10 @@ Scripts are in `scripts/`:
 ```bash
 ./scripts/backup_postgres.sh
 ./scripts/restore_postgres.sh backups/<file>.dump
-./scripts/healthcheck.sh http://localhost:8000/api/health/
+./scripts/healthcheck.sh http://localhost:8000/api/ready/
 ```
 
-Set `DATABASE_URL`-style variables as described inside the scripts or use the Docker defaults. Test restores regularly.
+Set `DATABASE_URL`-style variables as described inside the scripts or use the Docker defaults. Backups include SHA-256 sidecar files and can be pruned with `BACKUP_RETENTION_DAYS`; test restores regularly.
 
 ## Uploaded files
 
@@ -117,7 +117,7 @@ The WhatsApp adapter can send outbound text when valid Meta credentials are conf
 
 ## Monitoring
 
-- Poll `/api/health/` from an external uptime service.
+- Poll `/api/health/` for liveness and `/api/ready/` for dependency readiness from an external uptime service.
 - Centralise Gunicorn/application logs.
 - Add an error/APM product suitable for the client's infrastructure.
 - Alert on failed backups, database disk growth and elevated 5xx rates.

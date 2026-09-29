@@ -3,6 +3,7 @@ from . import views, expansion_views, strategic_views, nextgen_views
 
 urlpatterns = [
     path('health/', views.health),
+    path('ready/', views.readiness),
     path('portal/login/', views.portal_login),
     path('portal/catalog/', views.portal_catalog),
     path('portal/orders/', views.portal_place_order),
