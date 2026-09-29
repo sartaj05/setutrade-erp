@@ -2,6 +2,7 @@
 frontend/node_modules/
 frontend/dist/
 frontend/.env
+frontend/package-lock.json
 
 # backend
 backend/.venv/
@@ -18,3 +19,4 @@ backend/media/
 backups/
 .env
 *.sqlite3-journal
+info.new
