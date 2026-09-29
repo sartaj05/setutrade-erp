@@ -1,6 +1,6 @@
 # SetuStock Mobile (Android / iOS)
 
-React Native mobile client for SetuStock field sales, order/customer lookup, delivery visibility, offline queue sync and the business assistant.
+React Native mobile client for SetuStock field sales, dealer ordering, order/customer lookup, delivery visibility, offline queue sync and the business assistant.
 
 ## Stack
 
@@ -19,6 +19,8 @@ EXPO_PUBLIC_API_URL=http://YOUR-LAN-IP:8000/api npm start
 ```
 
 For a phone, `127.0.0.1` points at the phone itself. Use the development machine's LAN IP or a deployed HTTPS API.
+
+The first screen supports both staff sign-in and the dealer workspace. Dealer demo access is `dealer@setustock.demo` / `1234`; it uses the portal API to show customer-specific prices, credit, catalogue, orders and invoices.
 
 ## Production checklist
 
