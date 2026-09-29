@@ -882,6 +882,26 @@ class SubscriptionInvoice(models.Model):
     payment_reference=models.CharField(max_length=120,blank=True)
     created_at=models.DateTimeField(auto_now_add=True)
 
+class SubscriptionPayment(models.Model):
+    class Status(models.TextChoices):
+        CREATED='Created','Created'; PENDING='Pending','Pending'; PAID='Paid','Paid'; FAILED='Failed','Failed'; REFUNDED='Refunded','Refunded'
+    company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='subscription_payments')
+    subscription=models.ForeignKey(CompanySubscription,on_delete=models.CASCADE,related_name='payments')
+    target_plan=models.ForeignKey(SubscriptionPlan,on_delete=models.PROTECT,related_name='subscription_payments')
+    invoice=models.ForeignKey(SubscriptionInvoice,on_delete=models.SET_NULL,null=True,blank=True,related_name='payments')
+    provider=models.CharField(max_length=30,default='RAZORPAY')
+    external_order_id=models.CharField(max_length=120)
+    external_payment_id=models.CharField(max_length=120,blank=True)
+    amount=models.DecimalField(max_digits=10,decimal_places=2)
+    currency=models.CharField(max_length=8,default='INR')
+    status=models.CharField(max_length=20,choices=Status.choices,default=Status.CREATED)
+    signature=models.CharField(max_length=256,blank=True)
+    payload=models.JSONField(default=dict,blank=True)
+    paid_at=models.DateTimeField(null=True,blank=True)
+    created_at=models.DateTimeField(auto_now_add=True); updated_at=models.DateTimeField(auto_now=True)
+    class Meta:
+        constraints=[models.UniqueConstraint(fields=['company','provider','external_order_id'],name='unique_company_subscription_order')]
+
 
 class DemandForecast(models.Model):
     company=models.ForeignKey(Company,on_delete=models.CASCADE,related_name='demand_forecasts')

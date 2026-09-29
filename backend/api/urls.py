@@ -67,6 +67,7 @@ urlpatterns = [
     path('accounting/', views.accounting),
     path('sync/offline/', views.offline_sync),
     path('subscription/', views.subscription_billing),
+    path('subscription/webhook/<str:provider>/', views.subscription_webhook),
     path('forecasting/', views.forecasting),
     path('assistant/', views.ai_assistant),
     path('voice-ordering/', views.voice_ordering),

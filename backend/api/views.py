@@ -1,4 +1,5 @@
 import csv
+import base64
 import io
 import json
 import os
@@ -32,7 +33,7 @@ from .auth import (
     revoke_request_session, roles_allowed, subscription_payload, usage_limit_response, normalize_plan_code, PLAN_FEATURES, PLAN_LABELS,
 )
 from .models import (
-    AccountingConnection, AccountingExportJob, ApprovalPolicy, AssistantMessage, AssistantThread, CompanySubscription, OfflineSyncReceipt, SubscriptionInvoice, SubscriptionPlan, ApprovalRequest, Attachment, AuditLog, PurchaseInvoiceCapture, BarcodeScanLog, Branch, Company, Customer, CustomerPortalAccess, CustomerPortalOrder, DeliveryProof, DeliveryRun, DeliveryStop, GoodsReceipt,
+    AccountingConnection, AccountingExportJob, ApprovalPolicy, AssistantMessage, AssistantThread, CompanySubscription, OfflineSyncReceipt, SubscriptionInvoice, SubscriptionPayment, SubscriptionPlan, ApprovalRequest, Attachment, AuditLog, PurchaseInvoiceCapture, BarcodeScanLog, Branch, Company, Customer, CustomerPortalAccess, CustomerPortalOrder, DeliveryProof, DeliveryRun, DeliveryStop, GoodsReceipt,
     GoodsReceiptItem, InventoryLot, InventoryMovement, Invoice, LedgerEntry, Notification, Order,
     OrderItem, Payment, PriceList, PriceRule, Product, PurchaseItem, PurchaseOrder,
     Quotation, QuotationItem, ReorderSuggestion, ReturnItem, ReturnOrder, SalesTarget,
@@ -1712,13 +1713,20 @@ def subscription_billing(request):
     if not sub: sub=CompanySubscription.objects.create(company=request.company,plan=plans[1],status=CompanySubscription.Status.TRIAL,started_at=timezone.localdate(),current_period_end=timezone.localdate()+timedelta(days=14),trial_end=timezone.localdate()+timedelta(days=14))
     if request.method=='POST':
         body=_json_body(request) or {}; action=body.get('action','change-plan')
-        if action=='change-plan':
+        if action in ('change-plan','create-checkout'):
             plan=SubscriptionPlan.objects.filter(code=body.get('planCode'),is_active=True).first()
             if not plan:return JsonResponse({'detail':'Plan not found.'},status=404)
-            sub.plan=plan;sub.status=CompanySubscription.Status.ACTIVE;sub.current_period_end=timezone.localdate()+timedelta(days=30);sub.save(update_fields=['plan','status','current_period_end','updated_at'])
+            if plan.monthly_price <= 0:
+                sub.plan=plan;sub.status=CompanySubscription.Status.ACTIVE;sub.current_period_end=timezone.localdate()+timedelta(days=365);sub.trial_end=None;sub.save(update_fields=['plan','status','current_period_end','trial_end','updated_at'])
+                audit(request,'change_plan','CompanySubscription',sub.id,f'Changed subscription to {plan.name}',{'plan':plan.code,'billing':'free'})
+                return JsonResponse({'ok':True,'status':sub.status,'plan':plan.code,'checkout':None})
+            provider=str(body.get('provider') or os.getenv('BILLING_PROVIDER','RAZORPAY')).upper()
+            receipt=_next_no('SUBORD')
+            provider_order_id,configured=_create_billing_provider_order(provider,receipt,plan.monthly_price)
             inv=SubscriptionInvoice.objects.create(company=request.company,subscription=sub,invoice_no=_next_no('SUB'),amount=plan.monthly_price,tax=plan.monthly_price*Decimal('0.18'),due_date=timezone.localdate()+timedelta(days=7))
-            audit(request,'change_plan','CompanySubscription',sub.id,f'Changed subscription to {plan.name}',{'plan':plan.code,'invoice':inv.invoice_no})
-            return JsonResponse({'ok':True,'invoiceNo':inv.invoice_no,'status':sub.status})
+            payment=SubscriptionPayment.objects.create(company=request.company,subscription=sub,target_plan=plan,invoice=inv,provider=provider,external_order_id=provider_order_id,amount=plan.monthly_price,currency='INR',status=SubscriptionPayment.Status.PENDING,payload={'receipt':receipt,'providerConfigured':configured})
+            audit(request,'checkout_created','SubscriptionPayment',payment.id,f'Created {plan.name} checkout',{'provider':provider,'orderId':provider_order_id,'invoice':inv.invoice_no})
+            return JsonResponse({'ok':True,'status':payment.status,'invoiceNo':inv.invoice_no,'paymentId':payment.id,'checkout':{'provider':provider,'orderId':provider_order_id,'amount':float(payment.amount),'currency':payment.currency,'providerConfigured':configured,'keyId':os.getenv('RAZORPAY_KEY_ID','') if provider=='RAZORPAY' else '', 'message':'Complete payment with the configured provider; subscription activates after webhook confirmation.'}},status=201)
         if action=='cancel': sub.cancel_at_period_end=True;sub.save(update_fields=['cancel_at_period_end','updated_at']);audit(request,'cancel_plan','CompanySubscription',sub.id,'Scheduled subscription cancellation');return JsonResponse({'ok':True})
         if action=='resume': sub.cancel_at_period_end=False;sub.save(update_fields=['cancel_at_period_end','updated_at']);audit(request,'resume_plan','CompanySubscription',sub.id,'Resumed subscription');return JsonResponse({'ok':True})
         if action=='update-plan':
@@ -1730,7 +1738,55 @@ def subscription_billing(request):
             plan.save();audit(request,'update_plan','SubscriptionPlan',plan.id,f'Updated {plan.name} plan limits');return JsonResponse({'ok':True,'plan':plan.code})
     invoices=SubscriptionInvoice.objects.filter(company=request.company).order_by('-created_at')[:20]
     current=subscription_payload(request.company)
-    return JsonResponse({'subscription':{**current,'plan':sub.plan.code,'planName':PLAN_LABELS[normalize_plan_code(sub.plan.code)],'cancelAtPeriodEnd':sub.cancel_at_period_end},'usage':current['usage'],'limits':current['limits'],'plans':[{'code':p.code,'publicCode':normalize_plan_code(p.code),'name':PLAN_LABELS[normalize_plan_code(p.code)],'monthly':float(p.monthly_price),'annual':float(p.annual_price),'userLimit':p.user_limit,'productLimit':p.product_limit,'branchLimit':p.branch_limit,'warehouseLimit':p.warehouse_limit,'orderLimit':p.order_limit,'limits':{'users':p.user_limit,'products':p.product_limit,'branches':p.branch_limit,'warehouses':p.warehouse_limit,'orders':p.order_limit},'features':p.features,'featureAccess':PLAN_FEATURES[normalize_plan_code(p.code)]} for p in plans],'invoices':[{'invoiceNo':x.invoice_no,'amount':float(x.amount+x.tax),'status':x.status,'dueDate':x.due_date.isoformat()} for x in invoices]})
+    return JsonResponse({'subscription':{**current,'plan':sub.plan.code,'planName':PLAN_LABELS[normalize_plan_code(sub.plan.code)],'cancelAtPeriodEnd':sub.cancel_at_period_end},'usage':current['usage'],'limits':current['limits'],'plans':[{'code':p.code,'publicCode':normalize_plan_code(p.code),'name':PLAN_LABELS[normalize_plan_code(p.code)],'monthly':float(p.monthly_price),'annual':float(p.annual_price),'userLimit':p.user_limit,'productLimit':p.product_limit,'branchLimit':p.branch_limit,'warehouseLimit':p.warehouse_limit,'orderLimit':p.order_limit,'limits':{'users':p.user_limit,'products':p.product_limit,'branches':p.branch_limit,'warehouses':p.warehouse_limit,'orders':p.order_limit},'features':p.features,'featureAccess':PLAN_FEATURES[normalize_plan_code(p.code)]} for p in plans],'invoices':[{'invoiceNo':x.invoice_no,'amount':float(x.amount+x.tax),'status':x.status,'dueDate':x.due_date.isoformat()} for x in invoices],'payments':[{'id':x.id,'provider':x.provider,'orderId':x.external_order_id,'paymentId':x.external_payment_id,'amount':float(x.amount),'status':x.status,'createdAt':x.created_at.isoformat()} for x in SubscriptionPayment.objects.filter(company=request.company).order_by('-created_at')[:20]]})
+
+
+def _create_billing_provider_order(provider, receipt, amount):
+    """Create a provider order when credentials exist; keep local checkout safe for demos."""
+    local_order = f'{provider}-{receipt}'
+    if provider != 'RAZORPAY' or not os.getenv('RAZORPAY_KEY_ID') or not os.getenv('RAZORPAY_KEY_SECRET'):
+        return local_order, False
+    try:
+        payload=json.dumps({'amount':int(Decimal(str(amount))*100),'currency':'INR','receipt':receipt,'payment_capture':1}).encode()
+        request=urllib.request.Request('https://api.razorpay.com/v1/orders',data=payload,headers={'Content-Type':'application/json'})
+        token=base64.b64encode(f"{os.getenv('RAZORPAY_KEY_ID')}:{os.getenv('RAZORPAY_KEY_SECRET')}".encode()).decode()
+        request.add_header('Authorization',f'Basic {token}')
+        with urllib.request.urlopen(request,timeout=8) as response:
+            data=json.loads(response.read().decode())
+        return str(data.get('id') or local_order), True
+    except Exception:
+        return local_order, False
+
+
+@csrf_exempt
+@require_POST
+def subscription_webhook(request, provider):
+    provider=str(provider or '').upper()
+    if provider not in ('RAZORPAY','STRIPE'):
+        return JsonResponse({'detail':'Unsupported billing provider.'},status=404)
+    secret=getattr(settings,f'{provider}_WEBHOOK_SECRET','') or getattr(settings,'BILLING_WEBHOOK_SECRET','') or os.getenv(f'{provider}_WEBHOOK_SECRET') or os.getenv('BILLING_WEBHOOK_SECRET','')
+    signature=request.headers.get('X-Razorpay-Signature' if provider=='RAZORPAY' else 'X-Billing-Signature','')
+    if secret:
+        expected=hmac.new(secret.encode(),request.body,hashlib.sha256).hexdigest()
+        if not signature or not hmac.compare_digest(expected,signature):return JsonResponse({'detail':'Invalid billing webhook signature.'},status=401)
+    elif not settings.DEBUG:
+        return JsonResponse({'detail':'Billing webhook secret is not configured.'},status=503)
+    body=_json_body(request) or {}; nested=body.get('payload') if isinstance(body.get('payload'),dict) else body.get('data') if isinstance(body.get('data'),dict) else {}
+    order_id=str(body.get('externalOrderId') or body.get('orderId') or body.get('order_id') or nested.get('orderId') or nested.get('order_id') or '')
+    payment_id=str(body.get('paymentId') or body.get('payment_id') or nested.get('paymentId') or nested.get('payment_id') or '')
+    event=str(body.get('status') or body.get('event') or '').lower()
+    payment=SubscriptionPayment.objects.filter(provider=provider,external_order_id=order_id).select_related('subscription','target_plan','invoice').first()
+    if not payment:return JsonResponse({'detail':'Subscription payment order not found.'},status=404)
+    paid=event in ('paid','captured','success','payment.captured','invoice.paid')
+    failed=event in ('failed','failure','payment.failed','invoice.payment_failed')
+    with transaction.atomic():
+        if paid and payment.status != SubscriptionPayment.Status.PAID:
+            payment.status=SubscriptionPayment.Status.PAID;payment.external_payment_id=payment_id;payment.signature=signature;payment.payload=body;payment.paid_at=timezone.now();payment.save(update_fields=['status','external_payment_id','signature','payload','paid_at','updated_at'])
+            sub=payment.subscription;sub.plan=payment.target_plan;sub.status=CompanySubscription.Status.ACTIVE;sub.current_period_end=timezone.localdate()+timedelta(days=30);sub.trial_end=None;sub.save(update_fields=['plan','status','current_period_end','trial_end','updated_at'])
+            if payment.invoice:payment.invoice.status='Paid';payment.invoice.paid_at=timezone.now();payment.invoice.payment_reference=payment_id;payment.invoice.save(update_fields=['status','paid_at','payment_reference'])
+        elif failed and payment.status not in (SubscriptionPayment.Status.PAID,SubscriptionPayment.Status.REFUNDED):
+            payment.status=SubscriptionPayment.Status.FAILED;payment.payload=body;payment.save(update_fields=['status','payload','updated_at'])
+    return JsonResponse({'ok':True,'paymentId':payment.id,'status':payment.status})
 
 def _forecast_row(company, product, warehouse=None, horizon=30):
     today=timezone.localdate(); recent_start=today-timedelta(days=30); prev_start=today-timedelta(days=60)

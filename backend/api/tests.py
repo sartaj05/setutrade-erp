@@ -1,4 +1,6 @@
 import json
+import hashlib
+import hmac
 from datetime import timedelta
 from decimal import Decimal
 from django.contrib.auth.models import User
@@ -7,7 +9,7 @@ from django.test import Client, TestCase
 from django.utils import timezone
 from .models import (
     Branch, Company, Customer, InventoryMovement, Order, Product, Profile,
-    PurchaseOrder, StockBalance, Supplier, Warehouse, SupplierPortalAccess, AutomationRule, ExternalChannel, DistributionNetwork, WarehouseBin, DeliveryStop, SubscriptionPlan, CompanySubscription,
+    PurchaseOrder, StockBalance, Supplier, Warehouse, SupplierPortalAccess, AutomationRule, ExternalChannel, DistributionNetwork, WarehouseBin, DeliveryStop, SubscriptionPlan, CompanySubscription, SubscriptionPayment,
 )
 
 
@@ -218,6 +220,27 @@ class ProductionApiTests(TestCase):
         expired = self.client.get('/api/delivery/', HTTP_AUTHORIZATION=f'Bearer {self.token}')
         self.assertEqual(expired.status_code, 402, expired.content)
         self.assertEqual(expired.json()['status'], 'Expired')
+
+    def test_subscription_checkout_and_signed_webhook_activation(self):
+        billing = self.client.get('/api/subscription/', HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        self.assertEqual(billing.status_code, 200, billing.content)
+        checkout = self.post('/api/subscription/', {'action': 'change-plan', 'planCode': 'GROWTH', 'provider': 'RAZORPAY'})
+        self.assertEqual(checkout.status_code, 201, checkout.content)
+        payload = checkout.json()
+        self.assertEqual(payload['status'], 'Pending')
+        self.assertFalse(payload['checkout']['providerConfigured'])
+        raw = json.dumps({'externalOrderId': payload['checkout']['orderId'], 'paymentId': 'pay_test_001', 'status': 'paid'}).encode()
+        signature = hmac.new(b'test-secret', raw, hashlib.sha256).hexdigest()
+        with self.settings(BILLING_WEBHOOK_SECRET='test-secret'):
+            webhook = self.client.post('/api/subscription/webhook/razorpay/', data=raw, content_type='application/json', HTTP_X_RAZORPAY_SIGNATURE=signature)
+        self.assertEqual(webhook.status_code, 200, webhook.content)
+        subscription = CompanySubscription.objects.get(company=self.company)
+        self.assertEqual(subscription.plan.code, 'GROWTH')
+        self.assertEqual(subscription.status, 'Active')
+        self.assertEqual(SubscriptionPayment.objects.get(pk=payload['paymentId']).status, 'Paid')
+        with self.settings(BILLING_WEBHOOK_SECRET='test-secret'):
+            duplicate = self.client.post('/api/subscription/webhook/razorpay/', data=raw, content_type='application/json', HTTP_X_RAZORPAY_SIGNATURE=signature)
+        self.assertEqual(duplicate.status_code, 200, duplicate.content)
 
 
     def test_growth_v3_collections_wms_and_automation(self):

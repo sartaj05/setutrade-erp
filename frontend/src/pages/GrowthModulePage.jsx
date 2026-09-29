@@ -82,7 +82,7 @@ function SubscriptionPage({ mode, notice, setNotice }) {
   const { user, setUser } = useAuth();
   const [live, setLive] = useState(null);
   useEffect(() => { setLive(null); if (mode === 'api') getApiResource('subscription').then(setLive).catch(() => {}); }, [mode]);
-  const change = async (plan) => { try { if (mode === 'api') { await createApiResource('subscription', { action: 'change-plan', planCode: plan.code }); const next = await getApiResource('subscription'); setLive(next); if (user) setUser({ ...user, subscription: next.subscription }); } setNotice(`Plan changed to ${plan.name}. Billing invoice created.`); } catch (e) { setNotice(e.message); } };
+  const change = async (plan) => { try { if (mode === 'api') { const result = await createApiResource('subscription', { action: 'change-plan', planCode: plan.code }); if (result.checkout) { setNotice(result.checkout.providerConfigured ? `Checkout order ${result.checkout.orderId} created. Complete payment to activate ${plan.name}.` : 'Billing provider is not configured yet. Add provider credentials and webhook secret before accepting live payments.'); return; } const next = await getApiResource('subscription'); setLive(next); if (user) setUser({ ...user, subscription: next.subscription }); } setNotice(`Plan changed to ${plan.name}.`); } catch (e) { setNotice(e.message); } };
   const d = live || demoSubscription;
   const limits = d.limits || { users: 0, products: 0, branches: 0, warehouses: 0, orders: 0 };
   const currentCode = d.subscription.publicCode || d.subscription.plan || d.subscription.code;
