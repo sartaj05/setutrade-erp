@@ -20,6 +20,7 @@ SetuStock is a multi-tenant wholesale and distribution operations platform for I
 - Demand forecasting and approval-ready AI reorder drafts
 - Offline/PWA queue, dealer portal and mobile ordering
 - Operations control center, readiness checks and backup scripts
+- Guided client onboarding, CSV/XLSX migration preview, validation, rollback and feedback capture
 
 External payment, Meta WhatsApp, GST, accounting, map and storage providers require client credentials and staging validation.
 

@@ -36,6 +36,19 @@ npx expo config --type public
 
 The acceptance path covers login, role context, customer, quotation, order, stock reservation, invoice, UPI payment, delivery OTP/e-POD, ledger, and a sidebar API smoke test. The browser suite covers login, role restrictions, core navigation, and blank-page regressions.
 
+The onboarding acceptance path additionally covers company settings, branch/warehouse setup, team invitation, CSV/XLSX preview and column mapping, required-field/GST/price validation, duplicate detection, approved import commit, rollback, import history, and client feedback submission.
+
+Onboarding data endpoints are company-scoped and role-guarded:
+
+```text
+/api/onboarding/
+/api/onboarding/feedback/
+/api/imports/
+/api/imports/preview/
+/api/imports/<id>/commit/
+/api/imports/<id>/rollback/
+```
+
 ## GitHub CI gate
 
 `.github/workflows/ci.yml` is the authoritative connected-environment validation. It installs dependencies and runs Django checks, deployment checks, migration checks, migrations, demo seeding, backend tests, the Vite production build, Playwright E2E tests, and Expo configuration validation on pushes and pull requests.

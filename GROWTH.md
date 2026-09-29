@@ -16,6 +16,8 @@ Primary roles:
 
 Core platform capabilities include tenant-scoped Company -> Branch -> Warehouse -> User records, server-backed sessions, password reset, login throttling, role guards, audit logs, notifications, global search, attachments, CSV imports, a React PWA, a Django API, PostgreSQL support, Docker deployment, health/readiness checks, backup/restore scripts, and GitHub Actions CI.
 
+The client onboarding workspace now guides company setup, branch and warehouse creation, team-user invitation, staged CSV/XLSX migration, column mapping, validation, duplicate review, commit, rollback, import history, and post-onboarding feedback capture.
+
 ## Growth phases
 
 ### Growth v2: phases 1-10
@@ -103,6 +105,19 @@ The API enforces plan access and usage limits. Locked features return HTTP 402 w
 The repository does not contain vendor secrets. Live payment confirmation, WhatsApp delivery, GST/e-invoice/e-way-bill submission, accounting synchronisation, OCR for scanned documents, maps/GPS, financing submission, ONDC certification, SMTP, object storage, and monitoring require client-owned credentials and provider-specific staging validation.
 
 The generic ONDC/channel adapter normalizes orders but is not protocol certification. Payment links create intent payloads but do not prove funds without a bank/provider callback. AI features create approval-ready proposals; transactional or customer-facing actions require human approval. SetuStock is not itself a certified GST filing or accounting product.
+
+## Client-led next enhancements
+
+The next work should be driven by client feedback from the onboarding and go-live review. The recommended order is:
+
+1. Client onboarding and data migration
+2. Payment gateway and bank reconciliation
+3. GST e-invoice and e-way bill integration
+4. Production WhatsApp inbox
+5. Tally/Zoho accounting integration
+6. Custom client workflows and reports
+
+The first item is implemented in the current release. Payment, GST, WhatsApp, and accounting adapters should be selected only after the client confirms the provider, credentials, and required business workflow.
 
 ## Feature history
 
