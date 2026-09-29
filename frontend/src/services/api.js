@@ -111,6 +111,26 @@ export async function importCsv(resource, file) {
   return apiRequest(`/import/${resource}/`, { method: 'POST', body: form });
 }
 
+export async function previewImport(resource, file, mapping = {}) {
+  const form = new FormData();
+  form.append('resource', resource);
+  form.append('mapping', JSON.stringify(mapping));
+  form.append('file', file);
+  return apiRequest('/imports/preview/', { method: 'POST', body: form });
+}
+
+export function commitImport(batchId) {
+  return postApiAction(`imports/${batchId}/commit/`);
+}
+
+export function rollbackImport(batchId) {
+  return postApiAction(`imports/${batchId}/rollback/`);
+}
+
+export function submitOnboardingFeedback(payload) {
+  return createApiResource('onboarding/feedback', payload);
+}
+
 export function exportUrl(resource) {
   return `${API_BASE}/export/${resource}/`;
 }
