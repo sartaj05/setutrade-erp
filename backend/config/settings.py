@@ -1,5 +1,6 @@
 import os
 from pathlib import Path
+from urllib.parse import unquote, urlparse
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'demo-only-change-this-secret-in-production')
@@ -42,8 +43,22 @@ TEMPLATES = [{
 }]
 WSGI_APPLICATION = 'config.wsgi.application'
 
+DATABASE_URL = os.getenv('DATABASE_URL', '').strip()
 DB_ENGINE = os.getenv('DB_ENGINE', 'django.db.backends.sqlite3')
-if DB_ENGINE == 'django.db.backends.sqlite3':
+if DATABASE_URL:
+    parsed_db = urlparse(DATABASE_URL)
+    DATABASES = {'default': {
+        'ENGINE': 'django.db.backends.postgresql',
+        'NAME': unquote(parsed_db.path.lstrip('/')),
+        'USER': unquote(parsed_db.username or ''),
+        'PASSWORD': unquote(parsed_db.password or ''),
+        'HOST': parsed_db.hostname or '',
+        'PORT': str(parsed_db.port or '5432'),
+        'CONN_MAX_AGE': int(os.getenv('DB_CONN_MAX_AGE', '600')),
+        'CONN_HEALTH_CHECKS': True,
+        'OPTIONS': {'sslmode': 'require'},
+    }}
+elif DB_ENGINE == 'django.db.backends.sqlite3':
     DATABASES = {'default': {
         'ENGINE': DB_ENGINE,
         'NAME': BASE_DIR / 'db.sqlite3',
