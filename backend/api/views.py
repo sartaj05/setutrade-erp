@@ -2785,6 +2785,14 @@ def forecasting(request):
     if request.method=='POST':
         body=_json_body(request) or {};horizon=max(7,min(90,int(body.get('horizon',30) or 30)));products_qs=Product.objects.filter(company=request.company,is_active=True)[:250]
         warehouse=Warehouse.objects.filter(pk=body.get('warehouseId'),company=request.company).first() if body.get('warehouseId') else None
+        if body.get('action') == 'scenario':
+            multiplier=Decimal(str(body.get('demandMultiplier',1)))
+            if multiplier<=0 or multiplier>5:return JsonResponse({'detail':'Demand multiplier must be between 0 and 5.'},status=400)
+            rows=[]
+            for p in products_qs:
+                avg,trend,forecast,safety,recommend,confidence,current=_forecast_row(request.company,p,warehouse,horizon);scenario_forecast=forecast*multiplier;scenario_recommend=max(Decimal('0'),scenario_forecast+safety-current)
+                rows.append({'product':p.name,'sku':p.sku,'baselineForecast':float(forecast),'scenarioForecast':float(scenario_forecast),'recommendedPurchase':float(scenario_recommend),'confidence':float(confidence),'multiplier':float(multiplier)})
+            return JsonResponse({'scenario':{'horizon':horizon,'demandMultiplier':float(multiplier),'warehouse':warehouse.name if warehouse else 'All warehouses'},'forecasts':sorted(rows,key=lambda x:x['recommendedPurchase'],reverse=True)})
         if body.get('action') == 'create-reorder-drafts':
             supplier=Supplier.objects.filter(company=request.company).order_by('id').first()
             if not supplier:return JsonResponse({'detail':'Add a supplier before creating reorder drafts.'},status=400)
