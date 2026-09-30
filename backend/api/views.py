@@ -2519,6 +2519,30 @@ def invoice_ocr(request):
         body=_json_body(request) or {}; cap=PurchaseInvoiceCapture.objects.filter(pk=body.get('id'),company=request.company).first()
         if not cap:return JsonResponse({'detail':'Capture not found.'},status=404)
         if isinstance(body.get('data'),dict):cap.extracted_data=body['data']
+        if body.get('action') == 'post':
+            if cap.status == PurchaseInvoiceCapture.Status.POSTED:
+                return JsonResponse({'detail':'This invoice capture has already been posted.'}, status=409)
+            data=cap.extracted_data if isinstance(cap.extracted_data,dict) else {}
+            supplier=cap.supplier or Supplier.objects.filter(company=request.company,pk=body.get('supplierId')).first()
+            warehouse=Warehouse.objects.filter(company=request.company,pk=body.get('warehouseId'),is_active=True).first() or Warehouse.objects.filter(company=request.company,is_active=True).order_by('name').first()
+            line_items=data.get('lineItems') or body.get('lineItems') or []
+            if not supplier or not warehouse or not line_items:
+                return JsonResponse({'detail':'A supplier, active warehouse and reviewed line items are required before posting.'}, status=400)
+            try:
+                with transaction.atomic():
+                    po=PurchaseOrder.objects.create(company=request.company,branch=request.branch,warehouse=warehouse,po_no=_next_no('PINV'),supplier=supplier,order_date=_date(data.get('invoiceDate')),notes=f'Posted from OCR capture {cap.id}: {data.get("invoiceNumber", "")}',created_by=request.api_user)
+                    total=Decimal('0')
+                    for row in line_items[:100]:
+                        product=_company_qs(Product,request).filter(pk=row.get('productId') or row.get('product_id'),is_active=True).first()
+                        if not product: raise ValueError('Every OCR line must be mapped to an active product.')
+                        qty=decimal(row.get('quantity',1)); price=decimal(row.get('unitPrice',row.get('unit_price',product.purchase_price)))
+                        if qty <= 0: raise ValueError('OCR quantities must be greater than zero.')
+                        PurchaseItem.objects.create(purchase=po,product=product,quantity=qty,unit_price=price); total += qty*price
+                    po.total=total; po.save(update_fields=['total']); cap.supplier=supplier; cap.status=PurchaseInvoiceCapture.Status.POSTED; cap.save(update_fields=['supplier','status','extracted_data','updated_at'])
+            except ValueError as exc:
+                return JsonResponse({'detail':str(exc)}, status=400)
+            audit(request,'post','PurchaseInvoiceCapture',cap.id,f'Posted OCR invoice to {po.po_no}',{'purchaseId':po.id})
+            return JsonResponse({'ok':True,'status':cap.status,'purchaseId':po.id,'purchaseNo':po.po_no,'total':float(po.total)}, status=201)
         cap.status=body.get('status',PurchaseInvoiceCapture.Status.REVIEWED);cap.save(update_fields=['extracted_data','status','updated_at'])
         return JsonResponse({'ok':True,'status':cap.status})
     rows=PurchaseInvoiceCapture.objects.filter(company=request.company).select_related('supplier').order_by('-created_at')[:50]
