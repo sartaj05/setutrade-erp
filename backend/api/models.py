@@ -489,6 +489,7 @@ class WhatsAppMessage(models.Model):
 
     company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='whatsapp_messages', null=True, blank=True)
     customer = models.ForeignKey(Customer, on_delete=models.PROTECT, related_name='whatsapp_messages')
+    assigned_to = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='assigned_whatsapp_messages')
     direction = models.CharField(max_length=10, choices=Direction.choices)
     message = models.TextField()
     template_name = models.CharField(max_length=120, blank=True)

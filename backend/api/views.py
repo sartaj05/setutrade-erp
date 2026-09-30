@@ -1123,6 +1123,22 @@ def _send_whatsapp_live(customer, message):
 def whatsapp(request):
     if request.method=='POST':
         body=_json_body(request) or {}; action=body.get('action','parse'); customer=_company_qs(Customer,request).filter(pk=body.get('customerId')).first() or _company_qs(Customer,request).filter(code=body.get('customer')).first(); raw=str(body.get('message','')).strip(); direction=body.get('direction','Inbound')
+        if action == 'assign':
+            if request.api_user.profile.role not in ['OWNER', 'MANAGER']:
+                return JsonResponse({'detail':'Only an owner or manager can assign WhatsApp conversations.'}, status=403)
+            message = _company_qs(WhatsAppMessage, request).filter(pk=body.get('messageId')).first()
+            assignee = User.objects.filter(pk=body.get('assigneeId'), profile__company=request.company, is_active=True).first() if body.get('assigneeId') else None
+            if not message: return JsonResponse({'detail':'WhatsApp message not found.'}, status=404)
+            message.assigned_to = assignee; message.save(update_fields=['assigned_to'])
+            audit(request, 'assign', 'WhatsAppMessage', message.id, f'Assigned WhatsApp message to {assignee.get_username() if assignee else "queue"}')
+            return JsonResponse({'id':message.id,'assigneeId':assignee.id if assignee else None})
+        if action == 'retry':
+            message = _company_qs(WhatsAppMessage, request).filter(pk=body.get('messageId'), direction='Outbound').first()
+            if not message: return JsonResponse({'detail':'Outbound WhatsApp message not found.'}, status=404)
+            provider_id, error = _send_whatsapp_live(message.customer, message.message)
+            message.provider_message_id = provider_id or message.provider_message_id; message.status = 'Sent' if provider_id else 'Failed'; message.save(update_fields=['provider_message_id','status'])
+            audit(request, 'retry', 'WhatsAppMessage', message.id, f'Retried WhatsApp delivery for {message.customer.code}', {'error':error or ''})
+            return JsonResponse({'id':message.id,'status':message.status,'providerId':provider_id,'error':error})
         if action in ('create-quotation','convert-order'):
             draft=_company_qs(WhatsAppOrderDraft,request).select_related('customer','quotation','converted_order').filter(pk=body.get('draftId')).first()
             if not draft: return JsonResponse({'detail':'WhatsApp order draft not found.'},status=404)
@@ -1153,15 +1169,15 @@ def whatsapp(request):
         if direction=='Outbound':
             provider_id,error=_send_whatsapp_live(customer,raw) if body.get('sendLive') else (None,None)
             status='Failed' if error else ('Sent' if provider_id else 'Demo')
-            msg=WhatsAppMessage.objects.create(company=request.company,customer=customer,direction='Outbound',message=raw,status=status,provider_message_id=provider_id or '')
+            msg=WhatsAppMessage.objects.create(company=request.company,customer=customer,direction='Outbound',message=raw,template_name=str(body.get('templateName',''))[:120],status=status,provider_message_id=provider_id or '')
             audit(request,'send','WhatsAppMessage',msg.id,f'WhatsApp message to {customer.code}')
             return JsonResponse({'message':{'id':msg.id,'status':status,'providerId':provider_id,'error':error}},status=201)
         items=_parse_whatsapp_items(raw,request.company); total=sum(Decimal(str(x['quantity']))*Decimal(str(x['price'])) for x in items); draft=WhatsAppOrderDraft.objects.create(company=request.company,draft_no=_next_no('WA'),customer=customer,raw_message=raw,parsed_items=items,estimated_total=total); WhatsAppMessage.objects.create(company=request.company,customer=customer,direction='Inbound',message=raw,status='Received')
         audit(request,'create','WhatsAppOrderDraft',draft.id,f'Parsed WhatsApp order {draft.draft_no}')
         return JsonResponse({'draft':{'pk':draft.id,'id':draft.draft_no,'customer':customer.name,'items':items,'total':float(total),'status':draft.status}},status=201)
     drafts=_company_qs(WhatsAppOrderDraft,request).select_related('customer','quotation','converted_order').order_by('-created_at')[:30]
-    messages=_company_qs(WhatsAppMessage,request).select_related('customer').order_by('-created_at')[:50]
-    return JsonResponse({'whatsapp':[{'pk':d.id,'id':d.draft_no,'customer':d.customer.name,'customerId':d.customer_id,'message':d.raw_message,'items':d.parsed_items,'total':float(d.estimated_total),'status':d.status,'quotationNo':d.quotation.quote_no if d.quotation else None,'orderNo':d.converted_order.order_no if d.converted_order else None} for d in drafts], 'messages':[{'id':m.id,'customer':m.customer.name,'direction':m.direction,'message':m.message,'status':m.status,'providerId':m.provider_message_id,'createdAt':m.created_at.isoformat()} for m in messages], 'integration':{'configured':bool(os.getenv('WHATSAPP_ACCESS_TOKEN') and os.getenv('WHATSAPP_PHONE_NUMBER_ID'))}})
+    messages=_company_qs(WhatsAppMessage,request).select_related('customer','assigned_to').order_by('-created_at')[:50]
+    return JsonResponse({'whatsapp':[{'pk':d.id,'id':d.draft_no,'customer':d.customer.name,'customerId':d.customer_id,'message':d.raw_message,'items':d.parsed_items,'total':float(d.estimated_total),'status':d.status,'quotationNo':d.quotation.quote_no if d.quotation else None,'orderNo':d.converted_order.order_no if d.converted_order else None} for d in drafts], 'messages':[{'id':m.id,'customer':m.customer.name,'direction':m.direction,'message':m.message,'template':m.template_name,'status':m.status,'providerId':m.provider_message_id,'assignee':m.assigned_to.get_full_name() or m.assigned_to.username if m.assigned_to else None,'assigneeId':m.assigned_to_id,'createdAt':m.created_at.isoformat()} for m in messages], 'integration':{'configured':bool(os.getenv('WHATSAPP_ACCESS_TOKEN') and os.getenv('WHATSAPP_PHONE_NUMBER_ID'))}})
 
 
 @csrf_exempt
