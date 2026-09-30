@@ -1328,6 +1328,17 @@ def tax_compliance(request):
 def pricing(request):
     if request.method=='POST':
         body=_json_body(request) or {}; customer=_company_qs(Customer,request).filter(pk=body.get('customerId')).first() if body.get('customerId') else None
+        if body.get('action') == 'resolve':
+            product=_company_qs(Product,request).filter(pk=body.get('productId'),is_active=True).first(); quantity=decimal(body.get('quantity',1)); today=timezone.localdate()
+            if not product or quantity<=0:return JsonResponse({'detail':'Active product and positive quantity are required.'},status=400)
+            lists=PriceList.objects.filter(company=request.company,is_active=True).filter(Q(customer=customer)|Q(customer__isnull=True)).filter(Q(valid_from__isnull=True)|Q(valid_from__lte=today)).filter(Q(valid_to__isnull=True)|Q(valid_to__gte=today)).prefetch_related('rules')
+            candidates=[]
+            for price_list in lists:
+                rule=price_list.rules.filter(product=product,min_quantity__lte=quantity).order_by('-min_quantity').first()
+                if rule: candidates.append((1 if price_list.customer_id and customer and price_list.customer_id==customer.id else 0,rule.min_quantity,rule))
+            rule=max(candidates,key=lambda value:(value[0],value[1]))[2] if candidates else None
+            base=rule.price if rule else product.sell_price; discount=rule.discount_percent if rule else Decimal('0'); net=(base*(Decimal('100')-discount)/Decimal('100')).quantize(Decimal('0.01'))
+            return JsonResponse({'productId':product.id,'sku':product.sku,'quantity':float(quantity),'listPrice':float(base),'discountPercent':float(discount),'unitPrice':float(net),'scheme':rule.scheme_text if rule else 'Standard price','priceListId':rule.price_list_id if rule else None})
         price_list=PriceList.objects.create(company=request.company,name=body.get('name','New price list'),customer=customer,valid_from=_date(body.get('validFrom')) if body.get('validFrom') else None,valid_to=_date(body.get('validTo')) if body.get('validTo') else None)
         for row in body.get('rules',[]):
             product=_company_qs(Product,request).filter(pk=row.get('productId')).first()
