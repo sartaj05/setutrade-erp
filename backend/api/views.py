@@ -630,8 +630,16 @@ def _serialize_purchase(po):
 @roles_allowed('OWNER','MANAGER','WAREHOUSE','ACCOUNTANT')
 def purchases(request):
     if request.method == 'POST':
-        if request.api_user.profile.role == 'ACCOUNTANT': return JsonResponse({'detail':'Accountant role cannot create purchase orders.'},status=403)
         body=_json_body(request) or {}
+        if body.get('action') == 'match-invoice':
+            po=_company_qs(PurchaseOrder,request).filter(pk=body.get('purchaseId')).prefetch_related('items').first(); capture=PurchaseInvoiceCapture.objects.filter(company=request.company,pk=body.get('captureId')).first()
+            if not po or not capture:return JsonResponse({'detail':'Purchase order and OCR capture are required.'},status=400)
+            invoice_total=decimal((capture.extracted_data or {}).get('total'),'0'); po_total=po.total; received_value=sum((item.received_quantity*item.unit_price for item in po.items.all()),Decimal('0')); tolerance=max(Decimal('1'),po_total*Decimal(str(body.get('tolerancePercent','1')))/Decimal('100'))
+            po_invoice_delta=invoice_total-po_total; received_invoice_delta=invoice_total-received_value
+            matched=abs(po_invoice_delta)<=tolerance and received_invoice_delta<=tolerance
+            matching={'status':'Matched' if matched else 'Exception','purchaseId':po.id,'purchaseNo':po.po_no,'captureId':capture.id,'invoiceTotal':float(invoice_total),'poTotal':float(po_total),'receivedValue':float(received_value),'poInvoiceDelta':float(po_invoice_delta),'receivedInvoiceDelta':float(received_invoice_delta),'tolerance':float(tolerance)}
+            capture.extracted_data={**(capture.extracted_data or {}),'threeWayMatch':matching};capture.status=PurchaseInvoiceCapture.Status.REVIEWED if matched else PurchaseInvoiceCapture.Status.EXTRACTED;capture.save(update_fields=['extracted_data','status','updated_at']);audit(request,'MATCH','PurchaseInvoiceCapture',capture.id,f'Three-way match {matching["status"]} for {po.po_no}',matching);return JsonResponse({'matching':matching})
+        if request.api_user.profile.role == 'ACCOUNTANT': return JsonResponse({'detail':'Accountant role cannot create purchase orders.'},status=403)
         supplier=_company_qs(Supplier,request).filter(pk=body.get('supplierId')).first() or _company_qs(Supplier,request).filter(code=body.get('supplier')).first()
         warehouse=_company_qs(Warehouse,request).filter(pk=body.get('warehouseId')).first() or _company_qs(Warehouse,request).filter(code=body.get('warehouse')).first()
         items=body.get('items') or []
