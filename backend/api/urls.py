@@ -113,5 +113,6 @@ urlpatterns = [
     path('service-rma/', nextgen_views.service_rma),
     path('expenses/', nextgen_views.expenses),
     path('report-builder/', nextgen_views.report_builder),
+    path('report-builder/runs/<int:pk>/download/', nextgen_views.report_run_download),
     path('operations-center/', nextgen_views.operations_center),
 ]

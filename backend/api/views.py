@@ -344,6 +344,7 @@ def dashboard(request):
     unread = Notification.objects.filter(company=request.company, is_read=False).filter(Q(user=request.api_user) | Q(user__isnull=True)).count()
     return JsonResponse({
         'metrics': {'salesToday': float(sales_today), 'salesMonth': float(sales_month), 'receivable': float(receivable), 'stockValue': float(stock_value), 'openOrders': orders_qs.exclude(status__in=[Order.Status.DISPATCHED, Order.Status.CANCELLED]).count(), 'lowStock': low_stock, 'unreadNotifications': unread},
+        'dailySummary': _daily_operations_summary(request.company),
         'recentOrders': [_serialize_order(o) for o in recent],
     })
 
@@ -2110,18 +2111,37 @@ def audit_logs(request):
     rows=AuditLog.objects.filter(company=request.company).select_related('actor').order_by('-created_at')[:200]
     return JsonResponse({'audit':[{'id':x.id,'action':x.action,'entity':x.entity_type,'entityId':x.entity_id,'summary':x.summary,'actor':(x.actor.get_full_name() or x.actor.username) if x.actor else 'System','time':x.created_at.isoformat(),'changes':x.changes} for x in rows]})
 
+def _daily_operations_summary(company):
+    today = timezone.localdate()
+    low_stock = Product.objects.filter(company=company, is_active=True, reorder_level__gt=0, stock__lte=F('reorder_level')).count()
+    overdue = Customer.objects.filter(company=company, outstanding__gt=0, due_date__lt=today).count()
+    delayed = DeliveryRun.objects.filter(company=company, delivery_date__lt=today).exclude(status='Completed').count()
+    pending_approvals = ApprovalRequest.objects.filter(company=company, status='Pending').count()
+    unmatched_payments = PaymentTransaction.objects.filter(company=company, status__in=['Unmatched', 'Partial']).count()
+    return {'date': today.isoformat(), 'lowStock': low_stock, 'overduePayments': overdue, 'delayedDeliveries': delayed, 'pendingApprovals': pending_approvals, 'unmatchedPayments': unmatched_payments, 'totalExceptions': low_stock + overdue + delayed + pending_approvals + unmatched_payments}
+
 
 @csrf_exempt
-@require_http_methods(['GET','PATCH'])
+@require_http_methods(['GET','POST','PATCH'])
 @api_auth_required
 def notifications(request):
     qs=Notification.objects.filter(company=request.company).filter(Q(user=request.api_user)|Q(user__isnull=True))
+    if request.method=='POST':
+        body=_json_body(request) or {}
+        if body.get('action') != 'generate-daily-summary': return JsonResponse({'detail':'Unsupported notification action.'},status=400)
+        summary=_daily_operations_summary(request.company)
+        message=f"{summary['lowStock']} low-stock, {summary['overduePayments']} overdue-payment, {summary['delayedDeliveries']} delayed-delivery and {summary['pendingApprovals']} pending-approval item(s)."
+        owners=User.objects.filter(profile__company=request.company,profile__role='OWNER',is_active=True)
+        if not owners.exists(): owners=User.objects.filter(pk=request.api_user.pk)
+        created=[notify(request.company,'Daily operations summary',message,level='warning' if summary['totalExceptions'] else 'success',module='dashboard',entity_id=summary['date'],user=owner).id for owner in owners]
+        audit(request,'generate','DailySummary',summary['date'],'Generated daily owner operations summary',summary)
+        return JsonResponse({'summary':summary,'notificationIds':created},status=201)
     if request.method=='PATCH':
         body=_json_body(request) or {}
         if body.get('all'): qs.update(is_read=True)
         elif body.get('id'): qs.filter(pk=body['id']).update(is_read=True)
     rows=qs.order_by('-created_at')[:50]
-    return JsonResponse({'notifications':[{'id':n.id,'title':n.title,'message':n.message,'level':n.level,'module':n.module,'entityId':n.entity_id,'read':n.is_read,'time':n.created_at.isoformat()} for n in rows],'unread':qs.filter(is_read=False).count()})
+    return JsonResponse({'notifications':[{'id':n.id,'title':n.title,'message':n.message,'level':n.level,'module':n.module,'entityId':n.entity_id,'read':n.is_read,'time':n.created_at.isoformat()} for n in rows],'unread':qs.filter(is_read=False).count(),'dailySummary':_daily_operations_summary(request.company)})
 
 
 def _attention_items(company):

@@ -190,6 +190,18 @@ export async function downloadCsv(resource) {
   document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url);
 }
 
+export async function downloadReportRun(path) {
+  const token = getAccessToken();
+  const response = await fetch(`${API_BASE}${path}`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!response.ok) throw new ApiError(`Report download failed (${response.status})`, response.status);
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = response.headers.get('content-disposition')?.match(/filename="?([^";]+)"?/)?.[1] || 'setustock-report';
+  document.body.appendChild(anchor); anchor.click(); anchor.remove(); URL.revokeObjectURL(url);
+}
+
 export function requestPasswordReset(email) {
   return apiRequest('/auth/password-reset/request/', { method: 'POST', body: JSON.stringify({ email }) });
 }

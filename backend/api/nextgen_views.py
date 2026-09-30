@@ -1,3 +1,5 @@
+import csv
+import io
 import json
 from datetime import timedelta
 from decimal import Decimal
@@ -5,7 +7,7 @@ import os
 from time import perf_counter
 from django.db import connection
 from django.db.models import Sum, Count
-from django.http import JsonResponse
+from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_http_methods
@@ -362,14 +364,52 @@ def report_builder(request):
         return JsonResponse({'summary':{'reports':defs.count(),'scheduled':schedules.filter(is_active=True).count(),'runs':run_q.count(),'failed':run_q.filter(status='Failed').count()},'reports':[{'id':x.id,'name':x.name,'source':x.data_source,'dimensions':x.dimensions,'measures':x.measures,'filters':x.filters,'shared':x.is_shared,'owner':x.owner.get_full_name() if x.owner else ''} for x in defs],'schedules':[{'id':x.id,'report':x.report.name,'frequency':x.frequency,'time':str(x.delivery_time) if x.delivery_time else '', 'recipients':x.recipients,'format':x.output_format,'active':x.is_active,'nextRun':_dt(x.next_run_at)} for x in schedules],'runs':[{'id':x.id,'report':x.report.name,'status':x.status,'rows':x.row_count,'createdAt':_dt(x.created_at),'error':x.error} for x in runs]})
     data=_body(request); action=data.get('action','create-report')
     if action=='create-report':
-        row=m.ReportDefinition.objects.create(company=company,name=data.get('name','Custom sales report'),data_source=data.get('source','Sales'),dimensions=data.get('dimensions',['Customer','Product']),measures=data.get('measures',['Revenue','Quantity']),filters=data.get('filters',{}),group_by=data.get('groupBy',[]),owner=request.api_user,is_shared=bool(data.get('shared',False)));return JsonResponse({'id':row.id},status=201)
+        row=m.ReportDefinition.objects.create(company=company,name=data.get('name','Custom sales report'),data_source=data.get('source','Sales'),dimensions=data.get('dimensions',['Customer','Product']),measures=data.get('measures',['Revenue','Quantity']),filters=data.get('filters',{}),group_by=data.get('groupBy',[]),owner=request.api_user,is_shared=bool(data.get('shared',False)));audit(request,'CREATE','ReportDefinition',row.id,f'Created report {row.name}',{'source':row.data_source});return JsonResponse({'id':row.id,'name':row.name},status=201)
     report=m.ReportDefinition.objects.filter(company=company,pk=data.get('reportId')).first()
     if not report:return JsonResponse({'detail':'Report not found.'},status=404)
     if action=='schedule':
-        row=m.ScheduledReport.objects.create(company=company,report=report,frequency=data.get('frequency','Weekly'),delivery_time=data.get('time') or None,weekdays=data.get('weekdays',[]),recipients=data.get('recipients',[company.email] if company.email else []),output_format=data.get('format','XLSX'),next_run_at=timezone.now()+timedelta(days=1));return JsonResponse({'id':row.id},status=201)
+        output_format=str(data.get('format','XLSX')).upper()
+        if output_format not in ('XLSX','PDF'): return JsonResponse({'detail':'Report format must be XLSX or PDF.'},status=400)
+        row=m.ScheduledReport.objects.create(company=company,report=report,frequency=data.get('frequency','Weekly'),delivery_time=data.get('time') or None,weekdays=data.get('weekdays',[]),recipients=data.get('recipients',[company.email] if company.email else []),output_format=output_format,next_run_at=timezone.now()+timedelta(days=1));audit(request,'SCHEDULE','ScheduledReport',row.id,f'Scheduled {report.name}',{'frequency':row.frequency,'format':output_format,'recipients':row.recipients});return JsonResponse({'id':row.id,'nextRun':_dt(row.next_run_at)},status=201)
     if action=='run':
-        source_counts={'Sales':m.Order.objects.filter(company=company).count(),'Customers':m.Customer.objects.filter(company=company).count(),'Inventory':m.StockBalance.objects.filter(warehouse__company=company).count(),'Purchases':m.PurchaseOrder.objects.filter(company=company).count()};row=m.ReportRun.objects.create(report=report,status='Completed',row_count=source_counts.get(report.data_source,0),started_at=timezone.now(),finished_at=timezone.now());return JsonResponse({'id':row.id,'status':row.status,'rows':row.row_count},status=201)
+        source_counts={'Sales':m.Order.objects.filter(company=company).count(),'Customers':m.Customer.objects.filter(company=company).count(),'Inventory':m.StockBalance.objects.filter(warehouse__company=company).count(),'Purchases':m.PurchaseOrder.objects.filter(company=company).count()};schedule=m.ScheduledReport.objects.filter(company=company,report=report,pk=data.get('scheduleId')).first() if data.get('scheduleId') else None;row=m.ReportRun.objects.create(report=report,schedule=schedule,status='Completed',row_count=source_counts.get(report.data_source,0),started_at=timezone.now(),finished_at=timezone.now());audit(request,'RUN','ReportRun',row.id,f'Ran report {report.name}',{'rows':row.row_count});return JsonResponse({'id':row.id,'status':row.status,'rows':row.row_count,'downloadUrl':f'/api/report-builder/runs/{row.id}/download/'},status=201)
     return JsonResponse({'detail':'Unsupported action.'},status=400)
+
+def _report_rows(company, source):
+    if source == 'Sales':
+        return [{'Order': x.order_no, 'Date': x.order_date.isoformat(), 'Customer': x.customer.name, 'Total': float(x.total), 'Status': x.status, 'Payment': x.payment_status} for x in m.Order.objects.filter(company=company).select_related('customer').order_by('-order_date')[:500]]
+    if source == 'Customers':
+        return [{'Code': x.code, 'Customer': x.name, 'Outstanding': float(x.outstanding), 'Credit limit': float(x.credit_limit), 'Due': x.due_date.isoformat() if x.due_date else ''} for x in m.Customer.objects.filter(company=company).order_by('name')[:500]]
+    if source == 'Inventory':
+        return [{'SKU': x.product.sku, 'Product': x.product.name, 'Warehouse': x.warehouse.name, 'Quantity': float(x.quantity), 'Reserved': float(x.reserved)} for x in m.StockBalance.objects.filter(warehouse__company=company).select_related('product','warehouse').order_by('product__name')[:500]]
+    if source == 'Purchases':
+        return [{'PO': x.po_no, 'Date': x.order_date.isoformat(), 'Supplier': x.supplier.name, 'Total': float(x.total), 'Status': x.status} for x in m.PurchaseOrder.objects.filter(company=company).select_related('supplier').order_by('-order_date')[:500]]
+    return []
+
+def _pdf_bytes(title, rows):
+    lines=[title] + [' | '.join(str(value) for value in row.values()) for row in rows[:35]]
+    commands=[]; y=780
+    for line in lines:
+        safe=str(line).encode('ascii','replace').decode('ascii').replace('\\','\\\\').replace('(','\\(').replace(')','\\)')[:150]
+        commands.append(f'BT /F1 9 Tf 36 {y} Td ({safe}) Tj ET'); y-=16
+        if y < 36: break
+    stream='\n'.join(commands).encode('ascii')
+    objects=[b'<< /Type /Catalog /Pages 2 0 R >>',b'<< /Type /Pages /Kids [3 0 R] /Count 1 >>',b'<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',b'<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',f'<< /Length {len(stream)} >>\nstream\n'.encode('ascii')+stream+b'\nendstream']
+    output=b'%PDF-1.4\n'; offsets=[0]
+    for index,obj in enumerate(objects,1): offsets.append(len(output)); output += f'{index} 0 obj\n'.encode('ascii')+obj+b'\nendobj\n'
+    xref=len(output); output += f'xref\n0 {len(objects)+1}\n0000000000 65535 f \n'.encode('ascii'); output += b''.join(f'{offset:010d} 00000 n \n'.encode('ascii') for offset in offsets[1:]); output += f'trailer\n<< /Size {len(objects)+1} /Root 1 0 R >>\nstartxref\n{xref}\n%%EOF'.encode('ascii'); return output
+
+@require_http_methods(['GET'])
+@api_auth_required
+def report_run_download(request, pk):
+    denied=_guard(request,['OWNER','MANAGER','ACCOUNTANT'])
+    if denied:return denied
+    run=m.ReportRun.objects.filter(pk=pk,report__company=request.company).select_related('report','schedule').first()
+    if not run:return JsonResponse({'detail':'Report run not found.'},status=404)
+    rows=_report_rows(request.company,run.report.data_source); output_format=str(request.GET.get('format') or (run.schedule.output_format if run.schedule else 'XLSX')).upper()
+    if output_format == 'PDF':
+        response=HttpResponse(_pdf_bytes(run.report.name,rows),content_type='application/pdf'); response['Content-Disposition']=f'attachment; filename="setustock-{run.id}.pdf"'; return response
+    output=io.StringIO(); writer=csv.DictWriter(output,fieldnames=list(rows[0].keys()) if rows else ['Message']); writer.writeheader(); writer.writerows(rows or [{'Message':'No rows available'}]); response=HttpResponse(output.getvalue(),content_type='application/vnd.ms-excel'); response['Content-Disposition']=f'attachment; filename="setustock-{run.id}.xls"'; return response
 
 # Phase 36
 def _operations_snapshot(company):
