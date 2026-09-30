@@ -3,6 +3,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 from django.db import transaction
 from django.db.models import Sum, Count, Avg, F
+from django.core.cache import cache
 from django.http import JsonResponse
 from django.utils import timezone
 from django.views.decorators.csrf import csrf_exempt
@@ -343,6 +344,9 @@ def public_order_api(request):
     raw=request.headers.get('X-SetuStock-Key',''); digest=hashlib.sha256(raw.encode()).hexdigest() if raw else ''
     key=m.DeveloperApiKey.objects.select_related('company').filter(key_hash=digest,revoked_at__isnull=True).first()
     if not key or 'orders:write' not in key.scopes:return JsonResponse({'detail':'Valid API key with orders:write scope required.'},status=401)
+    throttle_key=f'public-order-api:{key.id}'; calls=cache.get(throttle_key,0)
+    if calls>=int(os.getenv('PUBLIC_API_RATE_LIMIT','120')):return JsonResponse({'detail':'API rate limit exceeded. Retry after one minute.'},status=429)
+    cache.set(throttle_key,calls+1,60)
     data=_body(request); key.last_used_at=timezone.now();key.save(update_fields=['last_used_at'])
     channel,_=m.ExternalChannel.objects.get_or_create(company=key.company,name='Developer API',defaults={'provider':'CUSTOM','external_store_id':'public-v1','is_active':True})
     ext_id=data.get('externalId') or f"API-{timezone.now().strftime('%y%m%d%H%M%S%f')}"; order,created=m.ExternalOrder.objects.get_or_create(channel=channel,external_id=ext_id,defaults={'company':key.company,'customer_name':data.get('customerName','API Customer'),'customer_phone':data.get('phone',''),'total':data.get('total',0),'status':'New','raw_payload':data})
