@@ -1257,6 +1257,22 @@ def whatsapp_webhook(request):
 def tax_compliance(request):
     if request.method=='POST':
         body=_json_body(request) or {}
+        if body.get('action') == 'bulk-generate':
+            requested = body.get('invoiceIds') or []
+            invoices = _company_qs(Invoice, request).filter(pk__in=requested).select_related('company', 'order__customer') if requested else _company_qs(Invoice, request).filter(e_invoice_status='Not generated').select_related('company', 'order__customer')[:50]
+            results = []
+            for invoice in invoices:
+                try:
+                    result = call_provider('generate-einvoice', invoice, {})
+                    invoice.e_invoice_irn = str(result.get('irn') or result.get('data', {}).get('irn') or '')
+                    invoice.e_invoice_status = 'Generated' if invoice.e_invoice_irn else 'Submitted'
+                    invoice.qr_payload = str(result.get('qrPayload') or result.get('data', {}).get('qrPayload') or '')
+                    invoice.save(update_fields=['e_invoice_irn', 'e_invoice_status', 'qr_payload', 'updated_at'])
+                    results.append({'invoiceId': invoice.id, 'invoice': invoice.invoice_no, 'status': invoice.e_invoice_status})
+                except GSTProviderError as exc:
+                    results.append({'invoiceId': invoice.id, 'invoice': invoice.invoice_no, 'status': 'Failed', 'error': str(exc)})
+            audit(request, 'bulk_provider', 'Invoice', request.company.id, f'Bulk GST e-invoice run for {len(results)} invoice(s)', {'results': results})
+            return JsonResponse({'ok': True, 'results': results})
         if body.get('action') in {'generate-einvoice', 'cancel-einvoice', 'generate-eway'}:
             invoice = _company_qs(Invoice, request).filter(pk=body.get('invoiceId')).select_related('company', 'order__customer').first()
             if not invoice: return JsonResponse({'detail': 'invoiceId is required.'}, status=400)
