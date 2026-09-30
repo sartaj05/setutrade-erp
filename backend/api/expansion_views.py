@@ -379,13 +379,23 @@ def supplier_portal(request):
             'submissions': [{'id': x.id, 'type': x.submission_type, 'status': x.status, 'payload': x.payload, 'createdAt': x.created_at.isoformat()} for x in supplier.portal_submissions.order_by('-id')[:20]],
         })
     data = _body(request) or {}
+    submission_type=str(data.get('type','NOTE')).upper(); payload=data.get('payload') or {}
     purchase_order = PurchaseOrder.objects.filter(company=access.company, supplier=supplier, pk=data.get('purchaseOrderId')).first() if data.get('purchaseOrderId') else None
+    if submission_type in ('PO_CONFIRM','ETA') and not purchase_order:
+        return JsonResponse({'detail':'A valid supplier purchase order is required.'},status=400)
+    if submission_type not in ('PO_CONFIRM','ETA','INVOICE','NOTE'):
+        return JsonResponse({'detail':'Unsupported supplier submission type.'},status=400)
+    status='Submitted'
+    if submission_type=='PO_CONFIRM': status='Accepted'
+    if submission_type=='ETA' and payload.get('expectedDate'):
+        purchase_order.expected_date=payload['expectedDate'];purchase_order.save(update_fields=['expected_date']);status='ETA received'
     submission = SupplierPortalSubmission.objects.create(
         company=access.company,
         supplier=supplier,
         purchase_order=purchase_order,
-        submission_type=data.get('type', 'NOTE'),
-        payload=data.get('payload') or {},
+        submission_type=submission_type,
+        payload=payload,
+        status=status,
     )
     return JsonResponse({'id': submission.id, 'status': submission.status}, status=201)
 
