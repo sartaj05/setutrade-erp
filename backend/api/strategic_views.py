@@ -438,12 +438,18 @@ def copilot_actions(request):
     company=request.company
     if request.method=='GET':
         rows=m.CopilotActionProposal.objects.filter(company=company).select_related('requested_by','approved_by').order_by('-id')
-        return JsonResponse({'summary':{'proposed':rows.filter(status='Proposed').count(),'executed':rows.filter(status='Executed').count(),'highRisk':rows.filter(risk_level='High',status='Proposed').count()},'proposals':[{'id':x.id,'title':x.title,'actionType':x.action_type,'rationale':x.rationale,'risk':x.risk_level,'status':x.status,'requestedBy':x.requested_by.get_full_name() if x.requested_by else 'System','approvedBy':x.approved_by.get_full_name() if x.approved_by else '', 'result':x.result,'createdAt':_dt(x.created_at)} for x in rows]})
+        return JsonResponse({'summary':{'proposed':rows.filter(status='Proposed').count(),'executed':rows.filter(status='Executed').count(),'highRisk':rows.filter(risk_level='High',status='Proposed').count()},'proposals':[{'id':x.id,'title':x.title,'actionType':x.action_type,'rationale':x.rationale,'risk':x.risk_level,'status':x.status,'requiresApproval':x.requires_approval,'confidence':(x.result or {}).get('confidence'), 'requestedBy':x.requested_by.get_full_name() if x.requested_by else 'System','approvedBy':x.approved_by.get_full_name() if x.approved_by else '', 'result':x.result,'createdAt':_dt(x.created_at)} for x in rows]})
     data=_body(request);action=data.get('action','propose')
     if action=='propose':
-        row=_copilot_proposal(company,request.api_user,data.get('prompt','Prepare collection tasks for overdue customers'));audit(request,'PROPOSE','CopilotActionProposal',row.id,row.title);return JsonResponse({'id':row.id,'title':row.title,'actionType':row.action_type,'risk':row.risk_level,'status':row.status,'rationale':row.rationale},status=201)
+        row=_copilot_proposal(company,request.api_user,data.get('prompt','Prepare collection tasks for overdue customers'))
+        confidence={'Low':92,'Medium':82,'High':70}.get(row.risk_level,75)
+        row.result={'confidence':confidence,'guardrails':['Human approval required before execution','No external message is sent automatically','All changes are written to the audit trail']};row.save(update_fields=['result'])
+        audit(request,'PROPOSE','CopilotActionProposal',row.id,row.title);return JsonResponse({'id':row.id,'title':row.title,'actionType':row.action_type,'risk':row.risk_level,'confidence':confidence,'status':row.status,'rationale':row.rationale,'guardrails':row.result['guardrails']},status=201)
     row=m.CopilotActionProposal.objects.filter(company=company,pk=data.get('id')).first()
     if not row:return JsonResponse({'detail':'Proposal not found.'},status=404)
+    if action=='simulate':
+        preview={'actionType':row.action_type,'risk':row.risk_level,'confidence':(row.result or {}).get('confidence'),'willSendExternalMessages':False,'requiresApproval':row.requires_approval,'guardrails':['No inventory or ledger mutation during simulation','No external message is sent','Approval is required before execution']}
+        row.result={**(row.result or {}),'simulation':preview};row.save(update_fields=['result']);return JsonResponse({'id':row.id,'status':row.status,'simulation':preview})
     if request.api_user.profile.role not in ['OWNER','MANAGER']:return JsonResponse({'detail':'Owner or manager approval is required.'},status=403)
     if action=='reject': row.status='Rejected';row.approved_by=request.api_user;row.approved_at=timezone.now();row.save(update_fields=['status','approved_by','approved_at']);audit(request,'REJECT','CopilotActionProposal',row.id,row.title);return JsonResponse({'id':row.id,'status':row.status})
     if action=='approve':
