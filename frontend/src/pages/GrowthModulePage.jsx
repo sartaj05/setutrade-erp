@@ -15,7 +15,10 @@ const Notice = ({ text }) => text ? <div className="inline-notice">{text}</div> 
 function DeliveryPage({ mode, notice, setNotice }) {
   const deliver = async (stop) => {
     try {
-      if (mode === 'api') await createApiResource('delivery', { action: 'deliver', stopId: stop.id, otpVerified: true, receiverName: 'Demo receiver' });
+      const receiverName = window.prompt('Receiver name', 'Demo receiver') || '';
+      const signature = window.prompt('Proof reference or signature', 'signed-at-door') || '';
+      if (!receiverName || !signature) return setNotice('Receiver name and proof are required for e-POD.');
+      if (mode === 'api') await createApiResource('delivery', { action: 'deliver', stopId: stop.id, otpVerified: true, receiverName, signature });
       setNotice(mode === 'api' ? 'Delivery marked complete.' : 'Demo e-POD captured locally.');
     } catch (e) { setNotice(e.message); }
   };
