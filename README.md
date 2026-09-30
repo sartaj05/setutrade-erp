@@ -35,7 +35,7 @@ scripts/                 Health check and PostgreSQL backup/restore scripts
 docker-compose.yml       PostgreSQL + Django + Nginx stack
 ```
 
-Canonical project documents: [growth and product summary](GROWTH.md) and [validation and operations guide](VALIDATION.md).
+Canonical project documents: [growth and product summary](GROWTH.md), [validation and operations guide](VALIDATION.md), and the [feature-wise implementation plan](FEATURES.md).
 
 ## Requirements
 
@@ -156,8 +156,11 @@ For deployment, replace local defaults with strong secret-managed values:
 DJANGO_SECRET_KEY="use-a-long-random-secret"
 DB_PASSWORD="use-a-strong-database-password"
 RELEASE_VERSION="2026.09.29"
+VITE_API_URL="https://api.yourdomain.com/api"
 docker compose up --build -d
 ```
+
+The frontend API URL is compiled into the static bundle. When sharing the Docker deployment with users on other computers, always set `VITE_API_URL` to the public HTTPS API URL or expose the API through the same public domain. A localhost API URL only works on the machine running Docker.
 
 Never run `seed_demo` against a client's production database.
 

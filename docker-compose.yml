@@ -44,9 +44,11 @@ services:
     build:
       context: ./frontend
       args:
-        VITE_API_URL: http://localhost:8000/api
-        VITE_APP_MODE: production
-        VITE_DEMO_FALLBACK: "false"
+        # Set VITE_API_URL to the public API URL when users access this stack
+        # from another computer. The old localhost value only worked locally.
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000/api}
+        VITE_APP_MODE: ${VITE_APP_MODE:-production}
+        VITE_DEMO_FALLBACK: ${VITE_DEMO_FALLBACK:-false}
     ports:
       - "8080:80"
     depends_on:

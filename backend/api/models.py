@@ -1889,6 +1889,10 @@ class OnboardingFeedback(models.Model):
     worked_well=models.TextField(blank=True)
     blockers=models.TextField(blank=True)
     requested_features=models.TextField(blank=True)
+    external_tools=models.TextField(blank=True)
+    data_trust=models.PositiveSmallIntegerField(null=True, blank=True)
+    offline_needs=models.TextField(blank=True)
+    daily_report=models.TextField(blank=True)
     would_recommend=models.BooleanField(null=True,blank=True)
     created_at=models.DateTimeField(auto_now_add=True)
 

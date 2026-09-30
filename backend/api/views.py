@@ -965,7 +965,8 @@ def whatsapp(request):
         audit(request,'create','WhatsAppOrderDraft',draft.id,f'Parsed WhatsApp order {draft.draft_no}')
         return JsonResponse({'draft':{'pk':draft.id,'id':draft.draft_no,'customer':customer.name,'items':items,'total':float(total),'status':draft.status}},status=201)
     drafts=_company_qs(WhatsAppOrderDraft,request).select_related('customer').order_by('-created_at')[:30]
-    return JsonResponse({'whatsapp':[{'pk':d.id,'id':d.draft_no,'customer':d.customer.name,'message':d.raw_message,'items':d.parsed_items,'total':float(d.estimated_total),'status':d.status} for d in drafts],'integration':{'configured':bool(os.getenv('WHATSAPP_ACCESS_TOKEN') and os.getenv('WHATSAPP_PHONE_NUMBER_ID'))}})
+    messages=_company_qs(WhatsAppMessage,request).select_related('customer').order_by('-created_at')[:50]
+    return JsonResponse({'whatsapp':[{'pk':d.id,'id':d.draft_no,'customer':d.customer.name,'message':d.raw_message,'items':d.parsed_items,'total':float(d.estimated_total),'status':d.status} for d in drafts], 'messages':[{'id':m.id,'customer':m.customer.name,'direction':m.direction,'message':m.message,'status':m.status,'providerId':m.provider_message_id,'createdAt':m.created_at.isoformat()} for m in messages], 'integration':{'configured':bool(os.getenv('WHATSAPP_ACCESS_TOKEN') and os.getenv('WHATSAPP_PHONE_NUMBER_ID'))}})
 
 
 @csrf_exempt
@@ -1708,11 +1709,28 @@ def onboarding_feedback(request):
             rating = 0
         if rating < 1 or rating > 5:
             return JsonResponse({'detail': 'Rating must be between 1 and 5.'}, status=400)
-        feedback = OnboardingFeedback.objects.create(company=request.company, submitted_by=request.api_user, rating=rating, workflow=str(body.get('workflow') or 'Overall onboarding')[:80], worked_well=str(body.get('workedWell') or '')[:5000], blockers=str(body.get('blockers') or '')[:5000], requested_features=str(body.get('requestedFeatures') or '')[:5000], would_recommend=body.get('wouldRecommend') if isinstance(body.get('wouldRecommend'), bool) else None)
+        try:
+            data_trust = int(body.get('dataTrust')) if body.get('dataTrust') not in (None, '') else None
+        except (TypeError, ValueError):
+            data_trust = None
+        if data_trust is not None and not 1 <= data_trust <= 5:
+            return JsonResponse({'detail': 'Data trust must be between 1 and 5.'}, status=400)
+        feedback = OnboardingFeedback.objects.create(
+            company=request.company, submitted_by=request.api_user,
+            rating=rating, workflow=str(body.get('workflow') or 'Overall onboarding')[:80],
+            worked_well=str(body.get('workedWell') or '')[:5000],
+            blockers=str(body.get('blockers') or '')[:5000],
+            requested_features=str(body.get('requestedFeatures') or '')[:5000],
+            external_tools=str(body.get('externalTools') or '')[:5000],
+            data_trust=data_trust,
+            offline_needs=str(body.get('offlineNeeds') or '')[:5000],
+            daily_report=str(body.get('dailyReport') or '')[:5000],
+            would_recommend=body.get('wouldRecommend') if isinstance(body.get('wouldRecommend'), bool) else None,
+        )
         audit(request, 'create', 'OnboardingFeedback', feedback.id, 'Submitted client onboarding feedback', {'rating': rating, 'workflow': feedback.workflow})
         return JsonResponse({'feedback': {'id': feedback.id, 'rating': feedback.rating, 'workflow': feedback.workflow}}, status=201)
     rows = _company_qs(OnboardingFeedback, request).select_related('submitted_by')[:20]
-    return JsonResponse({'feedback': [{'id': row.id, 'rating': row.rating, 'workflow': row.workflow, 'workedWell': row.worked_well, 'blockers': row.blockers, 'requestedFeatures': row.requested_features, 'wouldRecommend': row.would_recommend, 'submittedBy': row.submitted_by.get_full_name() if row.submitted_by else '', 'createdAt': row.created_at.isoformat()} for row in rows]})
+    return JsonResponse({'feedback': [{'id': row.id, 'rating': row.rating, 'workflow': row.workflow, 'workedWell': row.worked_well, 'blockers': row.blockers, 'requestedFeatures': row.requested_features, 'externalTools': row.external_tools, 'dataTrust': row.data_trust, 'offlineNeeds': row.offline_needs, 'dailyReport': row.daily_report, 'wouldRecommend': row.would_recommend, 'submittedBy': row.submitted_by.get_full_name() if row.submitted_by else '', 'createdAt': row.created_at.isoformat()} for row in rows]})
 
 
 @require_GET
