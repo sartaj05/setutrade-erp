@@ -12,6 +12,7 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    restart: unless-stopped
   backend:
     build: ./backend
     environment:
@@ -31,6 +32,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    restart: unless-stopped
     ports:
       - "8000:8000"
     volumes:
@@ -54,6 +56,12 @@ services:
     depends_on:
       backend:
         condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://localhost/ || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
 volumes:
   setustock_db:
   setustock_media:
