@@ -2040,7 +2040,8 @@ def team(request):
         from .models import Profile
         allowed = set(sum(PERMISSIONS.values(), []))
         extra = sorted({str(x) for x in (body.get('extraPermissions') or []) if str(x) in allowed})
-        Profile.objects.create(user=user,role=role,business_name=request.company.name,company=request.company,branch=request.branch,phone=body.get('phone',''),extra_permissions=extra)
+        branch = Branch.objects.filter(company=request.company, pk=body.get('branchId')).first() if body.get('branchId') else request.branch
+        Profile.objects.create(user=user,role=role,business_name=request.company.name,company=request.company,branch=branch,phone=body.get('phone',''),extra_permissions=extra)
         audit(request,'invite','User',user.id,f'Created team account {email}',{'role':role})
         return JsonResponse({'user':user_payload(user),'temporaryPassword':body.get('temporaryPassword') or 'ChangeMe123!'},status=201)
     users=User.objects.filter(profile__company=request.company).select_related('profile__branch').order_by('first_name','username')
@@ -2060,6 +2061,9 @@ def team_member(request, pk):
         allowed = set(sum(PERMISSIONS.values(), []))
         user.profile.extra_permissions = sorted({str(x) for x in (body.get('extraPermissions') or []) if str(x) in allowed})
         user.profile.save(update_fields=['extra_permissions'])
+    if 'branchId' in body:
+        user.profile.branch = Branch.objects.filter(company=request.company, pk=body.get('branchId')).first() if body.get('branchId') else None
+        user.profile.save(update_fields=['branch'])
     if 'active' in body: user.is_active=bool(body['active']); user.save(update_fields=['is_active'])
     audit(request,'update','User',user.id,f'Updated team member {user.email}',body)
     return JsonResponse({'user':user_payload(user)})
@@ -2149,9 +2153,19 @@ def access_review(request):
     allowed = list(dict.fromkeys(PERMISSIONS.get(role, []) + (request.api_user.profile.extra_permissions or [])))
     if request.method == 'POST':
         body = _json_body(request) or {}
+        if body.get('action') == 'set-permissions':
+            if role != 'OWNER': return JsonResponse({'detail': 'Only the owner can change another member’s permissions.'}, status=403)
+            target = User.objects.filter(pk=body.get('userId'), profile__company=request.company).select_related('profile').first()
+            if not target: return JsonResponse({'detail': 'Team member not found.'}, status=404)
+            allowed_keys = set(sum(PERMISSIONS.values(), []))
+            target.profile.extra_permissions = sorted({str(x) for x in (body.get('extraPermissions') or []) if str(x) in allowed_keys})
+            if 'branchId' in body: target.profile.branch = Branch.objects.filter(company=request.company, pk=body.get('branchId')).first() if body.get('branchId') else None
+            target.profile.save(update_fields=['extra_permissions', 'branch'] if 'branchId' in body else ['extra_permissions'])
+            audit(request, 'permissions', 'User', target.id, f'Updated permissions for {target.email}', {'extraPermissions': target.profile.extra_permissions, 'branchId': target.profile.branch_id})
+            return JsonResponse({'ok': True, 'userId': target.id, 'branchId': target.profile.branch_id, 'extraPermissions': target.profile.extra_permissions})
         module = str(body.get('module', '')).strip()
         return JsonResponse({'allowed': module in allowed, 'module': module, 'role': role, 'action': body.get('action', 'view')})
-    return JsonResponse({'role': role, 'allowedModules': allowed, 'restrictedModules': sorted(set(sum(PERMISSIONS.values(), [])) - set(allowed)), 'policy': {'OWNER': 'full tenant visibility and configuration', 'MANAGER': 'daily operations and approvals', 'SALES': 'customers, quotations, orders and collections', 'WAREHOUSE': 'stock, purchasing, picking and delivery', 'ACCOUNTANT': 'invoices, ledger, payments and compliance'}})
+    return JsonResponse({'role': role, 'branch': request.api_user.profile.branch.name if request.api_user.profile.branch else 'All branches', 'customPermissions': request.api_user.profile.extra_permissions or [], 'roleTemplates': {key: {'label': key.title(), 'modules': value} for key, value in PERMISSIONS.items()}, 'allowedModules': allowed, 'restrictedModules': sorted(set(sum(PERMISSIONS.values(), [])) - set(allowed)), 'policy': {'OWNER': 'full tenant visibility and configuration', 'MANAGER': 'daily operations and approvals', 'SALES': 'customers, quotations, orders and collections', 'WAREHOUSE': 'stock, purchasing, picking and delivery', 'ACCOUNTANT': 'invoices, ledger, payments and compliance'}})
 
 
 @csrf_exempt
