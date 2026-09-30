@@ -322,6 +322,22 @@ def service_rma(request):
         row=m.ServiceTicket.objects.create(company=company,ticket_no=data.get('ticketNo') or f"SRV-{timezone.now().strftime('%y%m%d%H%M%S')}",customer=c,product=p,serial=serial,complaint=data.get('complaint','Service request'),warranty_valid=valid,warranty_until=until,status='Open');return JsonResponse({'id':row.id,'ticketNo':row.ticket_no,'warranty':row.warranty_valid},status=201)
     ticket=m.ServiceTicket.objects.filter(company=company,pk=data.get('ticketId')).first()
     if not ticket:return JsonResponse({'detail':'Service ticket not found.'},status=404)
+    if action=='approve':
+        if request.api_user.profile.role not in ['OWNER','MANAGER']:return JsonResponse({'detail':'Only an owner or manager can approve an RMA.'},status=403)
+        row=m.RMA.objects.filter(company=company,pk=data.get('rmaId'),ticket=ticket).first()
+        if not row:return JsonResponse({'detail':'RMA not found.'},status=404)
+        if not ticket.warranty_valid and not data.get('paidRepair'):
+            return JsonResponse({'detail':'This ticket is outside warranty. Mark it as a paid repair before approval.'},status=400)
+        row.status='Approved';row.save(update_fields=['status','updated_at']);ticket.status='Approved';ticket.save(update_fields=['status']);audit(request,'APPROVE','RMA',row.id,f'Approved {row.rma_no}',{'warranty':ticket.warranty_valid});return JsonResponse({'id':row.id,'rmaNo':row.rma_no,'status':row.status})
+    if action=='replace':
+        row=m.RMA.objects.filter(company=company,pk=data.get('rmaId'),ticket=ticket).first();replacement=_pick(m.Product.objects.filter(company=company,is_active=True),data.get('replacementProductId'))
+        if not row or not replacement:return JsonResponse({'detail':'RMA and replacement product are required.'},status=400)
+        if row.status not in ['Approved','Inspected']:return JsonResponse({'detail':'Approve or inspect the RMA before queuing a replacement.'},status=400)
+        row.replacement_product=replacement;row.action='Replacement';row.status='Replacement queued';row.save(update_fields=['replacement_product','action','status','updated_at']);audit(request,'QUEUE','RMA',row.id,f'Queued replacement for {row.rma_no}',{'productId':replacement.id});return JsonResponse({'id':row.id,'rmaNo':row.rma_no,'status':row.status,'replacement':replacement.name})
+    if action=='refund':
+        row=m.RMA.objects.filter(company=company,pk=data.get('rmaId'),ticket=ticket).first()
+        if not row:return JsonResponse({'detail':'RMA not found.'},status=404)
+        row.action='Refund';row.status='Refund approved';row.save(update_fields=['action','status','updated_at']);ticket.status='Closed';ticket.resolution=data.get('resolution','Refund approved');ticket.closed_at=timezone.now();ticket.save(update_fields=['status','resolution','closed_at']);audit(request,'APPROVE','RMA',row.id,f'Approved refund for {row.rma_no}');return JsonResponse({'id':row.id,'status':row.status})
     if action=='diagnose':ticket.diagnosis=data.get('diagnosis','Inspection completed');ticket.status=data.get('status','In Service');ticket.technician=request.api_user;ticket.save(update_fields=['diagnosis','status','technician']);return JsonResponse({'id':ticket.id,'status':ticket.status})
     if action=='rma':
         row=m.RMA.objects.create(company=company,rma_no=data.get('rmaNo') or f"RMA-{timezone.now().strftime('%y%m%d%H%M%S')}",ticket=ticket,action=data.get('rmaAction','Repair'),status='Created',cost=data.get('cost',0),manufacturer_claim_amount=data.get('claimAmount',0),manufacturer_claim_status='Pending' if Decimal(str(data.get('claimAmount',0)))>0 else '')
