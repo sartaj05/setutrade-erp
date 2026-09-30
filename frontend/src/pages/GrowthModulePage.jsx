@@ -27,12 +27,38 @@ function DeliveryPage({ mode, notice, setNotice }) {
   </div>;
 }
 
-function ApprovalPage({ mode, notice, setNotice }) {
+function LegacyApprovalPage({ mode, notice, setNotice }) {
   const decide = async (row, action) => {
     try { if (mode === 'api') await createApiResource('approvals', { id: row.id, action }); setNotice(`${action === 'approve' ? 'Approved' : 'Rejected'} ${row.requestNo}.`); }
     catch (e) { setNotice(e.message); }
   };
   return <div><div className="module-header"><div><span className="eyebrow">Exception control</span><h1>Approval workflows</h1><p>Route high discounts, credit overrides, returns and sensitive transactions to the correct approver.</p></div><button onClick={() => setNotice('Policy editor is company-scoped and API-ready.')}>Manage policies</button></div><Notice text={notice}/><div className="report-grid">{demoApprovals.policies.map((p) => <article key={p.key}><span>{p.label}</span><strong>{p.approverRole}</strong><small>{p.active ? 'Policy active' : 'Disabled'}</small></article>)}</div><article className="panel module-panel"><div className="table-wrap"><table className="data-table module-table"><thead><tr><th>Request</th><th>Reason</th><th>Requested by</th><th>Amount</th><th>Status</th><th>Decision</th></tr></thead><tbody>{demoApprovals.requests.map((r) => <tr key={r.id}><td>{r.requestNo}</td><td><strong>{r.title}</strong><small>{r.entity}</small></td><td>{r.requestedBy}</td><td>{money(r.amount)}</td><td>{r.status}</td><td>{r.status === 'Pending' ? <div className="row-actions"><button className="table-action" onClick={() => decide(r, 'approve')}>Approve</button><button className="table-action" onClick={() => decide(r, 'reject')}>Reject</button></div> : '—'}</td></tr>)}</tbody></table></div></article></div>;
+}
+
+function ApprovalPage({ mode, notice, setNotice }) {
+  const { user } = useAuth();
+  const [data, setData] = useState(demoApprovals);
+  const [requestOpen, setRequestOpen] = useState(false);
+  const [policyOpen, setPolicyOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const load = async () => { if (mode === 'api') { try { setData(await getApiResource('approvals')); } catch (e) { setNotice(e.message); } } else setData(demoApprovals); };
+  useEffect(() => { load(); }, [mode]);
+  const decide = async (row, action) => {
+    try { const note = window.prompt(`${action === 'approve' ? 'Approval' : 'Rejection'} note (optional):`, '') || ''; if (mode === 'api') await createApiResource('approvals', { id: row.id, action, note }); setNotice(`${action === 'approve' ? 'Approved' : 'Rejected'} ${row.requestNo}.`); load(); }
+    catch (e) { setNotice(e.message); }
+  };
+  const submitRequest = async (event) => {
+    event.preventDefault(); setBusy(true); const form = Object.fromEntries(new FormData(event.currentTarget).entries());
+    try { if (mode === 'api') await createApiResource('approvals', { action: 'request', policyKey: form.policyKey, entityType: form.entityType, entityId: form.entityId, title: form.title, amount: Number(form.amount || 0), payload: { note: form.note } }); setNotice(mode === 'api' ? 'Approval request submitted and routed to the configured approver.' : 'Demo approval request created.'); setRequestOpen(false); load(); }
+    catch (e) { setNotice(e.message); } finally { setBusy(false); }
+  };
+  const savePolicy = async (event) => {
+    event.preventDefault(); setBusy(true); const form = Object.fromEntries(new FormData(event.currentTarget).entries());
+    try { if (mode === 'api') await createApiResource('approvals', { action: 'policy', key: form.key, label: form.label, threshold: Number(form.threshold || 0), approverRole: form.approverRole, active: true }); setNotice(mode === 'api' ? 'Approval policy saved.' : 'Demo approval policy saved.'); setPolicyOpen(false); load(); }
+    catch (e) { setNotice(e.message); } finally { setBusy(false); }
+  };
+  const policies = data.policies || []; const requests = data.requests || [];
+  return <div><div className="module-header"><div><span className="eyebrow">Exception control</span><h1>Approval workflows</h1><p>Route discounts, credit limits, refunds, stock adjustments and plan changes to the right approver with a permanent audit trail.</p></div><div className="row-actions"><button onClick={() => setRequestOpen((v) => !v)}>New request</button>{user.role === 'OWNER' && <button className="secondary-btn" onClick={() => setPolicyOpen((v) => !v)}>Manage policies</button>}</div></div><Notice text={notice}/><div className="report-grid">{policies.map((p) => <article key={p.key}><span>{p.label}</span><strong>{p.approverRole}</strong><small>{p.active ? `Approval above ${money(p.threshold)}` : 'Disabled'}</small></article>)}</div>{requestOpen && <article className="panel module-panel"><div className="panel-head"><div><span>Controlled action</span><h3>Submit approval request</h3></div></div><form className="smart-form" onSubmit={submitRequest}><label>Rule<select name="policyKey" required>{policies.filter((p) => p.active).map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}</select></label><label>Entity type<input name="entityType" defaultValue="Order" required/></label><label>Entity ID<input name="entityId" placeholder="SO-1099" required/></label><label>Title<input name="title" placeholder="18% discount for dealer" required/></label><label>Amount<input name="amount" type="number" min="0" step="0.01" defaultValue="0"/></label><label className="full-field">Context<textarea name="note" placeholder="Why this exception is needed"/></label><div className="form-actions"><button type="button" className="secondary-btn" onClick={() => setRequestOpen(false)}>Cancel</button><button disabled={busy}>{busy ? 'Submitting…' : 'Submit request'}</button></div></form></article>}{policyOpen && <article className="panel module-panel"><div className="panel-head"><div><span>Owner control</span><h3>Save approval policy</h3></div></div><form className="smart-form" onSubmit={savePolicy}><label>Rule key<input name="key" defaultValue="discount" required/></label><label>Label<input name="label" defaultValue="Discount above 10%" required/></label><label>Threshold<input name="threshold" type="number" min="0" step="0.01" defaultValue="10" required/></label><label>Approver<select name="approverRole" defaultValue="MANAGER"><option>MANAGER</option><option>OWNER</option></select></label><div className="form-actions"><button type="button" className="secondary-btn" onClick={() => setPolicyOpen(false)}>Cancel</button><button disabled={busy}>{busy ? 'Saving…' : 'Save policy'}</button></div></form></article>}<article className="panel module-panel"><div className="panel-head"><div><span>Review queue</span><h3>Requests and decisions</h3></div><small>Every request, decision and policy change is written to Audit Log.</small></div><div className="table-wrap"><table className="data-table module-table"><thead><tr><th>Request</th><th>Reason</th><th>Requested by</th><th>Amount</th><th>Status</th><th>Decision</th></tr></thead><tbody>{requests.map((r) => <tr key={r.id}><td><strong>{r.requestNo}</strong><small>{r.entity} {r.entityId ? `· ${r.entityId}` : ''}</small></td><td>{r.title}<small>{r.decisionNote || r.approverRole}</small></td><td>{r.requestedBy}</td><td>{money(r.amount)}</td><td>{r.status}</td><td>{r.status === 'Pending' ? <div className="row-actions"><button className="table-action" onClick={() => decide(r, 'approve')}>Approve</button><button className="table-action" onClick={() => decide(r, 'reject')}>Reject</button></div> : <small>{r.decidedBy || 'Auto-approved'}</small>}</td></tr>)}</tbody></table></div></article></div>;
 }
 
 function InvoiceOcrPage({ mode, notice, setNotice }) {

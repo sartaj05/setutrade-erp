@@ -2299,28 +2299,54 @@ def public_delivery_tracking(request, token):
 @require_http_methods(['GET','POST'])
 @api_auth_required
 def approvals(request):
+    default_policies = [
+        ('discount', 'Discount above 10%', Decimal('10'), 'MANAGER'),
+        ('credit-limit', 'Credit limit override above 50,000', Decimal('50000'), 'OWNER'),
+        ('refund', 'Refund above 5,000', Decimal('5000'), 'MANAGER'),
+        ('stock-adjustment', 'Stock adjustment above 100 units', Decimal('100'), 'MANAGER'),
+        ('plan-change', 'Subscription plan changes', Decimal('0'), 'OWNER'),
+    ]
+    for key, label, threshold, approver_role in default_policies:
+        ApprovalPolicy.objects.get_or_create(
+            company=request.company,
+            key=key,
+            defaults={'label': label, 'threshold': threshold, 'approver_role': approver_role, 'is_active': True},
+        )
     if request.method=='POST':
         body=_json_body(request) or {}; action=body.get('action','request')
         if action=='policy':
             if request.api_user.profile.role!='OWNER': return JsonResponse({'detail':'Only the owner can manage approval policies.'},status=403)
             key=str(body.get('key','')).strip()
-            if not key: return JsonResponse({'detail':'Policy key is required.'},status=400)
-            policy,_=ApprovalPolicy.objects.update_or_create(company=request.company,key=key,defaults={'label':body.get('label',key.replace('-',' ').title()),'threshold':decimal(body.get('threshold')),'approver_role':body.get('approverRole','MANAGER'),'is_active':bool(body.get('active',True))})
-            audit(request,'policy','ApprovalPolicy',policy.id,f'Updated approval policy {policy.key}')
+            approver_role=str(body.get('approverRole','MANAGER')).upper()
+            if not key or approver_role not in ('OWNER','MANAGER'): return JsonResponse({'detail':'Policy key and a valid approver role are required.'},status=400)
+            policy,_=ApprovalPolicy.objects.update_or_create(company=request.company,key=key,defaults={'label':str(body.get('label') or key.replace('-',' ').title())[:140],'threshold':max(Decimal('0'), decimal(body.get('threshold'))),'approver_role':approver_role,'is_active':bool(body.get('active',True))})
+            audit(request,'policy','ApprovalPolicy',policy.id,f'Updated approval policy {policy.key}',{'threshold':float(policy.threshold),'approverRole':policy.approver_role,'active':policy.is_active})
             return JsonResponse({'id':policy.id,'key':policy.key,'status':'saved'},status=201)
         if action=='request':
             policy=ApprovalPolicy.objects.filter(company=request.company,key=body.get('policyKey'),is_active=True).first()
-            row=ApprovalRequest.objects.create(company=request.company,policy=policy,request_no=_next_no('APR'),entity_type=str(body.get('entityType','Manual'))[:60],entity_id=str(body.get('entityId',''))[:80],title=str(body.get('title','Approval required'))[:180],amount=decimal(body.get('amount')),payload=body.get('payload') if isinstance(body.get('payload'),dict) else {},requested_by=request.api_user)
-            return JsonResponse({'ok':True,'id':row.id,'requestNo':row.request_no},status=201)
-        row=ApprovalRequest.objects.filter(pk=body.get('id'),company=request.company,status=ApprovalRequest.Status.PENDING).first()
+            if not policy: return JsonResponse({'detail':'An active approval policy is required.'},status=400)
+            amount=max(Decimal('0'), decimal(body.get('amount')))
+            requires_approval=bool(body.get('force')) or amount > policy.threshold or policy.key == 'plan-change'
+            row=ApprovalRequest.objects.create(company=request.company,policy=policy,request_no=_next_no('APR'),entity_type=str(body.get('entityType','Manual'))[:60],entity_id=str(body.get('entityId',''))[:80],title=str(body.get('title','Approval required'))[:180],amount=amount,payload=body.get('payload') if isinstance(body.get('payload'),dict) else {},requested_by=request.api_user,status=ApprovalRequest.Status.PENDING if requires_approval else ApprovalRequest.Status.APPROVED,decided_by=None if requires_approval else request.api_user,decision_note='' if requires_approval else 'Within configured threshold.',decided_at=None if requires_approval else timezone.now())
+            if requires_approval:
+                for approver in User.objects.filter(profile__company=request.company, profile__role__in=('OWNER', policy.approver_role), is_active=True).exclude(pk=request.api_user.pk):
+                    notify(request.company,'Approval required',f'{row.title} is waiting for your review.',level='warning',module='approvals',entity_id=row.id,user=approver)
+                audit(request,'request','ApprovalRequest',row.id,f'Created approval request {row.request_no}',{'policy':policy.key,'amount':float(amount),'requiresApproval':True})
+            else:
+                audit(request,'auto_approve','ApprovalRequest',row.id,f'Auto-approved {row.request_no} within policy threshold',{'policy':policy.key,'amount':float(amount),'threshold':float(policy.threshold)})
+            return JsonResponse({'ok':True,'id':row.id,'requestNo':row.request_no,'status':row.status,'requiresApproval':requires_approval},status=201)
+        if action not in ('approve','reject'): return JsonResponse({'detail':'Unsupported approval action.'},status=400)
+        row=ApprovalRequest.objects.filter(pk=body.get('id'),company=request.company,status=ApprovalRequest.Status.PENDING).select_related('policy','requested_by').first()
         if not row:return JsonResponse({'detail':'Pending approval not found.'},status=404)
         role=request.api_user.profile.role; expected=row.policy.approver_role if row.policy else 'MANAGER'
         if role not in ('OWNER',expected):return JsonResponse({'detail':f'{expected} approval required.'},status=403)
+        if row.requested_by_id == request.api_user.id and role != 'OWNER': return JsonResponse({'detail':'The requester cannot approve their own request.'},status=403)
         row.status=ApprovalRequest.Status.APPROVED if action=='approve' else ApprovalRequest.Status.REJECTED;row.decided_by=request.api_user;row.decision_note=str(body.get('note',''))[:240];row.decided_at=timezone.now();row.save(update_fields=['status','decided_by','decision_note','decided_at'])
         audit(request,action,'ApprovalRequest',row.id,f'{action.title()}d {row.request_no}',{'entity':row.entity_type})
+        notify(request.company,f'Approval {row.status.lower()}',f'{row.title} was {row.status.lower()} by {request.api_user.get_full_name() or request.api_user.username}.',level='success' if action=='approve' else 'critical',module='approvals',entity_id=row.id,user=row.requested_by)
         return JsonResponse({'ok':True,'status':row.status})
     policies=ApprovalPolicy.objects.filter(company=request.company).order_by('label'); rows=ApprovalRequest.objects.filter(company=request.company).select_related('requested_by','decided_by','policy').order_by('-created_at')[:100]
-    return JsonResponse({'policies':[{'key':p.key,'label':p.label,'threshold':float(p.threshold),'approverRole':p.approver_role,'active':p.is_active} for p in policies],'requests':[{'id':r.id,'requestNo':r.request_no,'title':r.title,'entity':r.entity_type,'amount':float(r.amount),'status':r.status,'requestedBy':r.requested_by.get_full_name() or r.requested_by.username if r.requested_by else 'System','approverRole':r.policy.approver_role if r.policy else 'MANAGER','createdAt':r.created_at.isoformat()} for r in rows]})
+    return JsonResponse({'policies':[{'id':p.id,'key':p.key,'label':p.label,'threshold':float(p.threshold),'approverRole':p.approver_role,'active':p.is_active} for p in policies],'requests':[{'id':r.id,'requestNo':r.request_no,'title':r.title,'entity':r.entity_type,'entityId':r.entity_id,'amount':float(r.amount),'status':r.status,'requestedBy':r.requested_by.get_full_name() or r.requested_by.username if r.requested_by else 'System','approverRole':r.policy.approver_role if r.policy else 'MANAGER','decisionNote':r.decision_note,'decidedBy':r.decided_by.get_full_name() or r.decided_by.username if r.decided_by else '','createdAt':r.created_at.isoformat(),'decidedAt':r.decided_at.isoformat() if r.decided_at else None} for r in rows]})
 
 def _extract_invoice_text(raw):
     raw=raw or ''
