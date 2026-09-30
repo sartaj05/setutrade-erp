@@ -722,9 +722,10 @@ def payments(request):
             amount = decimal(body.get('amount') or (invoice.total if invoice else (customer.outstanding if customer else 0)))
             if not customer or amount <= 0:
                 return JsonResponse({'detail': 'customer and a positive amount are required.'}, status=400)
-            link = PaymentLink.objects.create(company=request.company, customer=customer, invoice=invoice, token=secrets.token_urlsafe(32), amount=amount, expires_at=timezone.now() + timedelta(days=7))
+            provider=str(body.get('provider') or os.getenv('PAYMENT_PROVIDER') or 'UPI').upper(); provider_order_id=f'PAY-{timezone.now().strftime("%y%m%d%H%M%S%f")}'; upi_uri=f'upi://pay?pa={request.company.upi_id}&pn={request.company.name}&am={amount}&cu=INR' if request.company.upi_id else ''
+            link = PaymentLink.objects.create(company=request.company, customer=customer, invoice=invoice, token=secrets.token_urlsafe(32), amount=amount, provider=provider, provider_order_id=provider_order_id, upi_uri=upi_uri, expires_at=timezone.now() + timedelta(days=7))
             audit(request, 'create', 'PaymentLink', link.id, f'Created payment link for {customer.code}', {'amount': float(amount), 'invoice': invoice.invoice_no if invoice else None})
-            return JsonResponse({'id': link.id, 'token': link.token, 'url': f'/pay/{link.token}', 'amount': float(amount), 'expiresAt': link.expires_at.isoformat()}, status=201)
+            return JsonResponse({'id': link.id, 'token': link.token, 'url': f'/pay/{link.token}', 'amount': float(amount), 'provider':provider, 'providerOrderId':provider_order_id, 'upiUri':upi_uri, 'expiresAt': link.expires_at.isoformat()}, status=201)
         if party=='supplier':
             if request.api_user.profile.role=='SALES': return JsonResponse({'detail':'Sales role cannot record supplier payments.'},status=403)
             supplier=_company_qs(Supplier,request).filter(pk=body.get('supplierId')).first()
@@ -778,14 +779,19 @@ def payment_webhook(request, provider):
         return JsonResponse({'ok': True, 'status': 'ignored'})
     company = Company.objects.filter(pk=body.get('companyId')).first()
     customer = Customer.objects.filter(company=company, pk=body.get('customerId')).first() if company else None
+    payment_link = PaymentLink.objects.filter(company=company, token=body.get('paymentLinkToken')).first() if company and body.get('paymentLinkToken') else None
     reference = str(body.get('reference') or body.get('transactionId') or '').strip()
     amount = decimal(body.get('amount'), '0')
+    if payment_link and not customer: customer=payment_link.customer
+    if payment_link and amount <= 0: amount=payment_link.amount
     if not company or not customer or not reference or amount <= 0:
         return JsonResponse({'detail': 'companyId, customerId, reference and positive amount are required.'}, status=400)
     if PaymentTransaction.objects.filter(company=company, reference=reference).exists():
         return JsonResponse({'ok': True, 'status': 'duplicate', 'reference': reference})
     invoice = Invoice.objects.filter(company=company, pk=body.get('invoiceId'), order__customer=customer).first() if body.get('invoiceId') else None
     with transaction.atomic():
+        if payment_link:
+            payment_link.status='Paid';payment_link.paid_at=timezone.now();payment_link.save(update_fields=['status','paid_at'])
         txn = PaymentTransaction.objects.create(company=company, customer=customer, reference=reference, method=body.get('method', provider.upper()), amount=amount, transaction_date=body.get('date') or timezone.localdate(), raw_payload=body)
         remaining = amount
         invoices = ([invoice] if invoice else list(Invoice.objects.filter(company=company, order__customer=customer).exclude(status='Paid').order_by('invoice_date', 'id')))

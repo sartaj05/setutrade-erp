@@ -1203,7 +1203,11 @@ class PaymentLink(models.Model):
     token=models.CharField(max_length=80,unique=True)
     amount=models.DecimalField(max_digits=14,decimal_places=2)
     status=models.CharField(max_length=20,default='Active')
+    provider=models.CharField(max_length=30,default='UPI')
+    provider_order_id=models.CharField(max_length=120,blank=True)
+    upi_uri=models.CharField(max_length=500,blank=True)
     expires_at=models.DateTimeField(null=True,blank=True)
+    paid_at=models.DateTimeField(null=True,blank=True)
     created_at=models.DateTimeField(auto_now_add=True)
 
 class CollectionReminder(models.Model):
