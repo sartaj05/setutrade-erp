@@ -87,6 +87,15 @@ def collections(request):
 
     data = _body(request) or {}
     action = data.get('action')
+    if action == 'generate-overdue-reminders':
+        created = 0
+        customers = Customer.objects.filter(company=company, is_active=True, outstanding__gt=0).filter(Q(due_date__isnull=True) | Q(due_date__lte=timezone.localdate()))
+        for customer in customers:
+            existing = CollectionReminder.objects.filter(company=company, customer=customer, status='Scheduled', scheduled_for__date=timezone.localdate()).exists()
+            if existing: continue
+            CollectionReminder.objects.create(company=company, customer=customer, channel=data.get('channel', 'WhatsApp'), scheduled_for=timezone.now(), message=f'Payment follow-up for {customer.name}: Rs. {customer.outstanding:,.0f} outstanding.')
+            created += 1
+        return JsonResponse({'created': created, 'message': f'{created} overdue reminder(s) scheduled.'}, status=201)
     customer = Customer.objects.filter(company=company, pk=data.get('customerId')).first()
     if not customer:
         return JsonResponse({'detail': 'Customer not found.'}, status=404)
