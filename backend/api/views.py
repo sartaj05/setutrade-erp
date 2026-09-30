@@ -2526,7 +2526,10 @@ def offline_sync(request):
         if created and kind=='sales-visit':
             customer=Customer.objects.filter(pk=payload.get('customerId'),company=request.company).first()
             if customer: SalesVisit.objects.create(company=request.company,salesperson=request.api_user,customer=customer,visit_date=_date(payload.get('date')),status=payload.get('status','Visited'),territory=str(payload.get('territory',''))[:100],order_value=decimal(payload.get('orderValue')),collection_amount=decimal(payload.get('collection')),notes=str(payload.get('notes',''))[:240])
-        results.append({'id':event_id,'status':'synced' if created else 'duplicate'})
+        if not created and receipt.payload != payload:
+            results.append({'id':event_id,'status':'conflict','message':'The same event id already exists with different data. Review before retrying.'})
+        else:
+            results.append({'id':event_id,'status':'synced' if created else 'duplicate'})
     return JsonResponse({'ok':True,'results':results,'synced':len(results)})
 
 @csrf_exempt
