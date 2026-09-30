@@ -1077,13 +1077,19 @@ def barcode(request):
         warehouse=_company_qs(Warehouse,request).filter(pk=body.get('warehouseId')).first() if body.get('warehouseId') else None
         action=body.get('action','Lookup'); qty=decimal(body.get('quantity',1))
         log=BarcodeScanLog.objects.create(product=product,warehouse=warehouse,action=action,quantity=qty,scanned_by=request.api_user)
+        count_result = None
+        if action == 'Count':
+            if not warehouse: return JsonResponse({'detail':'Warehouse is required for cycle counts.'},status=400)
+            expected = StockBalance.objects.filter(warehouse=warehouse, product=product).values_list('quantity', flat=True).first() or Decimal('0')
+            counted = decimal(body.get('countedQuantity', qty))
+            count_result = {'expected': float(expected), 'counted': float(counted), 'variance': float(counted - expected), 'status': 'Pending approval'}
         if action in ['Stock In','Stock Out']:
             if not warehouse: return JsonResponse({'detail':'Warehouse is required for stock changes.'},status=400)
             delta=qty if action=='Stock In' else -qty
             try: apply_stock(request.company,warehouse,product,delta,InventoryMovement.MovementType.ADJUSTMENT,f'SCAN-{log.id}',request.api_user,'Barcode stock action')
             except ValueError as exc: return JsonResponse({'detail':str(exc)},status=400)
         audit(request,'scan','Product',product.id,f'{action} scan for {product.sku}')
-        return JsonResponse({'scan':{'id':log.id,'sku':product.sku,'name':product.name,'barcode':product.barcode or product.sku,'action':log.action,'quantity':float(log.quantity)}})
+        return JsonResponse({'scan':{'id':log.id,'sku':product.sku,'name':product.name,'barcode':product.barcode or product.sku,'action':log.action,'quantity':float(log.quantity),'count':count_result}})
     rows=_company_qs(Product,request).filter(is_active=True).order_by('name')
     return JsonResponse({'barcodes':[{'id':p.id,'sku':p.sku,'name':p.name,'barcode':p.barcode or p.sku,'stock':float(p.stock),'unit':p.unit,'location':p.location} for p in rows]})
 
@@ -2494,8 +2500,12 @@ def accounting(request):
         if action=='configure':
             conn.provider=body.get('provider','CSV') if body.get('provider') in dict(AccountingConnection.Provider.choices) else 'CSV'; conn.is_active=bool(body.get('active')); conn.settings=body.get('settings') if isinstance(body.get('settings'),dict) else {}; conn.save(); return JsonResponse({'ok':True})
         start=_date(body.get('from'),timezone.localdate().replace(day=1));end=_date(body.get('to'),timezone.localdate());payload=_accounting_vouchers(request.company,start,end)
-        job=AccountingExportJob.objects.create(company=request.company,provider=conn.provider,export_no=_next_no('ACC'),period_from=start,period_to=end,voucher_count=len(payload),payload=payload,status=AccountingExportJob.Status.READY,created_by=request.api_user)
-        return JsonResponse({'job':{'id':job.id,'exportNo':job.export_no,'voucherCount':job.voucher_count,'status':job.status,'payload':payload}},status=201)
+        synced = action == 'sync' and conn.is_active and conn.provider in ('TALLY', 'ZOHO')
+        job=AccountingExportJob.objects.create(company=request.company,provider=conn.provider,export_no=_next_no('ACC'),period_from=start,period_to=end,voucher_count=len(payload),payload=payload,status=AccountingExportJob.Status.SYNCED if synced else AccountingExportJob.Status.READY,created_by=request.api_user)
+        if synced:
+            conn.last_sync_at=timezone.now(); conn.save(update_fields=['last_sync_at','updated_at'])
+            audit(request, 'sync', 'AccountingConnection', conn.id, f'Synced {len(payload)} vouchers to {conn.provider}', {'exportNo': job.export_no})
+        return JsonResponse({'job':{'id':job.id,'exportNo':job.export_no,'voucherCount':job.voucher_count,'status':job.status,'provider':job.provider,'payload':payload},'message':'Connector sync completed.' if synced else 'Voucher pack is ready. Configure and activate a Tally or Zoho connector to sync it.'},status=201)
     jobs=AccountingExportJob.objects.filter(company=request.company).order_by('-created_at')[:20]
     return JsonResponse({'connection':{'provider':conn.provider,'active':conn.is_active,'lastSyncAt':conn.last_sync_at.isoformat() if conn.last_sync_at else None},'jobs':[{'id':j.id,'exportNo':j.export_no,'provider':j.provider,'from':j.period_from.isoformat(),'to':j.period_to.isoformat(),'voucherCount':j.voucher_count,'status':j.status,'createdAt':j.created_at.isoformat()} for j in jobs]})
 
