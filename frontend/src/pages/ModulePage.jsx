@@ -13,6 +13,7 @@ import AccessReviewPage from './AccessReviewPage';
 import DataExchangePage from './DataExchangePage';
 import SupportCenterPage from './SupportCenterPage';
 import DemoPresentationPage from './DemoPresentationPage';
+import WhatsAppInboxPage from './WhatsAppInboxPage';
 
 const productionModules = ['products','inventory','customers','orders','invoices','purchases','warehouses','quotations','payments','reports','team','settings','audit'];
 const growthModules = ['delivery','approvals','invoice-ocr','accounting','offline','subscription','forecasting','assistant'];
@@ -23,6 +24,7 @@ const enhancedModules = ['ledger','barcode','whatsapp','tax','pricing','returns'
 
 export default function ModulePage({ module }) {
   if (module === 'client-workflow') return <ClientWorkflowPage />;
+  if (module === 'whatsapp') return <WhatsAppInboxPage />;
   if (module === 'onboarding') return <OnboardingPage />;
   if (module === 'access-review') return <AccessReviewPage />;
   if (module === 'data-exchange') return <DataExchangePage />;

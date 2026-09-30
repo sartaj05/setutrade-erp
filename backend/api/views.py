@@ -1073,6 +1073,24 @@ def _send_whatsapp_live(customer, message):
 def whatsapp(request):
     if request.method=='POST':
         body=_json_body(request) or {}; action=body.get('action','parse'); customer=_company_qs(Customer,request).filter(pk=body.get('customerId')).first() or _company_qs(Customer,request).filter(code=body.get('customer')).first(); raw=str(body.get('message','')).strip(); direction=body.get('direction','Inbound')
+        if action in ('create-quotation','convert-order'):
+            draft=_company_qs(WhatsAppOrderDraft,request).select_related('customer','quotation','converted_order').filter(pk=body.get('draftId')).first()
+            if not draft: return JsonResponse({'detail':'WhatsApp order draft not found.'},status=404)
+            if action=='create-quotation':
+                if draft.quotation_id: return JsonResponse({'draftId':draft.id,'status':draft.status,'quotationNo':draft.quotation.quote_no})
+                warehouse=_company_qs(Warehouse,request).filter(is_active=True).order_by('name').first()
+                quote=Quotation.objects.create(company=request.company,quote_no=_next_no('QT'),customer=draft.customer,warehouse=warehouse,quote_date=timezone.localdate(),valid_until=timezone.localdate()+timedelta(days=7),notes=f'Created from WhatsApp {draft.draft_no}',created_by=request.api_user)
+                subtotal=tax=Decimal('0')
+                for item in draft.parsed_items:
+                    product=_company_qs(Product,request).filter(pk=item.get('productId'),is_active=True).first()
+                    if not product: continue
+                    line=calculate_line(product,item.get('quantity',1),item.get('price',product.sell_price)); QuotationItem.objects.create(quotation=quote,product=product,quantity=line['quantity'],unit_price=line['unit_price'],gst_rate=line['gst_rate'],line_total=line['total']); subtotal+=line['taxable']; tax+=line['tax']
+                quote.subtotal=subtotal; quote.tax=tax; quote.total=subtotal+tax; quote.save(update_fields=['subtotal','tax','total']); draft.quotation=quote; draft.status=WhatsAppOrderDraft.Status.QUOTED; draft.save(update_fields=['quotation','status']); audit(request,'convert','WhatsAppOrderDraft',draft.id,f'Created quotation {quote.quote_no} from {draft.draft_no}',{'quotationId':quote.id}); return JsonResponse({'draftId':draft.id,'status':draft.status,'quotationNo':quote.quote_no,'total':float(quote.total)},status=201)
+            if draft.converted_order_id: return JsonResponse({'draftId':draft.id,'status':draft.status,'orderNo':draft.converted_order.order_no})
+            warehouse=_company_qs(Warehouse,request).filter(is_active=True).order_by('name').first()
+            if not warehouse: return JsonResponse({'detail':'An active warehouse is required before converting the WhatsApp draft.'},status=400)
+            order=Order.objects.create(company=request.company,branch=request.branch,warehouse=warehouse,order_no=_next_no('SO'),customer=draft.customer,order_date=timezone.localdate(),notes=f'Converted from WhatsApp {draft.draft_no}',created_by=request.api_user)
+            create_order_items(order,[{'product_id':item.get('productId'),'quantity':item.get('quantity',1),'unit_price':item.get('price')} for item in draft.parsed_items if item.get('productId')]); draft.converted_order=order; draft.status=WhatsAppOrderDraft.Status.CONFIRMED; draft.save(update_fields=['converted_order','status']); audit(request,'convert','WhatsAppOrderDraft',draft.id,f'Created order {order.order_no} from {draft.draft_no}',{'orderId':order.id}); return JsonResponse({'draftId':draft.id,'status':draft.status,'orderNo':order.order_no,'total':float(order.total)},status=201)
         if action == 'payment-reminder':
             if not customer: return JsonResponse({'detail':'customer is required.'},status=400)
             raw = str(body.get('message') or f'Hello {customer.name}, your SetuStock account has an outstanding balance of Rs. {customer.outstanding:,.0f}. Please let us know if you need a payment link.')
@@ -1091,9 +1109,9 @@ def whatsapp(request):
         items=_parse_whatsapp_items(raw,request.company); total=sum(Decimal(str(x['quantity']))*Decimal(str(x['price'])) for x in items); draft=WhatsAppOrderDraft.objects.create(company=request.company,draft_no=_next_no('WA'),customer=customer,raw_message=raw,parsed_items=items,estimated_total=total); WhatsAppMessage.objects.create(company=request.company,customer=customer,direction='Inbound',message=raw,status='Received')
         audit(request,'create','WhatsAppOrderDraft',draft.id,f'Parsed WhatsApp order {draft.draft_no}')
         return JsonResponse({'draft':{'pk':draft.id,'id':draft.draft_no,'customer':customer.name,'items':items,'total':float(total),'status':draft.status}},status=201)
-    drafts=_company_qs(WhatsAppOrderDraft,request).select_related('customer').order_by('-created_at')[:30]
+    drafts=_company_qs(WhatsAppOrderDraft,request).select_related('customer','quotation','converted_order').order_by('-created_at')[:30]
     messages=_company_qs(WhatsAppMessage,request).select_related('customer').order_by('-created_at')[:50]
-    return JsonResponse({'whatsapp':[{'pk':d.id,'id':d.draft_no,'customer':d.customer.name,'message':d.raw_message,'items':d.parsed_items,'total':float(d.estimated_total),'status':d.status} for d in drafts], 'messages':[{'id':m.id,'customer':m.customer.name,'direction':m.direction,'message':m.message,'status':m.status,'providerId':m.provider_message_id,'createdAt':m.created_at.isoformat()} for m in messages], 'integration':{'configured':bool(os.getenv('WHATSAPP_ACCESS_TOKEN') and os.getenv('WHATSAPP_PHONE_NUMBER_ID'))}})
+    return JsonResponse({'whatsapp':[{'pk':d.id,'id':d.draft_no,'customer':d.customer.name,'customerId':d.customer_id,'message':d.raw_message,'items':d.parsed_items,'total':float(d.estimated_total),'status':d.status,'quotationNo':d.quotation.quote_no if d.quotation else None,'orderNo':d.converted_order.order_no if d.converted_order else None} for d in drafts], 'messages':[{'id':m.id,'customer':m.customer.name,'direction':m.direction,'message':m.message,'status':m.status,'providerId':m.provider_message_id,'createdAt':m.created_at.isoformat()} for m in messages], 'integration':{'configured':bool(os.getenv('WHATSAPP_ACCESS_TOKEN') and os.getenv('WHATSAPP_PHONE_NUMBER_ID'))}})
 
 
 @csrf_exempt

@@ -510,6 +510,8 @@ class WhatsAppOrderDraft(models.Model):
     parsed_items = models.JSONField(default=list)
     status = models.CharField(max_length=20, choices=Status.choices, default=Status.DRAFT)
     estimated_total = models.DecimalField(max_digits=14, decimal_places=2, default=0)
+    quotation = models.OneToOneField('Quotation', on_delete=models.SET_NULL, null=True, blank=True, related_name='whatsapp_draft')
+    converted_order = models.OneToOneField('Order', on_delete=models.SET_NULL, null=True, blank=True, related_name='whatsapp_draft')
     created_at = models.DateTimeField(auto_now_add=True)
 
 
