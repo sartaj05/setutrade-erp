@@ -5,7 +5,7 @@ from datetime import timedelta
 from decimal import Decimal
 import os
 from time import perf_counter
-from django.db import connection
+from django.db import connection, transaction
 from django.db.models import Sum, Count
 from django.http import HttpResponse, JsonResponse
 from django.utils import timezone
@@ -94,6 +94,22 @@ def traceability(request):
         return JsonResponse({'summary':{'lots':lots.count(),'serials':m.SerialUnit.objects.filter(company=company).count(),'expiring':expiring,'recalls':lots.filter(status='Recall').count(),'cycleCounts':counts_qs.count(),'pendingCounts':pending_counts},'lots':[{'id':x.id,'product':x.product.name,'sku':x.product.sku,'warehouse':x.warehouse.name,'lot':x.lot_no,'batch':x.batch_no,'expiry':_dt(x.expiry_date),'received':_money(x.received_qty),'available':_money(x.available_qty),'status':x.status} for x in lots[:100]],'serials':[{'id':x.id,'product':x.product.name,'serial':x.serial_no,'warehouse':x.warehouse.name if x.warehouse else '', 'status':x.status,'customer':x.customer.name if x.customer else '', 'warrantyUntil':_dt(x.warranty_until)} for x in serials],'events':[{'id':e.id,'product':e.product.name,'lot':e.lot.lot_no if e.lot else '', 'serial':e.serial.serial_no if e.serial else '', 'type':e.event_type,'reference':e.reference,'quantity':_money(e.quantity),'at':_dt(e.created_at)} for e in events],'counts':[{'id':x.id,'warehouse':x.warehouse.name,'bin':x.bin.code,'product':x.product.name,'expected':_money(x.expected_qty),'counted':_money(x.counted_qty),'variance':_money((x.counted_qty or 0)-x.expected_qty),'status':x.status,'countedBy':x.counted_by.get_full_name() if x.counted_by else ''} for x in counts]})
     data=_body(request); action=data.get('action','receive-lot')
     product=_pick(m.Product.objects.filter(company=company),data.get('productId')); warehouse=_pick(m.Warehouse.objects.filter(company=company),data.get('warehouseId'))
+    if action=='fefo-pick':
+        if not product or not warehouse:return JsonResponse({'detail':'Product and warehouse required.'},status=400)
+        requested=Decimal(str(data.get('quantity',0)))
+        if requested<=0:return JsonResponse({'detail':'A positive pick quantity is required.'},status=400)
+        with transaction.atomic():
+            lots=list(m.InventoryLot.objects.select_for_update().filter(company=company,product=product,warehouse=warehouse,status='Available',available_qty__gt=0).order_by('expiry_date','received_at','id'))
+            if sum((lot.available_qty for lot in lots),Decimal('0'))<requested:
+                return JsonResponse({'detail':'Insufficient available lot stock for this FEFO pick.'},status=400)
+            remaining=requested; allocations=[]
+            for lot in lots:
+                picked=min(lot.available_qty,remaining); lot.available_qty-=picked; lot.save(update_fields=['available_qty'])
+                m.TraceabilityEvent.objects.create(company=company,product=product,lot=lot,event_type='FEFO Pick',reference=data.get('reference','FEFO pick'),quantity=picked,metadata={'remainingLotQty':str(lot.available_qty)},created_by=request.api_user)
+                allocations.append({'lotId':lot.id,'lot':lot.lot_no,'expiry':_dt(lot.expiry_date),'quantity':_money(picked)}); remaining-=picked
+                if remaining<=0: break
+        audit(request,'ALLOCATE','InventoryLot',product.id,f'Picked {requested} of {product.sku} using FEFO',{'warehouseId':warehouse.id,'allocations':allocations})
+        return JsonResponse({'productId':product.id,'sku':product.sku,'warehouseId':warehouse.id,'quantity':_money(requested),'allocations':allocations})
     if action=='receive-lot':
         if not product or not warehouse:return JsonResponse({'detail':'Product and warehouse required.'},status=400)
         supplier=_pick(m.Supplier.objects.filter(company=company),data.get('supplierId'))
