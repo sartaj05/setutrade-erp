@@ -91,13 +91,15 @@ function SubscriptionPage({ mode, notice, setNotice }) {
 }
 
 function SubscriptionAdminPage({ mode, notice, setNotice }) {
-  const { user, setUser } = useAuth();
+  const { user, updateUser } = useAuth();
   const [live, setLive] = useState(null);
-  const refresh = async () => { if (mode === 'api') { const next = await getApiResource('subscription'); setLive(next); if (user) setUser({ ...user, subscription: next.subscription }); } };
+  const refresh = async () => { if (mode === 'api') { const next = await getApiResource('subscription'); setLive(next); if (user) updateUser({ ...user, subscription: next.subscription }); } };
   useEffect(() => { setLive(null); refresh().catch(() => {}); }, [mode]);
-  const run = async (payload, message) => { try { if (mode === 'api') { const result = await createApiResource('subscription', payload); setNotice(result.checkout && !result.checkout.providerConfigured ? `${message} Configure the billing provider before collecting live payments.` : message); await refresh(); } else setNotice(message); } catch (error) { setNotice(error.message); } };
+  const run = async (payload, message) => { try { if (mode === 'api') { const result = await createApiResource('subscription', payload); setNotice(result.checkout && !result.checkout.providerConfigured ? `${message} Configure the billing provider before collecting live payments.` : message); await refresh(); } else if (payload.action === 'change-plan' && user) { const selected = demoSubscription.plans.find((plan) => plan.code === payload.planCode || plan.publicCode === payload.planCode); if (selected) { const publicCode = selected.publicCode || selected.code; updateUser({ ...user, subscription: { ...(user.subscription || {}), code: publicCode, publicCode, plan: selected.code, name: selected.name, planName: selected.name, status: 'Active', periodEnd: null } }); setNotice(`Plan changed to ${selected.name}. Features are now available for this owner session.`); } else setNotice(message); } else setNotice(message); } catch (error) { setNotice(error.message); } };
   const change = (plan) => run({ action: 'change-plan', planCode: plan.code }, `Plan change to ${plan.name} requested.`);
-  const d = live || demoSubscription;
+  const demoCurrentCode = user?.subscription?.code || demoSubscription.subscription.publicCode;
+  const demoPlan = demoSubscription.plans.find((plan) => plan.publicCode === demoCurrentCode || plan.code === demoCurrentCode) || demoSubscription.plans[0];
+  const d = live || { ...demoSubscription, subscription: { ...demoSubscription.subscription, ...(user?.subscription || {}), code: demoCurrentCode, publicCode: demoCurrentCode, plan: demoPlan.code, name: demoPlan.name, planName: demoPlan.name } };
   const limits = d.limits || {};
   const current = d.subscription || {};
   const currentCode = current.publicCode || current.plan || current.code;

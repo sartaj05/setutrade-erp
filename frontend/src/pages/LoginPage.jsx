@@ -24,10 +24,11 @@ export default function LoginPage({ navigate }) {
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const [loading, setLoading] = useState(false);
+  const [remember, setRemember] = useState(false);
 
   const submit = async (e) => {
     e.preventDefault(); setError(''); setMessage(''); setLoading(true);
-    try { await login(email, password); navigate('/app'); }
+    try { await login(email, password, { remember }); navigate('/app'); }
     catch (err) { setError(err.message); }
     finally { setLoading(false); }
   };
@@ -90,7 +91,7 @@ export default function LoginPage({ navigate }) {
           <div className="login-heading">
             <span className="demo-pill"><span /> {demoMode ? 'Safe demo workspace' : 'Production workspace'}</span>
             <h2>{view === 'login' ? 'Welcome back' : view === 'register' ? 'Create your workspace' : view === 'forgot' ? 'Reset your password' : 'Choose a new password'}</h2>
-            <p>{view === 'register' ? 'Create a company workspace with an owner account and start with role-based access.' : demoMode ? 'Demo accounts use browser-safe sample data when the Django API is unavailable.' : 'This deployment requires the live Django API. Real business data never falls back to demo records.'}</p>
+            <p>{view === 'register' ? 'Create a company workspace with an owner account and start with role-based access.' : demoMode ? 'Demo accounts use browser-safe sample data. Your browser session ends when you close it unless you choose to stay signed in.' : 'This deployment requires the live Django API. Real business data never falls back to demo records.'}</p>
           </div>
 
           {user && view === 'login' && <div className="session-card">
@@ -103,6 +104,7 @@ export default function LoginPage({ navigate }) {
           {!user && view === 'login' && <form onSubmit={submit} className="login-form">
             <label>Email address<input type="email" value={email} onChange={(e) => setEmail(e.target.value)} autoComplete="email" required /></label>
             <label>Password<input type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required /></label>
+            <label className="remember-row"><input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} /><span>Keep me signed in on this device for 14 days</span></label>
             {error && <div className="form-error">{error}</div>}{message && <div className="form-success">{message}</div>}
             <button className="btn btn-primary login-submit" disabled={loading}>{loading ? 'Signing in…' : <>Sign in <Icon name="arrow" size={17} /></>}</button>
             <div className="auth-link-row"><button type="button" className="link-button" onClick={() => { setView('forgot'); setError(''); setMessage(''); }}>Forgot password?</button><button type="button" className="link-button" onClick={() => { setView('register'); setError(''); setMessage(''); setPassword(''); }}>Create account</button></div>

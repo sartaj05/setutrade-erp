@@ -1,16 +1,64 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import { demoAccounts, permissions } from '../data/demoData';
-import { getApiResource, loginApi, logoutApi, registerApi } from '../services/api';
+import { clearAuthTokens, getAccessToken, getApiResource, loginApi, logoutApi, registerApi } from '../services/api';
 import { planAllows } from '../data/plans';
 
 const AuthContext = createContext(null);
 const STORAGE_KEY = 'setustock_auth';
+const SESSION_STORAGE_KEY = 'setustock_auth_session';
+const PERSISTENT_STORAGE_KEY = 'setustock_auth_persistent';
 const REGISTERED_DEMO_KEY = 'setustock_registered_demo_accounts';
 const DEMO_PASSWORD_KEY = 'setustock_demo_password_overrides';
+const PERSISTENT_SESSION_MAX_AGE = 14 * 24 * 60 * 60 * 1000;
 
-function readStoredUser() {
-  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || null; }
+function readJson(storage, key) {
+  try { return JSON.parse(storage.getItem(key)) || null; }
   catch { return null; }
+}
+
+function removeKey(storage, key) {
+  try { storage.removeItem(key); } catch { /* storage may be unavailable */ }
+}
+
+function readStoredAuth() {
+  const session = readJson(sessionStorage, SESSION_STORAGE_KEY);
+  if (session?.user) return { user: session.user, remember: false };
+
+  const persistent = readJson(localStorage, PERSISTENT_STORAGE_KEY);
+  if (persistent?.user && (!persistent.expiresAt || persistent.expiresAt > Date.now())) {
+    return { user: persistent.user, remember: true };
+  }
+  if (persistent) {
+    removeKey(localStorage, PERSISTENT_STORAGE_KEY);
+    clearAuthTokens();
+  }
+
+  // Clear the old unscoped localStorage session once. It caused demo users
+  // to appear signed in after closing and reopening the browser.
+  if (readJson(localStorage, STORAGE_KEY)) {
+    removeKey(localStorage, STORAGE_KEY);
+    clearAuthTokens();
+  }
+  clearAuthTokens();
+  return null;
+}
+
+function writeStoredAuth(user, remember = false) {
+  removeKey(sessionStorage, SESSION_STORAGE_KEY);
+  removeKey(localStorage, PERSISTENT_STORAGE_KEY);
+  const record = {
+    user,
+    createdAt: Date.now(),
+    expiresAt: remember ? Date.now() + PERSISTENT_SESSION_MAX_AGE : null,
+  };
+  if (remember) localStorage.setItem(PERSISTENT_STORAGE_KEY, JSON.stringify(record));
+  else sessionStorage.setItem(SESSION_STORAGE_KEY, JSON.stringify(record));
+}
+
+function clearStoredAuth() {
+  removeKey(sessionStorage, SESSION_STORAGE_KEY);
+  removeKey(localStorage, PERSISTENT_STORAGE_KEY);
+  removeKey(localStorage, STORAGE_KEY);
 }
 
 function readRegisteredDemoAccounts() {
@@ -24,13 +72,14 @@ function readDemoPasswordOverrides() {
 }
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(readStoredUser);
-  const [mode, setMode] = useState(user?.mode || 'demo');
+  const initialAuth = readStoredAuth();
+  const [user, setUser] = useState(initialAuth?.user || null);
+  const [mode, setMode] = useState(initialAuth?.user?.mode || 'demo');
   const [sessionReady, setSessionReady] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    const stored = readStoredUser();
+    const stored = readStoredAuth();
 
     const finish = (nextUser, nextMode = nextUser?.mode || 'demo') => {
       if (cancelled) return;
@@ -44,39 +93,38 @@ export function AuthProvider({ children }) {
       return () => { cancelled = true; };
     }
 
-    if (stored.mode !== 'api') {
-      finish(stored, 'demo');
+    if (stored.user.mode !== 'api') {
+      finish(stored.user, 'demo');
       return () => { cancelled = true; };
     }
 
-    const token = localStorage.getItem('setustock_token');
+    const token = getAccessToken();
     if (!token) {
-      localStorage.removeItem(STORAGE_KEY);
+      clearStoredAuth();
       finish(null, 'demo');
       return () => { cancelled = true; };
     }
 
     getApiResource('auth/me').then((payload) => {
       const nextUser = { ...payload.user, mode: 'api' };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(nextUser));
+      writeStoredAuth(nextUser, stored.remember);
       finish(nextUser, 'api');
     }).catch((error) => {
       // Keep a cached session during a temporary network outage, but remove
       // it when Django explicitly says that the session is no longer valid.
       if (error.status === 401 || error.status === 403) {
-        localStorage.removeItem(STORAGE_KEY);
-        localStorage.removeItem('setustock_token');
-        localStorage.removeItem('setustock_refresh_token');
+        clearStoredAuth();
+        clearAuthTokens();
         finish(null, 'demo');
       } else {
-        finish(stored, 'api');
+        finish(stored.user, 'api');
       }
     });
 
     return () => { cancelled = true; };
   }, []);
 
-  const loginDemo = async (email, password) => {
+  const loginDemo = async (email, password, { remember = false } = {}) => {
     const demoEnabled = String(import.meta.env.VITE_APP_MODE || 'demo').toLowerCase() === 'demo';
     if (!demoEnabled) throw new Error('Demo login is disabled on this deployment.');
     await new Promise((resolve) => setTimeout(resolve, 120));
@@ -84,12 +132,12 @@ export function AuthProvider({ children }) {
     const account = [...demoAccounts, ...readRegisteredDemoAccounts()].find((item) => item.email.toLowerCase() === email.trim().toLowerCase() && (overrides[item.email.toLowerCase()] || item.password) === password);
     if (!account) throw new Error('Invalid email or password. Use one of the demo accounts shown below.');
     const safeUser = { id: account.id, name: account.name, email: account.email, role: account.role, business: account.business, permissions: permissions[account.role] || ['dashboard'], subscription: { code: account.plan || 'FREE', name: account.plan || 'Free', status: 'Active' }, mode: 'demo' };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(safeUser));
+    writeStoredAuth(safeUser, remember);
     setUser(safeUser); setMode('demo');
     return safeUser;
   };
 
-  const registerDemo = async ({ name, email, password, businessName, phone }) => {
+  const registerDemo = async ({ name, email, password, businessName, phone }, { remember = false } = {}) => {
     const demoEnabled = String(import.meta.env.VITE_APP_MODE || 'demo').toLowerCase() === 'demo';
     if (!demoEnabled) throw new Error('Demo registration is disabled on this deployment.');
     if (password.length < 8) throw new Error('Password must be at least 8 characters.');
@@ -98,7 +146,7 @@ export function AuthProvider({ children }) {
     const account = { id: `demo-${Date.now()}`, name: name.trim(), email: email.trim().toLowerCase(), password, role: 'OWNER', business: businessName.trim() || `${name.trim()} Distributors`, phone: phone.trim() };
     localStorage.setItem(REGISTERED_DEMO_KEY, JSON.stringify([...accounts, account]));
     const safeUser = { id: account.id, name: account.name, email: account.email, role: account.role, business: account.business, permissions: permissions[account.role] || ['dashboard'], subscription: { code: 'FREE', name: 'Free', status: 'Trial' }, mode: 'demo' };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(safeUser));
+    writeStoredAuth(safeUser, remember);
     setUser(safeUser); setMode('demo');
     return safeUser;
   };
@@ -112,46 +160,57 @@ export function AuthProvider({ children }) {
     localStorage.setItem(DEMO_PASSWORD_KEY, JSON.stringify(overrides));
   };
 
-  const login = async (email, password) => {
+  const login = async (email, password, options = {}) => {
     const demoMode = String(import.meta.env.VITE_APP_MODE || 'demo').toLowerCase() === 'demo';
     const fallbackEnabled = demoMode && String(import.meta.env.VITE_DEMO_FALLBACK ?? 'true').toLowerCase() !== 'false';
     try {
-      const apiUser = await loginApi(email, password);
+      const apiUser = await loginApi(email, password, options);
       const safeUser = { ...apiUser, mode: 'api' };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(safeUser));
+      writeStoredAuth(safeUser, options.remember);
       setUser(safeUser); setMode('api');
       return safeUser;
     } catch (error) {
       if (!error.network || !fallbackEnabled) throw error;
-      return loginDemo(email, password);
+      return loginDemo(email, password, options);
     }
   };
 
-  const register = async (details) => {
+  const register = async (details, options = {}) => {
     const demoMode = String(import.meta.env.VITE_APP_MODE || 'demo').toLowerCase() === 'demo';
     const fallbackEnabled = demoMode && String(import.meta.env.VITE_DEMO_FALLBACK ?? 'true').toLowerCase() !== 'false';
     try {
-      const apiUser = await registerApi(details);
+      const apiUser = await registerApi(details, options);
       const safeUser = { ...apiUser, mode: 'api' };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(safeUser));
+      writeStoredAuth(safeUser, options.remember);
       setUser(safeUser); setMode('api');
       return safeUser;
     } catch (error) {
       if (!error.network || !fallbackEnabled) throw error;
-      return registerDemo(details);
+      return registerDemo(details, options);
     }
   };
 
   const logout = async () => {
-    if (mode === 'api') await logoutApi();
-    localStorage.removeItem(STORAGE_KEY);
-    localStorage.removeItem('setustock_token');
-    localStorage.removeItem('setustock_refresh_token');
-    setUser(null); setMode('demo');
+    try {
+      if (mode === 'api') await logoutApi();
+    } finally {
+      clearStoredAuth();
+      clearAuthTokens();
+      setUser(null); setMode('demo');
+    }
+  };
+
+  const updateUser = (nextUser) => {
+    const resolvedUser = typeof nextUser === 'function' ? nextUser(user) : nextUser;
+    setUser(resolvedUser);
+    if (resolvedUser) {
+      const stored = readStoredAuth();
+      writeStoredAuth(resolvedUser, stored?.remember || false);
+    }
   };
 
   const can = (module) => Boolean(user && (user.permissions || permissions[user.role] || []).includes(module) && planAllows(user.subscription?.code || user.plan, module, user.subscription?.status || 'Active'));
-  const value = useMemo(() => ({ user, mode, sessionReady, login, register, loginDemo, registerDemo, resetDemoPassword, logout, can, setUser }), [user, mode, sessionReady]);
+  const value = useMemo(() => ({ user, mode, sessionReady, login, register, loginDemo, registerDemo, resetDemoPassword, logout, can, setUser, updateUser }), [user, mode, sessionReady, updateUser]);
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 

@@ -1,4 +1,6 @@
 const API_BASE = (import.meta.env.VITE_API_URL || 'http://127.0.0.1:8000/api').replace(/\/$/, '');
+const ACCESS_TOKEN_KEY = 'setustock_token';
+const REFRESH_TOKEN_KEY = 'setustock_refresh_token';
 
 export class ApiError extends Error {
   constructor(message, status = 0, network = false, details = null) {
@@ -10,8 +12,46 @@ export class ApiError extends Error {
   }
 }
 
+function readStorage(storage, key) {
+  try { return storage.getItem(key) || ''; } catch { return ''; }
+}
+
+export function getAccessToken() {
+  return readStorage(sessionStorage, ACCESS_TOKEN_KEY) || readStorage(localStorage, ACCESS_TOKEN_KEY);
+}
+
+export function getRefreshToken() {
+  return readStorage(sessionStorage, REFRESH_TOKEN_KEY) || readStorage(localStorage, REFRESH_TOKEN_KEY);
+}
+
+export function storeAuthTokens(data, remember = false) {
+  const target = remember ? localStorage : sessionStorage;
+  [localStorage, sessionStorage].forEach((storage) => {
+    try {
+      storage.removeItem(ACCESS_TOKEN_KEY);
+      storage.removeItem(REFRESH_TOKEN_KEY);
+    } catch { /* storage may be unavailable in a restricted browser */ }
+  });
+  target.setItem(ACCESS_TOKEN_KEY, data.token || '');
+  target.setItem(REFRESH_TOKEN_KEY, data.refreshToken || '');
+}
+
+export function storeAccessToken(token) {
+  const target = readStorage(sessionStorage, REFRESH_TOKEN_KEY) ? sessionStorage : localStorage;
+  target.setItem(ACCESS_TOKEN_KEY, token || '');
+}
+
+export function clearAuthTokens() {
+  [localStorage, sessionStorage].forEach((storage) => {
+    try {
+      storage.removeItem(ACCESS_TOKEN_KEY);
+      storage.removeItem(REFRESH_TOKEN_KEY);
+    } catch { /* storage may be unavailable in a restricted browser */ }
+  });
+}
+
 function authHeaders(extra = {}) {
-  const token = localStorage.getItem('setustock_token');
+  const token = getAccessToken();
   return { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extra };
 }
 
@@ -22,7 +62,7 @@ async function parseResponse(response) {
 }
 
 async function refreshAccessToken() {
-  const refreshToken = localStorage.getItem('setustock_refresh_token');
+  const refreshToken = getRefreshToken();
   if (!refreshToken) return false;
   try {
     const response = await fetch(`${API_BASE}/auth/refresh/`, {
@@ -32,7 +72,7 @@ async function refreshAccessToken() {
     });
     if (!response.ok) return false;
     const data = await response.json();
-    localStorage.setItem('setustock_token', data.token);
+    storeAccessToken(data.token);
     return true;
   } catch {
     return false;
@@ -61,24 +101,21 @@ export async function apiRequest(path, options = {}, retry = true) {
   }
 }
 
-export async function loginApi(email, password) {
+export async function loginApi(email, password, { remember = false } = {}) {
   const data = await apiRequest('/auth/login/', { method: 'POST', body: JSON.stringify({ email, password }) });
-  localStorage.setItem('setustock_token', data.token);
-  localStorage.setItem('setustock_refresh_token', data.refreshToken || '');
+  storeAuthTokens(data, remember);
   return data.user;
 }
 
-export async function registerApi(details) {
+export async function registerApi(details, { remember = false } = {}) {
   const data = await apiRequest('/auth/register/', { method: 'POST', body: JSON.stringify(details) });
-  localStorage.setItem('setustock_token', data.token);
-  localStorage.setItem('setustock_refresh_token', data.refreshToken || '');
+  storeAuthTokens(data, remember);
   return data.user;
 }
 
 export async function logoutApi() {
   try { await apiRequest('/auth/logout/', { method: 'POST', body: '{}' }); } catch { /* local logout still wins */ }
-  localStorage.removeItem('setustock_token');
-  localStorage.removeItem('setustock_refresh_token');
+  clearAuthTokens();
 }
 
 export function getApiResource(resource, query = '') {
@@ -142,7 +179,7 @@ export function healthApi() {
 }
 
 export async function downloadCsv(resource) {
-  const token = localStorage.getItem('setustock_token');
+  const token = getAccessToken();
   const response = await fetch(`${API_BASE}/export/${resource}/`, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
   if (!response.ok) throw new ApiError(`Export failed (${response.status})`, response.status);
   const blob = await response.blob();
