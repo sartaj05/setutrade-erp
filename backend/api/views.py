@@ -197,6 +197,21 @@ def login_view(request):
     cache.delete(guard_key)
     if not hasattr(user, 'profile') or not user.profile.company:
         return JsonResponse({'detail': 'Account setup is incomplete. Contact your administrator.'}, status=403)
+    if user.profile.mfa_enabled:
+        mfa_key = f"mfa-login:{user.id}:{request.META.get('REMOTE_ADDR', 'unknown')}"
+        supplied = str(body.get('mfaCode', '')).strip()
+        expected = cache.get(mfa_key)
+        if not supplied:
+            code = f'{secrets.randbelow(1000000):06d}'
+            cache.set(mfa_key, code, 300)
+            try: send_mail('SetuStock sign-in verification code', f'Your verification code is {code}. It expires in 5 minutes.', os.getenv('DEFAULT_FROM_EMAIL', 'noreply@setustock.local'), [user.email], fail_silently=True)
+            except Exception: pass
+            response = {'mfaRequired': True, 'detail': 'Verification code sent to your account email.'}
+            if settings.DEBUG or os.getenv('SETUSTOCK_DEMO_MODE', 'false').lower() == 'true': response['demoMfaCode'] = code
+            return JsonResponse(response, status=202)
+        if not expected or not secrets.compare_digest(supplied, str(expected)):
+            return JsonResponse({'detail': 'The MFA code is invalid or expired.'}, status=401)
+        cache.delete(mfa_key)
     access, refresh = create_session_tokens(user, request)
     return JsonResponse({'token': access, 'refreshToken': refresh, 'user': user_payload(user)})
 
@@ -326,6 +341,23 @@ def change_password(request):
 @api_auth_required
 def me(request):
     return JsonResponse({'user': user_payload(request.api_user)})
+
+
+@csrf_exempt
+@require_http_methods(['GET', 'POST'])
+@api_auth_required
+def security_sessions(request):
+    from .models import AuthSession
+    sessions = AuthSession.objects.filter(user=request.api_user).order_by('-created_at')
+    if request.method == 'POST':
+        action = (_json_body(request) or {}).get('action', 'revoke-others')
+        if action == 'revoke-all': sessions.update(revoked_at=timezone.now())
+        else:
+            current = sessions.filter(revoked_at__isnull=True).order_by('-last_used_at').first()
+            sessions.exclude(token_id=current.token_id if current else '').update(revoked_at=timezone.now())
+        if action == 'revoke-all': revoke_request_session(request)
+        return JsonResponse({'ok': True, 'action': action})
+    return JsonResponse({'mfa': bool(request.api_user.profile.mfa_enabled), 'ssoProvider': request.api_user.profile.sso_provider, 'passkeyEnabled': bool(request.api_user.profile.passkey_enabled), 'sessions':[{'id':x.id,'createdAt':x.created_at.isoformat(),'lastUsedAt':x.last_used_at.isoformat(),'ip':x.ip_address,'userAgent':x.user_agent,'active':x.active} for x in sessions[:30]]})
 
 
 @require_GET

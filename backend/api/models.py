@@ -59,6 +59,9 @@ class Profile(models.Model):
     branch = models.ForeignKey(Branch, on_delete=models.SET_NULL, related_name='profiles', null=True, blank=True)
     phone = models.CharField(max_length=20, blank=True)
     extra_permissions = models.JSONField(default=list, blank=True)
+    mfa_enabled = models.BooleanField(default=False)
+    sso_provider = models.CharField(max_length=40, blank=True)
+    passkey_enabled = models.BooleanField(default=False)
 
     def __str__(self):
         return f'{self.user.username} - {self.role}'
