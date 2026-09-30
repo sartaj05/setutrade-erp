@@ -874,7 +874,41 @@ def payment_statement_import(request):
         return JsonResponse({
             'imports': [{'id': x.id, 'filename': x.filename, 'account': x.account_label, 'status': x.status, 'rows': x.row_count, 'imported': x.imported_count, 'duplicates': x.duplicate_count, 'errors': x.error_count, 'createdAt': x.created_at.isoformat()} for x in imports],
             'lines': [_statement_line_payload(x) for x in lines],
+            'summary': {'unmatched': _company_qs(BankStatementLine, request).filter(status=BankStatementLine.Status.UNMATCHED, direction=BankStatementLine.Direction.CREDIT).count(), 'matched': _company_qs(BankStatementLine, request).filter(status=BankStatementLine.Status.MATCHED).count()},
         })
+
+    if request.content_type and 'application/json' in request.content_type:
+        body = _json_body(request) or {}
+        if body.get('action') == 'auto-match':
+            matched = 0
+            with transaction.atomic():
+                lines = list(_company_qs(BankStatementLine, request).select_related('customer', 'payment_transaction').filter(status=BankStatementLine.Status.UNMATCHED, direction=BankStatementLine.Direction.CREDIT, payment_transaction__isnull=False).order_by('transaction_date', 'id')[:200])
+                for line in lines:
+                    txn = line.payment_transaction
+                    allocated = txn.allocations.aggregate(v=Sum('amount'))['v'] or Decimal('0')
+                    remaining = txn.amount - allocated
+                    if remaining <= 0: line.status = BankStatementLine.Status.MATCHED; line.save(update_fields=['status']); continue
+                    invoices = Invoice.objects.filter(company=request.company, order__customer=line.customer).exclude(status=Invoice.Status.PAID).order_by('due_date', 'invoice_date', 'id')
+                    for invoice in invoices:
+                        due = invoice.total - (invoice.payment_allocations.aggregate(v=Sum('amount'))['v'] or Decimal('0'))
+                        use = min(remaining, max(Decimal('0'), due))
+                        if use <= 0: continue
+                        PaymentAllocation.objects.create(transaction=txn, invoice=invoice, amount=use)
+                        remaining -= use
+                        paid = invoice.payment_allocations.aggregate(v=Sum('amount'))['v'] or Decimal('0')
+                        invoice.status = Invoice.Status.PAID if paid >= invoice.total else Invoice.Status.PARTIAL
+                        invoice.save(update_fields=['status', 'updated_at'])
+                        receipt = Payment.objects.create(company=request.company, receipt_no=_next_no('RCPT'), customer=line.customer, invoice=invoice, amount=use, method=Payment.Method.BANK, reference=txn.reference, payment_date=txn.transaction_date, notes='Bank statement auto-match', recorded_by=request.api_user)
+                        LedgerEntry.objects.create(company=request.company, customer=line.customer, entry_type=LedgerEntry.EntryType.PAYMENT, reference=receipt.receipt_no, amount=-use, entry_date=txn.transaction_date, note='Bank statement reconciliation')
+                        line.customer.outstanding = max(Decimal('0'), line.customer.outstanding - use); line.customer.save(update_fields=['outstanding'])
+                        matched += 1
+                        if remaining <= 0: break
+                    txn.status = PaymentTransaction.Status.MATCHED if remaining <= 0 else (PaymentTransaction.Status.PARTIAL if remaining < txn.amount else PaymentTransaction.Status.UNMATCHED)
+                    txn.save(update_fields=['status'])
+                    if remaining < txn.amount: line.status = BankStatementLine.Status.MATCHED
+                    line.save(update_fields=['status'])
+            audit(request, 'auto_match', 'BankStatementLine', request.company.id, f'Auto-matched {matched} bank receipts')
+            return JsonResponse({'ok': True, 'matched': matched})
 
     upload = request.FILES.get('file')
     if not upload:
