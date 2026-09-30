@@ -2323,6 +2323,22 @@ def portal_catalog(request):
 def portal_place_order(request):
     body = _json_body(request) or {}
     items = body.get('items') or []
+    if body.get('action') == 'return-request':
+        warehouse = Warehouse.objects.filter(company=request.company, is_active=True).order_by('name').first()
+        if not warehouse or not isinstance(items, list) or not items:
+            return JsonResponse({'detail': 'At least one return item and an active warehouse are required.'}, status=400)
+        return_order = ReturnOrder.objects.create(company=request.company, return_no=_next_no('RMA'), return_type=ReturnOrder.ReturnType.SALES, customer=request.customer, warehouse=warehouse, status=ReturnOrder.Status.OPEN, return_date=timezone.localdate(), reason=str(body.get('reason', 'Customer portal return request'))[:240])
+        total = Decimal('0')
+        for row in items[:50]:
+            try: product = Product.objects.get(pk=int(row.get('productId')), company=request.company, is_active=True); quantity = decimal(row.get('quantity'), '0')
+            except (Product.DoesNotExist, TypeError, ValueError): continue
+            if quantity <= 0: continue
+            price = product.sell_price; total += price * quantity
+            ReturnItem.objects.create(return_order=return_order, product=product, quantity=quantity, unit_price=price, condition='Pending inspection')
+        if total <= 0:
+            return_order.delete(); return JsonResponse({'detail': 'No valid return items were supplied.'}, status=400)
+        return_order.total = total; return_order.save(update_fields=['total'])
+        return JsonResponse({'ok': True, 'returnNo': return_order.return_no, 'status': return_order.status, 'total': float(total)}, status=201)
     if not isinstance(items, list) or not items:
         return JsonResponse({'detail': 'At least one cart item is required.'}, status=400)
     clean=[]; total=Decimal('0')
