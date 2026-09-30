@@ -212,6 +212,8 @@ The subscription workspace supports Free, Premium and Enterprise plans, usage li
 
 Live collection requires provider credentials and a signed webhook secret. A paid plan activates only after the payment provider confirms the transaction. Never expose provider secret keys in the frontend.
 
+Bank reconciliation accepts reviewed CSV statements through the Payments workspace. Supported column aliases include date, UTR/reference, description/narration, amount, credit, debit, customer code, and customer name. Credit rows with a matching customer become duplicate-safe payment transactions; unmatched rows remain in the review queue.
+
 ## Mobile app
 
 The Expo client supports staff login, dealer login, customer-specific catalogue/order flows, delivery visibility, offline queue support and the business assistant.

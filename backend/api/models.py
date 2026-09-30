@@ -959,6 +959,56 @@ class PaymentAllocation(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
+class BankStatementImport(models.Model):
+    class Status(models.TextChoices):
+        IMPORTED = 'Imported', 'Imported'
+        FAILED = 'Failed', 'Failed'
+
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='bank_statement_imports')
+    uploaded_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='bank_statement_imports')
+    filename = models.CharField(max_length=180)
+    account_label = models.CharField(max_length=120, blank=True)
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.IMPORTED)
+    row_count = models.PositiveIntegerField(default=0)
+    imported_count = models.PositiveIntegerField(default=0)
+    duplicate_count = models.PositiveIntegerField(default=0)
+    error_count = models.PositiveIntegerField(default=0)
+    errors = models.JSONField(default=list, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
+
+
+class BankStatementLine(models.Model):
+    class Direction(models.TextChoices):
+        CREDIT = 'Credit', 'Credit'
+        DEBIT = 'Debit', 'Debit'
+
+    class Status(models.TextChoices):
+        UNMATCHED = 'Unmatched', 'Unmatched'
+        MATCHED = 'Matched', 'Matched'
+        SKIPPED = 'Skipped', 'Skipped'
+
+    statement = models.ForeignKey(BankStatementImport, on_delete=models.CASCADE, related_name='lines')
+    company = models.ForeignKey(Company, on_delete=models.CASCADE, related_name='bank_statement_lines')
+    line_number = models.PositiveIntegerField()
+    transaction_date = models.DateField()
+    reference = models.CharField(max_length=120, blank=True)
+    description = models.CharField(max_length=300, blank=True)
+    amount = models.DecimalField(max_digits=14, decimal_places=2)
+    direction = models.CharField(max_length=12, choices=Direction.choices)
+    customer = models.ForeignKey(Customer, on_delete=models.SET_NULL, null=True, blank=True, related_name='bank_statement_lines')
+    payment_transaction = models.ForeignKey(PaymentTransaction, on_delete=models.SET_NULL, null=True, blank=True, related_name='statement_lines')
+    status = models.CharField(max_length=20, choices=Status.choices, default=Status.UNMATCHED)
+    raw_payload = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['statement', 'line_number'], name='unique_statement_line_number')]
+        ordering = ['line_number']
+
+
 class PaymentPromise(models.Model):
     class Status(models.TextChoices):
         OPEN='Open','Open'; KEPT='Kept','Kept'; BROKEN='Broken','Broken'; CANCELLED='Cancelled','Cancelled'

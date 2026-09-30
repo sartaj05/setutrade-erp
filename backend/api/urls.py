@@ -32,6 +32,7 @@ urlpatterns = [
     path('payments/', views.payments),
     path('payments/webhook/<str:provider>/', views.payment_webhook),
     path('payments/reconciliation/', views.payment_reconciliation),
+    path('payments/statement-import/', views.payment_statement_import),
     path('warehouses/', views.warehouses),
     path('inventory/reconcile/', views.inventory_reconcile),
     path('transfers/<int:pk>/action/', views.transfer_action),

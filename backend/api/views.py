@@ -42,7 +42,7 @@ from .models import (
     Quotation, QuotationItem, ReorderSuggestion, ProcurementRecommendation, ReturnItem, ReturnOrder, SalesTarget,
     SalesVisit, StockAdjustment, StockBalance, StockTransfer, StockTransferItem,
     DemandForecast, BackgroundJob, WebhookReplay,
-    PaymentAllocation, PaymentTransaction, PaymentLink, ImportBatch, OnboardingFeedback,
+    PaymentAllocation, PaymentTransaction, PaymentLink, BankStatementImport, BankStatementLine, ImportBatch, OnboardingFeedback,
     Supplier, SupplierLedgerEntry, SupplierPayment, TaxNote, Warehouse, WhatsAppMessage,
     WhatsAppOrderDraft,
     Profile,
@@ -800,8 +800,134 @@ def payment_reconciliation(request):
         'unmatched': PaymentTransaction.objects.filter(company=company, status='Unmatched').count(),
         'received': float(PaymentTransaction.objects.filter(company=company).aggregate(v=Sum('amount'))['v'] or 0),
         'unapplied': float(sum((x.amount - (x.allocations.aggregate(v=Sum('amount'))['v'] or Decimal('0')) for x in rows), Decimal('0'))),
+        'gateway': {
+            'provider': os.getenv('PAYMENT_PROVIDER', ''),
+            'configured': bool(os.getenv('PAYMENT_PROVIDER') and os.getenv('PAYMENT_WEBHOOK_SECRET')),
+            'message': 'Signed webhook ready. Add the client gateway provider and secret before enabling live collection.' if not (os.getenv('PAYMENT_PROVIDER') and os.getenv('PAYMENT_WEBHOOK_SECRET')) else 'Gateway webhook credentials are configured for staging or production.',
+        },
     }
     return JsonResponse({'summary': summary, 'transactions': [{'id': x.id, 'reference': x.reference, 'customer': x.customer.name, 'amount': float(x.amount), 'allocated': float(x.allocations.aggregate(v=Sum('amount'))['v'] or 0), 'unapplied': float(x.amount - (x.allocations.aggregate(v=Sum('amount'))['v'] or 0)), 'method': x.method, 'date': x.transaction_date.isoformat(), 'status': x.status, 'invoices': [{'id': a.invoice_id, 'invoice': a.invoice.invoice_no, 'amount': float(a.amount)} for a in x.allocations.all()]} for x in rows]})
+
+
+def _statement_header(value):
+    return re.sub(r'[^a-z0-9]+', '_', str(value or '').strip().lower()).strip('_')
+
+
+def _statement_value(row, *names):
+    for name in names:
+        value = row.get(_statement_header(name), '')
+        if str(value).strip():
+            return str(value).strip()
+    return ''
+
+
+def _statement_amount(value):
+    raw = str(value or '').strip().replace('₹', '').replace(',', '').replace(' ', '')
+    if not raw:
+        return None
+    negative = raw.startswith('(') and raw.endswith(')')
+    raw = raw.strip('()')
+    try:
+        amount = Decimal(raw)
+    except Exception:
+        return None
+    return -abs(amount) if negative else amount
+
+
+def _statement_date(value):
+    raw = str(value or '').strip()
+    for fmt in ('%Y-%m-%d', '%d/%m/%Y', '%d-%m-%Y', '%d/%m/%y', '%d-%m-%y'):
+        try:
+            return timezone.datetime.strptime(raw[:10], fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _statement_line_payload(line):
+    return {
+        'id': line.id, 'lineNumber': line.line_number, 'date': line.transaction_date.isoformat(),
+        'reference': line.reference, 'description': line.description, 'amount': float(line.amount),
+        'direction': line.direction, 'customer': line.customer.name if line.customer else None,
+        'status': line.status, 'transactionId': line.payment_transaction_id,
+    }
+
+
+@csrf_exempt
+@require_http_methods(['GET', 'POST'])
+@roles_allowed('OWNER', 'MANAGER', 'ACCOUNTANT')
+def payment_statement_import(request):
+    if request.method == 'GET':
+        imports = _company_qs(BankStatementImport, request)[:20]
+        lines = _company_qs(BankStatementLine, request).select_related('customer').order_by('-created_at')[:50]
+        return JsonResponse({
+            'imports': [{'id': x.id, 'filename': x.filename, 'account': x.account_label, 'status': x.status, 'rows': x.row_count, 'imported': x.imported_count, 'duplicates': x.duplicate_count, 'errors': x.error_count, 'createdAt': x.created_at.isoformat()} for x in imports],
+            'lines': [_statement_line_payload(x) for x in lines],
+        })
+
+    upload = request.FILES.get('file')
+    if not upload:
+        return JsonResponse({'detail': 'Upload a bank statement CSV file.'}, status=400)
+    if not str(upload.name).lower().endswith('.csv'):
+        return JsonResponse({'detail': 'Bank statement import currently accepts CSV files.'}, status=400)
+    try:
+        content = upload.read().decode('utf-8-sig')
+        reader = csv.DictReader(io.StringIO(content))
+        if not reader.fieldnames:
+            raise ValueError('The CSV file must contain a header row.')
+        rows = [{_statement_header(key): value for key, value in row.items()} for row in reader]
+    except (UnicodeDecodeError, csv.Error, ValueError) as exc:
+        return JsonResponse({'detail': str(exc)}, status=400)
+    if len(rows) > 5000:
+        return JsonResponse({'detail': 'A single statement import is limited to 5,000 rows.'}, status=400)
+
+    errors = []
+    imported = duplicates = 0
+    with transaction.atomic():
+        statement = BankStatementImport.objects.create(company=request.company, uploaded_by=request.api_user, filename=str(upload.name)[:180], account_label=str(request.POST.get('account') or '')[:120], row_count=len(rows))
+        for index, row in enumerate(rows, start=2):
+            date_value = _statement_value(row, 'date', 'transaction_date', 'txn_date', 'value_date')
+            date = _statement_date(date_value)
+            reference = _statement_value(row, 'reference', 'utr', 'transaction_id', 'transaction_reference', 'ref_no')
+            description = _statement_value(row, 'description', 'narration', 'remarks', 'particulars')
+            amount_value = _statement_value(row, 'amount', 'transaction_amount')
+            amount = _statement_amount(amount_value)
+            credit = _statement_amount(_statement_value(row, 'credit', 'credit_amount', 'deposit'))
+            debit = _statement_amount(_statement_value(row, 'debit', 'debit_amount', 'withdrawal'))
+            if amount is None and credit is not None:
+                amount, direction = credit, BankStatementLine.Direction.CREDIT
+            elif amount is None and debit is not None:
+                amount, direction = -abs(debit), BankStatementLine.Direction.DEBIT
+            elif amount is not None:
+                direction = BankStatementLine.Direction.CREDIT if amount >= 0 else BankStatementLine.Direction.DEBIT
+            else:
+                direction = BankStatementLine.Direction.CREDIT
+            if not date or amount is None or amount == 0:
+                errors.append({'row': index, 'message': 'Date and a non-zero amount are required.'})
+                continue
+            amount = abs(amount)
+            customer_hint = _statement_value(row, 'customer_code', 'customer', 'customer_name', 'party', 'payer')
+            customer = _company_qs(Customer, request).filter(Q(code__iexact=customer_hint) | Q(name__iexact=customer_hint)).first() if customer_hint else None
+            existing = _company_qs(PaymentTransaction, request).filter(reference=reference).first() if reference else None
+            status = BankStatementLine.Status.SKIPPED if direction == BankStatementLine.Direction.DEBIT else BankStatementLine.Status.UNMATCHED
+            transaction_row = None
+            if direction == BankStatementLine.Direction.CREDIT and existing:
+                transaction_row, status, duplicates = existing, BankStatementLine.Status.MATCHED, duplicates + 1
+            elif direction == BankStatementLine.Direction.CREDIT and customer and reference:
+                transaction_row = PaymentTransaction.objects.create(company=request.company, customer=customer, reference=reference, method='Bank', amount=amount, transaction_date=date, raw_payload=row, created_by=request.api_user)
+                imported += 1
+            line = BankStatementLine.objects.create(statement=statement, company=request.company, line_number=index, transaction_date=date, reference=reference, description=description, amount=amount, direction=direction, customer=customer, payment_transaction=transaction_row, status=status, raw_payload=row)
+            if direction == BankStatementLine.Direction.CREDIT and not customer and not existing:
+                imported += 1
+        statement.imported_count = imported
+        statement.duplicate_count = duplicates
+        statement.error_count = len(errors)
+        statement.errors = errors[:200]
+        statement.status = BankStatementImport.Status.FAILED if errors and not statement.lines.exists() else BankStatementImport.Status.IMPORTED
+        statement.save(update_fields=['imported_count', 'duplicate_count', 'error_count', 'errors', 'status'])
+    audit(request, 'import', 'BankStatementImport', statement.id, f'Imported bank statement {statement.filename}', {'rows': len(rows), 'errors': len(errors), 'duplicates': duplicates})
+    lines = statement.lines.select_related('customer')[:50]
+    return JsonResponse({'import': {'id': statement.id, 'filename': statement.filename, 'rows': statement.row_count, 'imported': statement.imported_count, 'duplicates': statement.duplicate_count, 'errors': statement.error_count, 'status': statement.status}, 'lines': [_statement_line_payload(x) for x in lines]}, status=201)
 
 
 @csrf_exempt

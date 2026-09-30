@@ -46,6 +46,7 @@ Next production work:
 - Select and implement the client’s payment/bank provider adapter.
 - Validate provider signatures in staging and production.
 - Import bank statements with a reviewable matching queue.
+- Import bank CSV statements with customer matching, duplicate detection, debit filtering, and an unmatched review queue.
 - Add settlement, refund, chargeback, failed-payment, and unmatched-payment states.
 - Update invoice, order, customer ledger, and audit records atomically.
 

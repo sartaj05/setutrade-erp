@@ -6,6 +6,7 @@ import { demoCustomers, demoDashboard, demoInvoices, demoProducts } from '../dat
 import { demoPurchases, demoSuppliers, demoWarehouses } from '../data/featureData';
 import { demoAudit, demoPayments, demoQuotations, demoReports, demoSettings, demoTeam } from '../data/productionData';
 import PaymentRiskPage from './PaymentRiskPage';
+import BankStatementImportCard from '../components/BankStatementImportCard';
 
 const money = (value) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(Number(value || 0));
 const today = () => new Date().toISOString().slice(0, 10);
@@ -202,7 +203,7 @@ export default function ProductionModulePage({ module }) {
   if (module==='purchases') return <PurchasePage/>;
   if (module==='warehouses') return <WarehousePage/>;
   if (module==='quotations') return <QuotationPage/>;
-  if (module==='payments') return <><PaymentsPage/><ReconciliationPanel mode={productionMode}/><PaymentRiskPage/></>;
+  if (module==='payments') return <><PaymentsPage/><ReconciliationPanel mode={productionMode}/><BankStatementImportCard mode={productionMode}/><PaymentRiskPage/></>;
   if (module==='reports') return <ReportsPage/>;
   if (module==='team') return <TeamPage/>;
   if (module==='settings') return <SettingsPage/>;

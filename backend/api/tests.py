@@ -11,7 +11,7 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import Client, TestCase
 from django.utils import timezone
 from .models import (
-    Branch, Company, Customer, ImportBatch, InventoryMovement, LedgerEntry, OnboardingFeedback, Order, Product, Profile,
+    BankStatementImport, BankStatementLine, Branch, Company, Customer, ImportBatch, InventoryMovement, LedgerEntry, OnboardingFeedback, Order, PaymentTransaction, Product, Profile,
     PurchaseOrder, StockBalance, Supplier, Warehouse, SupplierPortalAccess, AutomationRule, ExternalChannel, DistributionNetwork, WarehouseBin, DeliveryStop, DeliveryProof, ProcurementRecommendation, SubscriptionPlan, CompanySubscription, SubscriptionPayment, WhatsAppMessage, WhatsAppOrderDraft,
 )
 
@@ -144,6 +144,30 @@ class ProductionApiTests(TestCase):
         self.assertEqual(self.customer.outstanding, Decimal('0.00'))
         ledger = self.client.get('/api/ledger/', HTTP_AUTHORIZATION=f'Bearer {self.token}').json()['ledger']
         self.assertEqual(len(ledger), 2)
+
+    def test_bank_statement_import_creates_duplicate_safe_transactions(self):
+        statement = SimpleUploadedFile(
+            'bank-statement.csv',
+            b'Date,UTR,Description,Credit,Debit,Customer Code\n2026-09-29,UTR-001,Test Customer payment,1250,,C-1\n2026-09-29,CHQ-001,Office expense,,300,\n',
+            content_type='text/csv',
+        )
+        response = self.client.post('/api/payments/statement-import/', {'file': statement}, HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        self.assertEqual(response.status_code, 201, response.content)
+        payload = response.json()['import']
+        self.assertEqual(payload['rows'], 2)
+        self.assertEqual(payload['imported'], 1)
+        self.assertEqual(PaymentTransaction.objects.filter(company=self.company).count(), 1)
+        self.assertEqual(BankStatementLine.objects.filter(statement_id=payload['id'], status='Skipped').count(), 1)
+
+        duplicate = SimpleUploadedFile(
+            'bank-statement-repeat.csv',
+            b'Date,UTR,Description,Credit,Customer Code\n2026-09-29,UTR-001,Repeated payment,1250,C-1\n',
+            content_type='text/csv',
+        )
+        repeated = self.client.post('/api/payments/statement-import/', {'file': duplicate}, HTTP_AUTHORIZATION=f'Bearer {self.token}')
+        self.assertEqual(repeated.status_code, 201, repeated.content)
+        self.assertEqual(repeated.json()['import']['duplicates'], 1)
+        self.assertEqual(PaymentTransaction.objects.filter(company=self.company).count(), 1)
 
     def test_password_reset_and_session_revocation(self):
         with self.settings(DEBUG=True):
