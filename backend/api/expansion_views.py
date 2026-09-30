@@ -21,7 +21,7 @@ from .models import (
     Notification, Order, OrderItem, Payment, PaymentAllocation, PaymentLink,
     PaymentPromise, PaymentTransaction, PickList, PickListItem, PickWave, PackingSlip, Product,
     PurchaseOrder, ReceivableFinanceExport, SupplierPortalAccess,
-    SupplierPortalSubmission, Warehouse, WarehouseBin, ConsentRecord,
+    SupplierPortalSubmission, Warehouse, WarehouseBin, ConsentRecord, BackgroundJob,
 )
 from .services import audit
 
@@ -445,6 +445,14 @@ def automations(request):
             created_by=request.api_user,
         )
         return JsonResponse({'id': rule.id, 'name': rule.name}, status=201)
+
+    if action == 'enqueue':
+        event=data.get('event','invoice.overdue');payload=data.get('payload') or {};queued=[]
+        for rule in AutomationRule.objects.filter(company=request.company,event=event,is_active=True):
+            if not _condition_matches(rule.conditions,payload): continue
+            job=BackgroundJob.objects.create(company=request.company,job_type='AUTOMATION_EVENT',job_key=f'AUTO-{timezone.now().strftime("%y%m%d%H%M%S%f")}-{rule.id}',payload={'ruleId':rule.id,'event':event,'entityType':data.get('entityType',''),'entityId':str(data.get('entityId','')),'payload':payload},scheduled_at=timezone.now())
+            queued.append({'id':job.id,'rule':rule.name,'status':job.status})
+        return JsonResponse({'queued':len(queued),'jobs':queued},status=202)
 
     if action == 'test':
         payload = data.get('payload') or {}
