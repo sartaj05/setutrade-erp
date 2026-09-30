@@ -361,7 +361,14 @@ def _rebuild_profitability(company, start, end):
     for key,row in customer_rows.items():
         disc=discounts.get(key,Decimal('0')); ret=returns.get(key,Decimal('0')); gross=row['revenue']-row['cogs']; contribution=gross-disc-ret; margin=(contribution/row['revenue']*100) if row['revenue'] else Decimal('0')
         m.ProfitabilitySnapshot.objects.create(company=company,dimension='Customer',entity_key=key,entity_name=row['name'],period_from=start,period_to=end,revenue=row['revenue'],cogs=row['cogs'],gross_profit=gross,discounts=disc,returns=ret,delivery_cost=0,finance_cost=0,contribution_profit=contribution,margin_percent=margin)
-    return len(customer_rows)
+    product_rows={}
+    for item in items:
+        p=item.product; key=str(p.id); row=product_rows.setdefault(key,{'name':p.name,'revenue':Decimal('0'),'cogs':Decimal('0')})
+        row['revenue']+=Decimal(item.taxable_amount or 0); row['cogs']+=Decimal(p.purchase_price or 0)*Decimal(item.quantity or 0)
+    for key,row in product_rows.items():
+        gross=row['revenue']-row['cogs']; margin=(gross/row['revenue']*100) if row['revenue'] else Decimal('0')
+        m.ProfitabilitySnapshot.objects.create(company=company,dimension='Product',entity_key=key,entity_name=row['name'],period_from=start,period_to=end,revenue=row['revenue'],cogs=row['cogs'],gross_profit=gross,contribution_profit=gross,margin_percent=margin)
+    return len(customer_rows)+len(product_rows)
 
 @csrf_exempt
 @require_http_methods(['GET','POST'])
@@ -374,8 +381,10 @@ def executive_bi(request):
         data=_body(request);start=date.fromisoformat(data.get('from')) if data.get('from') else start;end=date.fromisoformat(data.get('to')) if data.get('to') else end;count=_rebuild_profitability(company,start,end);audit(request,'REBUILD','ProfitabilitySnapshot',f'{start}:{end}',f'Rebuilt {count} profitability rows');return JsonResponse({'rebuilt':count,'from':_dt(start),'to':_dt(end)})
     rows=m.ProfitabilitySnapshot.objects.filter(company=company,period_from=start,period_to=end).order_by('-contribution_profit')
     if not rows.exists(): _rebuild_profitability(company,start,end);rows=m.ProfitabilitySnapshot.objects.filter(company=company,period_from=start,period_to=end).order_by('-contribution_profit')
-    revenue=rows.aggregate(v=Sum('revenue'))['v'] or 0; contribution=rows.aggregate(v=Sum('contribution_profit'))['v'] or 0
-    return JsonResponse({'summary':{'revenue':_money(revenue),'contribution':_money(contribution),'margin':round(float(contribution/revenue*100),2) if revenue else 0,'entities':rows.count()},'rows':[{'id':x.id,'dimension':x.dimension,'entity':x.entity_name,'revenue':_money(x.revenue),'cogs':_money(x.cogs),'grossProfit':_money(x.gross_profit),'discounts':_money(x.discounts),'returns':_money(x.returns),'deliveryCost':_money(x.delivery_cost),'financeCost':_money(x.finance_cost),'contribution':_money(x.contribution_profit),'margin':_money(x.margin_percent)} for x in rows[:100]]})
+    summary_rows=rows.filter(dimension='Customer') or rows
+    revenue=summary_rows.aggregate(v=Sum('revenue'))['v'] or 0; contribution=summary_rows.aggregate(v=Sum('contribution_profit'))['v'] or 0
+    forecasts=m.DemandForecast.objects.filter(company=company).select_related('product','warehouse').order_by('-generated_at','product__name')[:60]
+    return JsonResponse({'summary':{'revenue':_money(revenue),'contribution':_money(contribution),'margin':round(float(contribution/revenue*100),2) if revenue else 0,'entities':rows.count(),'forecastItems':forecasts.count()},'rows':[{'id':x.id,'dimension':x.dimension,'entity':x.entity_name,'revenue':_money(x.revenue),'cogs':_money(x.cogs),'grossProfit':_money(x.gross_profit),'discounts':_money(x.discounts),'returns':_money(x.returns),'deliveryCost':_money(x.delivery_cost),'financeCost':_money(x.finance_cost),'contribution':_money(x.contribution_profit),'margin':_money(x.margin_percent)} for x in rows[:100]],'forecast':[{'productId':x.product_id,'product':x.product.name,'warehouse':x.warehouse.name if x.warehouse else 'All warehouses','horizonDays':x.horizon_days,'averageDailyDemand':float(x.avg_daily_demand),'trendPercent':float(x.trend_percent),'forecastQuantity':float(x.forecast_quantity),'safetyStock':float(x.safety_stock),'recommendedPurchase':float(x.recommended_purchase),'confidence':float(x.confidence)} for x in forecasts]})
 
 
 def _copilot_proposal(company,user,prompt):
