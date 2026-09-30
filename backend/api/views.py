@@ -676,6 +676,15 @@ def ledger(request):
 def payments(request):
     if request.method=='POST':
         body=_json_body(request) or {}; party=body.get('partyType','customer')
+        if body.get('action') == 'create-link':
+            customer = _company_qs(Customer, request).filter(pk=body.get('customerId')).first()
+            invoice = _company_qs(Invoice, request).filter(pk=body.get('invoiceId'), order__customer=customer).first() if customer and body.get('invoiceId') else None
+            amount = decimal(body.get('amount') or (invoice.total if invoice else (customer.outstanding if customer else 0)))
+            if not customer or amount <= 0:
+                return JsonResponse({'detail': 'customer and a positive amount are required.'}, status=400)
+            link = PaymentLink.objects.create(company=request.company, customer=customer, invoice=invoice, token=secrets.token_urlsafe(32), amount=amount, expires_at=timezone.now() + timedelta(days=7))
+            audit(request, 'create', 'PaymentLink', link.id, f'Created payment link for {customer.code}', {'amount': float(amount), 'invoice': invoice.invoice_no if invoice else None})
+            return JsonResponse({'id': link.id, 'token': link.token, 'url': f'/pay/{link.token}', 'amount': float(amount), 'expiresAt': link.expires_at.isoformat()}, status=201)
         if party=='supplier':
             if request.api_user.profile.role=='SALES': return JsonResponse({'detail':'Sales role cannot record supplier payments.'},status=403)
             supplier=_company_qs(Supplier,request).filter(pk=body.get('supplierId')).first()
@@ -703,7 +712,8 @@ def payments(request):
     supplier_rows=_company_qs(SupplierPayment,request).select_related('supplier').order_by('-payment_date','-id')[:100]
     rows=[{'id':p.receipt_no,'party':p.customer.name,'amount':float(p.amount),'method':p.method,'date':p.payment_date.strftime('%d %b'),'partyType':'customer'} for p in customer_rows]+[{'id':p.payment_no,'party':p.supplier.name,'amount':float(p.amount),'method':p.method,'date':p.payment_date.strftime('%d %b'),'partyType':'supplier'} for p in supplier_rows]
     rows.sort(key=lambda x:x['date'],reverse=True)
-    return JsonResponse({'payments':rows})
+    links = PaymentLink.objects.filter(company=request.company, status='Active').select_related('customer', 'invoice').order_by('-created_at')[:20]
+    return JsonResponse({'payments':rows, 'paymentLinks':[{'id':x.id,'token':x.token,'url':f'/pay/{x.token}','customer':x.customer.name,'invoice':x.invoice.invoice_no if x.invoice else None,'amount':float(x.amount),'expiresAt':x.expires_at.isoformat() if x.expires_at else None} for x in links]})
 
 
 @csrf_exempt
