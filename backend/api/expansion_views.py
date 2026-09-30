@@ -614,14 +614,22 @@ def channels(request):
         return JsonResponse({'id': channel.id, 'connected': True, 'sellerNetworkId': channel.external_store_id, 'webhookKey': settings_data['webhookKey']}, status=201 if created else 200)
 
     if action == 'publish-catalogue':
-        channel = ExternalChannel.objects.filter(company=company, provider=ExternalChannel.Provider.ONDC).first()
+        channel = ExternalChannel.objects.filter(company=company, pk=data.get('channelId')).first() if data.get('channelId') else ExternalChannel.objects.filter(company=company, provider=ExternalChannel.Provider.ONDC).first()
         if not channel:
-            return JsonResponse({'detail': 'Connect the ONDC seller channel first.'}, status=400)
+            return JsonResponse({'detail': 'Connect a sales channel first.'}, status=400)
         count = Product.objects.filter(company=company, is_active=True).count()
         settings_data = {**(channel.settings or {}), 'cataloguePublishedAt': timezone.now().isoformat(), 'catalogueCount': count}
         channel.settings = settings_data; channel.last_sync_at = timezone.now(); channel.save(update_fields=['settings', 'last_sync_at'])
-        audit(request, 'PUBLISH', 'ExternalChannel', channel.id, f'Published {count} catalogue products to ONDC')
+        audit(request, 'PUBLISH', 'ExternalChannel', channel.id, f'Published {count} catalogue products to {channel.provider}')
         return JsonResponse({'published': count, 'publishedAt': settings_data['cataloguePublishedAt']})
+
+    if action == 'sync-channel':
+        channel=ExternalChannel.objects.filter(company=company,pk=data.get('channelId'),is_active=True).first()
+        if not channel:return JsonResponse({'detail':'Active sales channel not found.'},status=404)
+        channel.last_sync_at=timezone.now();channel.save(update_fields=['last_sync_at'])
+        pending=ExternalOrder.objects.filter(company=company,channel=channel,status__in=['New','Review']).count()
+        audit(request,'SYNC','ExternalChannel',channel.id,f'Synchronized {channel.provider} channel')
+        return JsonResponse({'synced':True,'channel':channel.name,'provider':channel.provider,'pendingOrders':pending,'lastSync':channel.last_sync_at.isoformat()})
 
     if action == 'sync-ondc':
         channel = ExternalChannel.objects.filter(company=company, provider=ExternalChannel.Provider.ONDC, is_active=True).first()
