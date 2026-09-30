@@ -172,6 +172,16 @@ def procurement_intelligence(request):
         rec=m.ProcurementRecommendation.objects.filter(company=company,pk=data.get('id')).first()
         if not rec:return JsonResponse({'detail':'Recommendation not found.'},status=404)
         rec.status='Approved';rec.save(update_fields=['status']);audit(request,'APPROVE','ProcurementRecommendation',rec.id,'Approved procurement recommendation');return JsonResponse({'id':rec.id,'status':rec.status})
+    if action=='create-po':
+        rec=m.ProcurementRecommendation.objects.filter(company=company,pk=data.get('id'),status__in=['Open','Approved']).select_related('product','supplier').first()
+        warehouse=m.Warehouse.objects.filter(company=company,is_active=True,pk=data.get('warehouseId')).first() or m.Warehouse.objects.filter(company=company,is_active=True).first()
+        if not rec or not warehouse:return JsonResponse({'detail':'An open recommendation and active warehouse are required.'},status=400)
+        with transaction.atomic():
+            po=m.PurchaseOrder.objects.create(company=company,branch=request.api_user.profile.branch,warehouse=warehouse,po_no=f"PO-{timezone.now().strftime('%y%m%d%H%M%S%f')}",supplier=rec.supplier,status=m.PurchaseOrder.Status.DRAFT,order_date=timezone.localdate(),expected_date=timezone.localdate()+timedelta(days=rec.expected_lead_days or 5),notes=f'Created from procurement recommendation {rec.product.sku}',created_by=request.api_user,total=rec.recommended_qty*rec.expected_unit_cost)
+            m.PurchaseItem.objects.create(purchase=po,product=rec.product,quantity=rec.recommended_qty,unit_price=rec.expected_unit_cost)
+            rec.status='Ordered';rec.save(update_fields=['status'])
+        audit(request,'CREATE','PurchaseOrder',po.id,f'Created purchase order {po.po_no} from recommendation {rec.id}',{'recommendationId':rec.id,'total':float(po.total)})
+        return JsonResponse({'id':po.id,'poNo':po.po_no,'status':po.status,'total':_money(po.total)},status=201)
     suppliers=list(m.Supplier.objects.filter(company=company)); products=m.Product.objects.filter(company=company,is_active=True,stock__lte=F('reorder_level'))
     if not suppliers:return JsonResponse({'detail':'Add a supplier before recalculating.'},status=400)
     created=0
